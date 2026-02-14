@@ -4,11 +4,15 @@ Sim state: list of cars, spawn timers per place. No rendering.
 """
 from __future__ import annotations
 
+import random
+
 from sim import cars, places
 from sim.world import ALL_LANES
 
-# Spawn: one car every N seconds per place
+# Spawn: one car every N seconds per place (with jitter so places don't sync)
 SPAWN_INTERVAL = 2.0
+SPAWN_JITTER = 0.3
+SPAWN_INTERVAL_MIN = 1.0
 
 # Lane indices that are "in" (toward intersection); rest are "out" (toward place).
 IN_LANE_INDICES = {0, 1, 4, 5, 8, 9, 12, 13}
@@ -17,16 +21,20 @@ IN_LANE_INDICES = {0, 1, 4, 5, 8, 9, 12, 13}
 class GameState:
     def __init__(self):
         self.cars: list[cars.Car] = []
-        self.spawn_timers: dict[str, float] = {p: 0.0 for p in places.PLACES}
+        self.spawn_timers: dict[str, float] = {
+            p: random.uniform(0, SPAWN_INTERVAL) for p in places.PLACES
+        }
         self._accumulated_time = 0.0
 
     def tick(self, dt: float) -> None:
         self._accumulated_time += dt
-        # Spawn: each place may spawn one car every SPAWN_INTERVAL
+        # Spawn: each place may spawn one car every SPAWN_INTERVAL (+ jitter)
         for place in places.PLACES:
             self.spawn_timers[place] += dt
             if self.spawn_timers[place] >= SPAWN_INTERVAL:
-                self.spawn_timers[place] -= SPAWN_INTERVAL
+                interval = SPAWN_INTERVAL + random.uniform(-SPAWN_JITTER, SPAWN_JITTER)
+                interval = max(SPAWN_INTERVAL_MIN, interval)
+                self.spawn_timers[place] -= interval
                 self.cars.append(cars.spawn_car(place))
 
         # Occupied cells at start of movement (we'll update as we move cars)
