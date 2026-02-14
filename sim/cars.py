@@ -4,10 +4,9 @@ Spawn at place start; movement and blocking in step 5.
 """
 from __future__ import annotations
 
-import random
 from dataclasses import dataclass
 
-from sim.places import PLACES, spawn_lanes_for_place
+from sim.places import NORTH, spawn_lanes_for_place
 from sim.world import ALL_LANES
 
 
@@ -30,10 +29,9 @@ class Car:
 
 
 def spawn_car(origin: str, destination: str | None = None) -> Car:
-    """Create a car at the start of a lane leaving origin. destination = random other place if None."""
+    """Create a car at the start of a lane leaving origin. destination defaults to Office."""
     if destination is None or destination == origin:
-        others = [p for p in PLACES if p != origin]
-        destination = random.choice(others) if others else origin
+        destination = NORTH  # Office
     lanes = spawn_lanes_for_place(origin)
-    lane_index = random.choice(lanes) if lanes else 0
+    lane_index = lanes[0] if lanes else 0
     return Car(origin=origin, destination=destination, lane_index=lane_index, position_in_lane=0)
