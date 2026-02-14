@@ -20,6 +20,11 @@ TILE_H = 6
 # Display colors
 GRID_COLOR = (70, 70, 70)
 ROAD_GREY = (80, 80, 80)
+# Northbound and Eastbound lanes (toward Office, toward Park) drawn lighter to show direction
+LANE_NORTH_EAST_GREY = (165, 165, 165)
+NORTHBOUND_EASTBOUND_LANE_INDICES = set(
+    places.OUT_LANES_BY_PLACE[places.NORTH] + places.OUT_LANES_BY_PLACE[places.EAST]
+)
 BUILDING_OUTLINE_WIDTH = 2
 PLACE_LABEL_COLOR = (220, 220, 220)
 PLACE_LABEL_FONT_SIZE = 12
@@ -57,15 +62,16 @@ class StoplightsWindow(arcade.Window):
         pts = [grid_to_screen(gx, gy, center_x, center_y) for gx, gy in inter_corners]
         arcade.draw_polygon_filled(pts, ROAD_GREY)
 
-        # Broad grey lines for lanes (same light grey as intersection)
+        # Lane lines: Northbound and Eastbound in very light grey; others in ROAD_GREY
         LANE_WIDTH = 4
-        for lane in ALL_LANES:
+        for lane_index, lane in enumerate(ALL_LANES):
+            color = LANE_NORTH_EAST_GREY if lane_index in NORTHBOUND_EASTBOUND_LANE_INDICES else ROAD_GREY
             for i in range(len(lane) - 1):
                 gx1, gy1 = lane[i]
                 gx2, gy2 = lane[i + 1]
                 sx1, sy1 = grid_to_screen(gx1, gy1, center_x, center_y)
                 sx2, sy2 = grid_to_screen(gx2, gy2, center_x, center_y)
-                arcade.draw_line(sx1, sy1, sx2, sy2, ROAD_GREY, LANE_WIDTH)
+                arcade.draw_line(sx1, sy1, sx2, sy2, color, LANE_WIDTH)
 
         # Blue outlined buildings for each place (6×6 bounding box)
         for place in places.PLACES:
