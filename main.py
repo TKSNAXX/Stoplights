@@ -6,6 +6,7 @@ Game loop: fixed timestep calls sim.tick(); no player input.
 import arcade
 
 from sim.game import GameState
+from sim import places
 from sim.world import ALL_LANES, GRID_W, GRID_H
 
 # Sim ticks per second
@@ -15,6 +16,11 @@ TICK_DT = 1.0 / TICKS_PER_SECOND
 # Isometric tile half-size in pixels (diamond: width 2*TILE_W, height 2*TILE_H)
 TILE_W = 12
 TILE_H = 6
+
+# Display colors
+GRID_COLOR = (70, 70, 70)
+ROAD_GREY = (80, 80, 80)
+BUILDING_OUTLINE_WIDTH = 2
 
 
 def grid_to_screen(gx: float, gy: float, center_x: float, center_y: float) -> tuple[float, float]:
@@ -47,30 +53,47 @@ class StoplightsWindow(arcade.Window):
         # Grey filled intersection (2×2): corners of block in grid (16,16)-(18,18)
         inter_corners = [(16, 16), (18, 16), (18, 18), (16, 18)]
         pts = [grid_to_screen(gx, gy, center_x, center_y) for gx, gy in inter_corners]
-        arcade.draw_polygon_filled(pts, (80, 80, 80))
+        arcade.draw_polygon_filled(pts, ROAD_GREY)
 
-        # Broad grey lines for lanes (isometric segments)
+        # Broad grey lines for lanes (same light grey as intersection)
         LANE_WIDTH = 4
-        GREY = (100, 100, 100)
         for lane in ALL_LANES:
             for i in range(len(lane) - 1):
                 gx1, gy1 = lane[i]
                 gx2, gy2 = lane[i + 1]
                 sx1, sy1 = grid_to_screen(gx1, gy1, center_x, center_y)
                 sx2, sy2 = grid_to_screen(gx2, gy2, center_x, center_y)
-                arcade.draw_line(sx1, sy1, sx2, sy2, GREY, LANE_WIDTH)
+                arcade.draw_line(sx1, sy1, sx2, sy2, ROAD_GREY, LANE_WIDTH)
 
-        # White isometric grid lines on black
+        # Blue outlined buildings for each place (6×6 bounding box)
+        for place in places.PLACES:
+            cells = places.place_bounds(place)
+            if not cells:
+                continue
+            min_gx = min(p[0] for p in cells)
+            max_gx = max(p[0] for p in cells)
+            min_gy = min(p[1] for p in cells)
+            max_gy = max(p[1] for p in cells)
+            corners = [
+                (min_gx, min_gy),
+                (max_gx + 1, min_gy),
+                (max_gx + 1, max_gy + 1),
+                (min_gx, max_gy + 1),
+            ]
+            pts = [grid_to_screen(gx, gy, center_x, center_y) for gx, gy in corners]
+            arcade.draw_polygon_outline(pts, arcade.color.BLUE, BUILDING_OUTLINE_WIDTH)
+
+        # Dark grey isometric grid lines
         for gx in range(GRID_W + 1):
             for gy in range(GRID_H):
                 sx1, sy1 = grid_to_screen(gx, gy, center_x, center_y)
                 sx2, sy2 = grid_to_screen(gx, gy + 1, center_x, center_y)
-                arcade.draw_line(sx1, sy1, sx2, sy2, arcade.color.WHITE, 1)
+                arcade.draw_line(sx1, sy1, sx2, sy2, GRID_COLOR, 1)
         for gy in range(GRID_H + 1):
             for gx in range(GRID_W):
                 sx1, sy1 = grid_to_screen(gx, gy, center_x, center_y)
                 sx2, sy2 = grid_to_screen(gx + 1, gy, center_x, center_y)
-                arcade.draw_line(sx1, sy1, sx2, sy2, arcade.color.WHITE, 1)
+                arcade.draw_line(sx1, sy1, sx2, sy2, GRID_COLOR, 1)
 
         # Cars as red isometric cubes (small diamond / top face)
         CAR_RED = (220, 60, 60)
