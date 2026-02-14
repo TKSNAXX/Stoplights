@@ -21,6 +21,8 @@ TILE_H = 6
 GRID_COLOR = (70, 70, 70)
 ROAD_GREY = (80, 80, 80)
 BUILDING_OUTLINE_WIDTH = 2
+PLACE_LABEL_COLOR = (220, 220, 220)
+PLACE_LABEL_FONT_SIZE = 12
 
 
 def grid_to_screen(gx: float, gy: float, center_x: float, center_y: float) -> tuple[float, float]:
@@ -82,6 +84,13 @@ class StoplightsWindow(arcade.Window):
             ]
             pts = [grid_to_screen(gx, gy, center_x, center_y) for gx, gy in corners]
             arcade.draw_polygon_outline(pts, arcade.color.BLUE, BUILDING_OUTLINE_WIDTH)
+            center_gx = (min_gx + max_gx + 1) / 2
+            center_gy = (min_gy + max_gy + 1) / 2
+            sx, sy = grid_to_screen(center_gx, center_gy, center_x, center_y)
+            arcade.draw_text(
+                place, sx, sy, PLACE_LABEL_COLOR, PLACE_LABEL_FONT_SIZE,
+                anchor_x="center", anchor_y="center",
+            )
 
         # Dark grey isometric grid lines
         for gx in range(GRID_W + 1):
