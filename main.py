@@ -40,7 +40,7 @@ class StoplightsWindow(arcade.Window):
             self._tick_accumulator -= TICK_DT
 
     def on_draw(self):
-        arcade.start_render()
+        self.clear()
         center_x = self.width / 2
         center_y = self.height / 2
 
