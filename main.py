@@ -27,6 +27,38 @@ TICK_DT = 1.0 / TICKS_PER_SECOND
 TILE_W = 12
 TILE_H = 6
 
+# Car: isosceles triangle, four pre-generated shapes (tip in direction of travel)
+CAR_SIZE = 6
+CAR_TRIANGLE_BASE_HALF = 3  # half-width of base in screen pixels
+
+
+def _car_triangle_shape(dir_sx: float, dir_sy: float) -> list[tuple[float, float]]:
+    """Build isosceles triangle as 3 (dx, dy) offsets: tip along (dir_sx, dir_sy) at CAR_SIZE, base perpendicular."""
+    length = math.sqrt(dir_sx * dir_sx + dir_sy * dir_sy)
+    if length < 1e-6:
+        return [(0, CAR_SIZE), (-CAR_TRIANGLE_BASE_HALF, -CAR_TRIANGLE_BASE_HALF), (CAR_TRIANGLE_BASE_HALF, -CAR_TRIANGLE_BASE_HALF)]
+    tx = dir_sx * CAR_SIZE / length
+    ty = dir_sy * CAR_SIZE / length
+    # Perpendicular (for base): (dir_sy, -dir_sx) normalized
+    perp_x = dir_sy / length
+    perp_y = -dir_sx / length
+    b1_x = perp_x * CAR_TRIANGLE_BASE_HALF
+    b1_y = perp_y * CAR_TRIANGLE_BASE_HALF
+    return [(tx, ty), (b1_x, b1_y), (-b1_x, -b1_y)]
+
+
+# Four directions in screen space: N (grid +y), S (grid -y), E (grid +x), W (grid -x)
+_CAR_DIR_N = (-TILE_W, TILE_H)
+_CAR_DIR_S = (TILE_W, -TILE_H)
+_CAR_DIR_E = (TILE_W, TILE_H)
+_CAR_DIR_W = (-TILE_W, -TILE_H)
+CAR_TRIANGLES_BY_DIRECTION: list[list[tuple[float, float]]] = [
+    _car_triangle_shape(_CAR_DIR_N[0], _CAR_DIR_N[1]),  # 0 N (lanes 0,1)
+    _car_triangle_shape(_CAR_DIR_S[0], _CAR_DIR_S[1]),  # 1 S (lanes 2,3)
+    _car_triangle_shape(_CAR_DIR_E[0], _CAR_DIR_E[1]),  # 2 E (lanes 4,5)
+    _car_triangle_shape(_CAR_DIR_W[0], _CAR_DIR_W[1]),  # 3 W (lanes 6,7)
+]
+
 # Display colors
 GRID_COLOR = (70, 70, 70)
 ROAD_GREY = (80, 80, 80)
@@ -88,6 +120,12 @@ def grid_to_screen(gx: float, gy: float, center_x: float, center_y: float) -> tu
     sx = center_x + (gx - gy) * TILE_W
     sy = center_y + (gx + gy - cx - cy) * TILE_H
     return (sx, sy)
+
+
+def _car_direction_index(car) -> int:
+    """Direction index 0..3 (N,S,E,W) for drawing: use exit lane when in intersection, else current lane."""
+    lane = car.pending_out_lane_index if (getattr(car, "intersection_cell", None) and getattr(car, "pending_out_lane_index", None) is not None) else car.lane_index
+    return min(max(0, lane // 2), 3)
 
 
 class StoplightsWindow(arcade.Window):
@@ -244,9 +282,8 @@ class StoplightsWindow(arcade.Window):
                 sx2, sy2 = grid_to_screen(gx + 1, gy, center_x, center_y)
                 arcade.draw_line(sx1, sy1, sx2, sy2, GRID_COLOR, 1)
 
-        # Cars: interpolate prev -> curr over _move_duration with smoothstep (Mini Metro style)
+        # Cars: interpolate prev -> curr; draw as isosceles triangle (tip in direction of travel)
         CAR_DEFAULT = (220, 60, 60)
-        CAR_SIZE = 6
         for car in self.game.cars:
             curr = car.current_cell()
             if curr is None:
@@ -262,15 +299,10 @@ class StoplightsWindow(arcade.Window):
                 gy = prev[1] + blend * (curr[1] - prev[1])
             sx, sy = grid_to_screen(gx, gy, center_x, center_y)
             color = getattr(car, "color", CAR_DEFAULT)
-            arcade.draw_polygon_filled(
-                [
-                    (sx, sy + CAR_SIZE),
-                    (sx + CAR_SIZE, sy),
-                    (sx, sy - CAR_SIZE),
-                    (sx - CAR_SIZE, sy),
-                ],
-                color,
-            )
+            direction_index = _car_direction_index(car)
+            triangle = CAR_TRIANGLES_BY_DIRECTION[direction_index]
+            points = [(sx + dx, sy + dy) for (dx, dy) in triangle]
+            arcade.draw_polygon_filled(points, color)
 
         # Speed slider (custom): bar + thumb + label "Speed: 1x" etc.
         speed_bar_y = SPEED_SLIDER_BOTTOM + (SLIDER_HEIGHT - SLIDER_BAR_HEIGHT) / 2
