@@ -42,10 +42,12 @@ class StoplightsWindow(arcade.Window):
         arcade.set_background_color(arcade.color.BLACK)
         self.game = GameState()
         self._tick_accumulator = 0.0
+        self._car_prev_cell: dict[int, tuple[int, int] | None] = {}
 
     def on_update(self, delta_time: float):
         self._tick_accumulator += delta_time
         while self._tick_accumulator >= TICK_DT:
+            self._car_prev_cell = {id(c): c.current_cell() for c in self.game.cars}
             self.game.tick(TICK_DT)
             self._tick_accumulator -= TICK_DT
 
@@ -113,14 +115,21 @@ class StoplightsWindow(arcade.Window):
                 sx2, sy2 = grid_to_screen(gx + 1, gy, center_x, center_y)
                 arcade.draw_line(sx1, sy1, sx2, sy2, GRID_COLOR, 1)
 
-        # Cars as isometric cubes (small diamond / top face); color from car.color (random at spawn)
+        # Cars as isometric cubes (small diamond / top face); interpolate between prev and curr for smooth motion
         CAR_DEFAULT = (220, 60, 60)
         CAR_SIZE = 6
         for car in self.game.cars:
-            cell = car.current_cell()
-            if cell is None:
+            curr = car.current_cell()
+            if curr is None:
                 continue
-            sx, sy = grid_to_screen(cell[0], cell[1], center_x, center_y)
+            prev = self._car_prev_cell.get(id(car), curr)
+            if prev is None:
+                gx, gy = float(curr[0]), float(curr[1])
+            else:
+                blend = min(1.0, self._tick_accumulator / TICK_DT)
+                gx = prev[0] + blend * (curr[0] - prev[0])
+                gy = prev[1] + blend * (curr[1] - prev[1])
+            sx, sy = grid_to_screen(gx, gy, center_x, center_y)
             color = getattr(car, "color", CAR_DEFAULT)
             arcade.draw_polygon_filled(
                 [
