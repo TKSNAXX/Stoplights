@@ -16,6 +16,7 @@ except ImportError:
 
 from sim.game import GameState
 from sim import places
+from sim.paths import path_position
 from sim.places import is_turn_at_intersection
 from sim.world import ALL_LANES, GRID_W, GRID_H, get_intersection_cells
 
@@ -137,6 +138,7 @@ class StoplightsWindow(arcade.Window):
         self.game = GameState()
         self._tick_accumulator = 0.0
         self._car_prev_cell: dict[int, tuple[int, int] | None] = {}
+        self._car_prev_path_t: dict[int, float] = {}  # path_t before last movement tick (for path interpolation)
         self._car_move_duration: dict[int, float] = {}  # per-car duration for current move (2x for turn at inter)
         self._time = 0.0
         self._last_movement_time: float | None = None
@@ -197,11 +199,17 @@ class StoplightsWindow(arcade.Window):
             was_movement_tick = (self.game._tick_count % n) == (n - 1)
             if was_movement_tick:
                 self._car_prev_cell = {id(c): c.current_cell() for c in self.game.cars}
+                self._car_prev_path_t = {id(c): c.path_t for c in self.game.cars if c.path_t is not None}
                 self._last_movement_time = self._time
             self.game.tick(TICK_DT)
             if was_movement_tick:
                 inter_set = frozenset(get_intersection_cells())
                 for car in self.game.cars:
+                    # Cars on path: duration 2x only for turns (straight stays 1x)
+                    if car.path_t is not None and car.pending_out_lane_index is not None:
+                        is_turn = is_turn_at_intersection(car.lane_index, car.pending_out_lane_index)
+                        self._car_move_duration[id(car)] = 2.0 * self._move_duration if is_turn else self._move_duration
+                        continue
                     prev = self._car_prev_cell.get(id(car))
                     curr = car.current_cell()
                     if prev is None or curr is None or prev == curr:
@@ -284,21 +292,30 @@ class StoplightsWindow(arcade.Window):
                 sx2, sy2 = grid_to_screen(gx + 1, gy, center_x, center_y)
                 arcade.draw_line(sx1, sy1, sx2, sy2, GRID_COLOR, 1)
 
-        # Cars: interpolate prev -> curr; draw as isosceles triangle (tip in direction of travel)
+        # Cars: interpolate prev -> curr; on path use path_position with blended path_t
         CAR_DEFAULT = (220, 60, 60)
         for car in self.game.cars:
             curr = car.current_cell()
             if curr is None:
                 continue
-            prev = self._car_prev_cell.get(id(car), curr)
-            if prev is None or self._last_movement_time is None:
-                gx, gy = float(curr[0]), float(curr[1])
-            else:
-                elapsed = self._time - self._last_movement_time
+            # On intersection path: position from path with blended t
+            if car.path_t is not None and car.intersection_cell is not None and car.pending_out_lane_index is not None:
+                prev_t = self._car_prev_path_t.get(id(car), car.path_t)
+                elapsed = self._time - self._last_movement_time if self._last_movement_time is not None else 0.0
                 duration = self._car_move_duration.get(id(car), self._move_duration)
-                blend = smoothstep(min(1.0, elapsed / duration))
-                gx = prev[0] + blend * (curr[0] - prev[0])
-                gy = prev[1] + blend * (curr[1] - prev[1])
+                blend = smoothstep(min(1.0, elapsed / duration)) if duration > 0 else 1.0
+                blended_t = prev_t + blend * (car.path_t - prev_t)
+                gx, gy = path_position(car.lane_index, car.pending_out_lane_index, blended_t)
+            else:
+                prev = self._car_prev_cell.get(id(car), curr)
+                if prev is None or self._last_movement_time is None:
+                    gx, gy = float(curr[0]), float(curr[1])
+                else:
+                    elapsed = self._time - self._last_movement_time
+                    duration = self._car_move_duration.get(id(car), self._move_duration)
+                    blend = smoothstep(min(1.0, elapsed / duration))
+                    gx = prev[0] + blend * (curr[0] - prev[0])
+                    gy = prev[1] + blend * (curr[1] - prev[1])
             sx, sy = grid_to_screen(gx, gy, center_x, center_y)
             color = getattr(car, "color", CAR_DEFAULT)
             direction_index = _car_direction_index(car)
