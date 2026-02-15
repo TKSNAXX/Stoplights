@@ -144,7 +144,7 @@ class StoplightsWindow(arcade.Window):
                 sx2, sy2 = grid_to_screen(gx2, gy2, center_x, center_y)
                 arcade.draw_line(sx1, sy1, sx2, sy2, color, LANE_WIDTH)
 
-        # Blue outlined buildings for each place (6×6 bounding box)
+        # Place outlines: 5×5 bounding box at the end of each road (from place_bounds)
         for place in places.PLACES:
             cells = places.place_bounds(place)
             if not cells:

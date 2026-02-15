@@ -4,7 +4,16 @@ Four places: Housing (south), Office (north), Park (east), Shopping (west). Two-
 """
 from __future__ import annotations
 
-from sim.world import GRID_W, GRID_H, ROAD_LENGTH, PARK_PLACE_X_LO, PARK_PLACE_WIDTH
+from sim.world import (
+    GRID_W,
+    GRID_H,
+    PLACE_SIZE,
+    HOUSING_PLACE_X_LO,
+    OFFICE_PLACE_X_LO,
+    PARK_PLACE_X_LO,
+    PARK_PLACE_Y_LO,
+    SHOPPING_PLACE_Y_LO,
+)
 
 # Place names: south = Housing, north = Office, east = Park, west = Shopping
 SOUTH = "Housing"
@@ -36,15 +45,19 @@ LANE_DOWNWARD_INDICES = {2, 3, 4, 7}
 
 
 def place_bounds(place: str) -> list[tuple[int, int]]:
-    """Return list of (gx, gy) grid cells for the 6×6 place."""
+    """Return list of (gx, gy) grid cells for the 5×5 place at the end of its road."""
     if place == SOUTH:
-        return [(x, y) for x in range(GRID_W) for y in range(6)]
+        # Housing: 5×5 at south, x band centered on N–S road
+        return [(x, y) for x in range(HOUSING_PLACE_X_LO, HOUSING_PLACE_X_LO + PLACE_SIZE) for y in range(PLACE_SIZE)]
     if place == NORTH:
-        return [(x, y) for x in range(GRID_W) for y in range(6 + ROAD_LENGTH, GRID_H)]
+        # Office: 5×5 at north
+        return [(x, y) for x in range(OFFICE_PLACE_X_LO, OFFICE_PLACE_X_LO + PLACE_SIZE) for y in range(GRID_H - PLACE_SIZE, GRID_H)]
     if place == PARK:
-        return [(x, y) for x in range(PARK_PLACE_X_LO, PARK_PLACE_X_LO + PARK_PLACE_WIDTH) for y in range(7, 13)]
+        # Park: 5×5 at east end of Park road
+        return [(x, y) for x in range(PARK_PLACE_X_LO, PARK_PLACE_X_LO + PLACE_SIZE) for y in range(PARK_PLACE_Y_LO, PARK_PLACE_Y_LO + PLACE_SIZE)]
     if place == SHOPPING:
-        return [(x, y) for x in range(3) for y in range(7, 12)]  # 15 cells (3×5)
+        # Shopping: 5×5 at west end
+        return [(x, y) for x in range(PLACE_SIZE) for y in range(SHOPPING_PLACE_Y_LO, SHOPPING_PLACE_Y_LO + PLACE_SIZE)]
     return []
 
 
