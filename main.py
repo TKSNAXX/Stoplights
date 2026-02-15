@@ -5,7 +5,7 @@ Game loop: fixed timestep calls sim.tick(); no player input.
 """
 import arcade
 
-from sim.game import GameState
+from sim.game import GameState, MOVEMENT_EVERY_N_TICKS
 from sim import places
 from sim.world import ALL_LANES, GRID_W, GRID_H, get_intersection_cells
 
@@ -27,6 +27,12 @@ PLACE_LABEL_COLOR = (220, 220, 220)
 PLACE_LABEL_FONT_SIZE = 12
 
 
+def smoothstep(t: float) -> float:
+    """Smooth easing: 0 at 0, 1 at 1, smooth in between (Mini Metro style)."""
+    t = max(0.0, min(1.0, t))
+    return t * t * (3.0 - 2.0 * t)
+
+
 def grid_to_screen(gx: float, gy: float, center_x: float, center_y: float) -> tuple[float, float]:
     """Isometric projection: grid (gx, gy) -> screen (sx, sy). Grid center maps to (center_x, center_y)."""
     cx = (GRID_W - 1) / 2
@@ -43,11 +49,19 @@ class StoplightsWindow(arcade.Window):
         self.game = GameState()
         self._tick_accumulator = 0.0
         self._car_prev_cell: dict[int, tuple[int, int] | None] = {}
+        self._time = 0.0
+        self._last_movement_time: float | None = None
+        # Interpolation duration (sec) for each cell move; slightly longer for smoother ease-in
+        self._move_duration = 0.2
 
     def on_update(self, delta_time: float):
+        self._time += delta_time
         self._tick_accumulator += delta_time
         while self._tick_accumulator >= TICK_DT:
-            self._car_prev_cell = {id(c): c.current_cell() for c in self.game.cars}
+            # Snapshot only before a movement tick so prev isn't overwritten by no-op ticks
+            if (self.game._tick_count % MOVEMENT_EVERY_N_TICKS) == (MOVEMENT_EVERY_N_TICKS - 1):
+                self._car_prev_cell = {id(c): c.current_cell() for c in self.game.cars}
+                self._last_movement_time = self._time
             self.game.tick(TICK_DT)
             self._tick_accumulator -= TICK_DT
 
@@ -115,7 +129,7 @@ class StoplightsWindow(arcade.Window):
                 sx2, sy2 = grid_to_screen(gx + 1, gy, center_x, center_y)
                 arcade.draw_line(sx1, sy1, sx2, sy2, GRID_COLOR, 1)
 
-        # Cars as isometric cubes (small diamond / top face); interpolate between prev and curr for smooth motion
+        # Cars: interpolate prev -> curr over _move_duration with smoothstep (Mini Metro style)
         CAR_DEFAULT = (220, 60, 60)
         CAR_SIZE = 6
         for car in self.game.cars:
@@ -123,10 +137,11 @@ class StoplightsWindow(arcade.Window):
             if curr is None:
                 continue
             prev = self._car_prev_cell.get(id(car), curr)
-            if prev is None:
+            if prev is None or self._last_movement_time is None:
                 gx, gy = float(curr[0]), float(curr[1])
             else:
-                blend = min(1.0, self._tick_accumulator / TICK_DT)
+                elapsed = self._time - self._last_movement_time
+                blend = smoothstep(min(1.0, elapsed / self._move_duration))
                 gx = prev[0] + blend * (curr[0] - prev[0])
                 gy = prev[1] + blend * (curr[1] - prev[1])
             sx, sy = grid_to_screen(gx, gy, center_x, center_y)
