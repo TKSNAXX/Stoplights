@@ -49,6 +49,10 @@ _LANE_7 = [(3 + (_SHOPPING_ROAD_LENGTH - 1 - i), _SHOPPING_OUTBOUND_Y) for i in 
 
 ALL_LANES: list[list[tuple[int, int]]] = [_LANE_0, _LANE_1, _LANE_2, _LANE_3, _LANE_4, _LANE_5, _LANE_6, _LANE_7]
 
+# Park place starts immediately east of the Park road (for place_bounds).
+PARK_PLACE_X_LO = 4 + _WEST_ARM_WIDTH + SEGMENT_LENGTH  # 24 when _WEST_ARM_WIDTH=16
+PARK_PLACE_WIDTH = 6
+
 
 def get_intersection_cells() -> list[tuple[int, int]]:
     """Return list of (gx, gy) that are part of the 2×2 intersection."""

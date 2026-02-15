@@ -4,7 +4,7 @@ Four places: Housing (south), Office (north), Park (east), Shopping (west). Two-
 """
 from __future__ import annotations
 
-from sim.world import GRID_W, GRID_H, ROAD_LENGTH
+from sim.world import GRID_W, GRID_H, ROAD_LENGTH, PARK_PLACE_X_LO, PARK_PLACE_WIDTH
 
 # Place names: south = Housing, north = Office, east = Park, west = Shopping
 SOUTH = "Housing"
@@ -42,7 +42,7 @@ def place_bounds(place: str) -> list[tuple[int, int]]:
     if place == NORTH:
         return [(x, y) for x in range(GRID_W) for y in range(6 + ROAD_LENGTH, GRID_H)]
     if place == PARK:
-        return [(x, y) for x in range(14, GRID_W) for y in range(7, 13)]
+        return [(x, y) for x in range(PARK_PLACE_X_LO, PARK_PLACE_X_LO + PARK_PLACE_WIDTH) for y in range(7, 13)]
     if place == SHOPPING:
         return [(x, y) for x in range(3) for y in range(7, 12)]  # 15 cells (3×5)
     return []
