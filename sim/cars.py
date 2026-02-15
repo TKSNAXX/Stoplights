@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sim.places import NORTH, spawn_lanes_for_place
+from sim.places import NORTH, SOUTH, spawn_lanes_for_place
 from sim.world import ALL_LANES
 
 
@@ -29,9 +29,9 @@ class Car:
 
 
 def spawn_car(origin: str, destination: str | None = None) -> Car:
-    """Create a car at the start of a lane leaving origin. destination defaults to Office."""
+    """Create a car at the start of a lane leaving origin. destination defaults to the other place."""
     if destination is None or destination == origin:
-        destination = NORTH  # Office
+        destination = NORTH if origin == SOUTH else SOUTH
     lanes = spawn_lanes_for_place(origin)
     lane_index = lanes[0] if lanes else 0
     return Car(origin=origin, destination=destination, lane_index=lane_index, position_in_lane=0)

@@ -1,22 +1,26 @@
 """
 Place definitions and spawn points.
-Two places: Housing (south), Office (north). One lane between them. Housing spawns only.
+Two places: Housing (south), Office (north). Two lanes between them; both spawn.
 """
 from __future__ import annotations
 
 from sim.world import GRID_W, GRID_H, ROAD_LENGTH
 
-# Place names: south = Housing (spawn), north = Office (destination)
+# Place names: south = Housing, north = Office
 SOUTH = "Housing"
 NORTH = "Office"
 
 PLACES = (SOUTH, NORTH)
 
-# Only Housing has a spawn lane (the single lane, index 0).
+# Lane 0 = Housing->Office, lane 1 = Office->Housing.
 LANES_BY_PLACE: dict[str, list[int]] = {
     SOUTH: [0],
-    NORTH: [],
+    NORTH: [1],
 }
+
+# For display: which lane is drawn in which grey (upward = lighter, downward = darker).
+LANE_UPWARD_INDICES = {0}
+LANE_DOWNWARD_INDICES = {1}
 
 
 def place_bounds(place: str) -> list[tuple[int, int]]:

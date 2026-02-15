@@ -1,6 +1,6 @@
 """
 Single tick(dt) that updates spawn and all cars.
-Two locations only: Housing spawns, Office receives. One lane, no intersection.
+Two locations: Housing and Office both spawn; two lanes, no intersection.
 """
 from __future__ import annotations
 
@@ -9,13 +9,13 @@ import random
 from sim import cars, places
 from sim.world import ALL_LANES
 
-# Spawn: one car every N seconds at Housing (with jitter)
+# Spawn: one car every N seconds per place (with jitter)
 SPAWN_INTERVAL = 2.0
 SPAWN_JITTER = 0.3
 SPAWN_INTERVAL_MIN = 1.0
 
-# Only Housing spawns.
-SPAWN_PLACES = (places.SOUTH,)
+# Both Housing and Office spawn.
+SPAWN_PLACES = (places.SOUTH, places.NORTH)
 
 
 class GameState:
@@ -28,7 +28,7 @@ class GameState:
 
     def tick(self, dt: float) -> None:
         self._accumulated_time += dt
-        # Spawn only at Housing
+        # Spawn at Housing and Office
         for place in SPAWN_PLACES:
             self.spawn_timers[place] += dt
             if self.spawn_timers[place] >= SPAWN_INTERVAL:

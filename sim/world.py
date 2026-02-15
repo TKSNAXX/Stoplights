@@ -1,6 +1,6 @@
 """
 World grid and lane geometry.
-Two locations (Housing south, Office north), one lane between them. No intersection.
+Two locations (Housing south, Office north), two lanes between them. No intersection.
 """
 from __future__ import annotations
 
@@ -9,11 +9,12 @@ ROAD_LENGTH = 10
 GRID_W = 6
 GRID_H = 6 + ROAD_LENGTH + 6  # 22
 
-# Single lane: Housing (south) -> Office (north). Biased rightward (x=3), road cells only.
-_CX = 3
-_LANE = [(_CX, 6 + i) for i in range(ROAD_LENGTH)]
+# Lane 0: Housing (south) -> Office (north) at x=3.
+_LANE_HOUSING_TO_OFFICE = [(3, 6 + i) for i in range(ROAD_LENGTH)]
+# Lane 1: Office (north) -> Housing (south) at x=2 (one column left). Order: Office end first.
+_LANE_OFFICE_TO_HOUSING = [(2, 15 - i) for i in range(ROAD_LENGTH)]
 
-ALL_LANES: list[list[tuple[int, int]]] = [_LANE]
+ALL_LANES: list[list[tuple[int, int]]] = [_LANE_HOUSING_TO_OFFICE, _LANE_OFFICE_TO_HOUSING]
 
 
 if __name__ == "__main__":

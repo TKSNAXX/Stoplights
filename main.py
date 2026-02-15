@@ -1,6 +1,6 @@
 """
 Stoplights — entry point.
-Display layer: reads sim state, draws isometric grid, one lane, two places (Housing, Office), cars.
+Display layer: reads sim state, draws isometric grid, two lanes (two places), cars.
 Game loop: fixed timestep calls sim.tick(); no player input.
 """
 import arcade
@@ -20,6 +20,8 @@ TILE_H = 6
 # Display colors
 GRID_COLOR = (70, 70, 70)
 ROAD_GREY = (80, 80, 80)
+LANE_UPWARD_GREY = (165, 165, 165)
+LANE_DOWNWARD_GREY = (80, 80, 80)
 BUILDING_OUTLINE_WIDTH = 2
 PLACE_LABEL_COLOR = (220, 220, 220)
 PLACE_LABEL_FONT_SIZE = 12
@@ -52,15 +54,16 @@ class StoplightsWindow(arcade.Window):
         center_x = self.width / 2
         center_y = self.height / 2
 
-        # Lane lines (one lane: Housing -> Office)
+        # Lane lines: upward (Housing->Office) = lighter grey, downward (Office->Housing) = darker
         LANE_WIDTH = 4
-        for lane in ALL_LANES:
+        for lane_index, lane in enumerate(ALL_LANES):
+            color = LANE_UPWARD_GREY if lane_index in places.LANE_UPWARD_INDICES else LANE_DOWNWARD_GREY
             for i in range(len(lane) - 1):
                 gx1, gy1 = lane[i]
                 gx2, gy2 = lane[i + 1]
                 sx1, sy1 = grid_to_screen(gx1, gy1, center_x, center_y)
                 sx2, sy2 = grid_to_screen(gx2, gy2, center_x, center_y)
-                arcade.draw_line(sx1, sy1, sx2, sy2, ROAD_GREY, LANE_WIDTH)
+                arcade.draw_line(sx1, sy1, sx2, sy2, color, LANE_WIDTH)
 
         # Blue outlined buildings for each place (6×6 bounding box)
         for place in places.PLACES:
