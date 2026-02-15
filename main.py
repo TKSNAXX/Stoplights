@@ -72,6 +72,9 @@ PLACE_LABEL_COLOR = (220, 220, 220)
 PLACE_LABEL_FONT_SIZE = 12
 # Intersection path overlay (drawn on top of intersection)
 INTERSECTION_PATH_COLOR = (70, 70, 90)
+PATH_COLOR_RIGHT = (255, 165, 0)      # Orange: right turns
+PATH_COLOR_VERT_LEFT = (220, 60, 60)  # Red: vertical left turns
+PATH_COLOR_HORIZ_LEFT = (80, 200, 100)  # Green: horizontal left turns
 INTERSECTION_PATH_WIDTH = 1
 INTERSECTION_PATH_SAMPLES = 20
 
@@ -138,6 +141,18 @@ def _car_direction_index(car, path_t: float | None = None) -> int:
     if path_t is not None and getattr(car, "path_entry_time", None) is not None and getattr(car, "path_duration", None) is not None and getattr(car, "pending_out_lane_index", None) is not None:
         return path_direction_index(car.lane_index, car.pending_out_lane_index, path_t)
     return LANE_TO_DIRECTION_INDEX[min(max(0, car.lane_index), 7)]
+
+
+def path_color_for_turn(in_lane: int, out_lane: int) -> tuple[int, int, int]:
+    """Diagnostic path color: orange (right), red (vertical left), green (horizontal left), grey (straight)."""
+    key = (in_lane, out_lane)
+    if key in {(0, 5), (2, 7), (4, 1), (6, 3)}:
+        return PATH_COLOR_RIGHT
+    if key in {(0, 7), (2, 5)}:
+        return PATH_COLOR_VERT_LEFT
+    if key in {(4, 3), (6, 1)}:
+        return PATH_COLOR_HORIZ_LEFT
+    return INTERSECTION_PATH_COLOR
 
 
 class StoplightsWindow(arcade.Window):
@@ -264,6 +279,7 @@ class StoplightsWindow(arcade.Window):
             for out_lane in places.OUT_LANE_INDICES:
                 if not places.is_valid_intersection_path(in_lane, out_lane):
                     continue
+                path_color = path_color_for_turn(in_lane, out_lane)
                 path_pts = []
                 for i in range(n_samples):
                     t = i / (n_samples - 1)
@@ -273,7 +289,7 @@ class StoplightsWindow(arcade.Window):
                 for j in range(len(path_pts) - 1):
                     sx1, sy1 = path_pts[j]
                     sx2, sy2 = path_pts[j + 1]
-                    arcade.draw_line(sx1, sy1, sx2, sy2, INTERSECTION_PATH_COLOR, INTERSECTION_PATH_WIDTH)
+                    arcade.draw_line(sx1, sy1, sx2, sy2, path_color, INTERSECTION_PATH_WIDTH)
 
         # Lane lines: upward (Housing->Office) = lighter grey, downward (Office->Housing) = darker
         LANE_WIDTH = 4
