@@ -9,8 +9,8 @@ ROAD_LENGTH = 10
 GRID_W = 6
 GRID_H = 6 + ROAD_LENGTH + 6  # 22
 
-# Single lane: Housing (south) -> Office (north). Center column, road cells only.
-_CX = 2
+# Single lane: Housing (south) -> Office (north). Biased rightward (x=3), road cells only.
+_CX = 3
 _LANE = [(_CX, 6 + i) for i in range(ROAD_LENGTH)]
 
 ALL_LANES: list[list[tuple[int, int]]] = [_LANE]
