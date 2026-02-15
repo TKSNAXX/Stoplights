@@ -28,8 +28,8 @@ TILE_W = 12
 TILE_H = 6
 
 # Car: isosceles triangle, four pre-generated shapes (tip in direction of travel)
-CAR_SIZE = 6
-CAR_TRIANGLE_BASE_HALF = 3  # half-width of base in screen pixels
+CAR_SIZE = 10  # distance from center to tip (bigger, longer aspect)
+CAR_TRIANGLE_BASE_HALF = 2  # half-width of base (narrower = more arrow-like)
 
 
 def _car_triangle_shape(dir_sx: float, dir_sy: float) -> list[tuple[float, float]]:
