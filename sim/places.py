@@ -1,6 +1,6 @@
 """
 Place definitions and spawn points.
-Two places: Housing (south), Office (north). Two lanes between them; both spawn.
+Two places: Housing (south), Office (north). Two-way road with midway intersection; both spawn.
 """
 from __future__ import annotations
 
@@ -12,15 +12,24 @@ NORTH = "Office"
 
 PLACES = (SOUTH, NORTH)
 
-# Lane 0 = Housing->Office, lane 1 = Office->Housing.
+# Spawn: Housing on lane 0 (Housing→inter), Office on lane 2 (Office→inter).
 LANES_BY_PLACE: dict[str, list[int]] = {
     SOUTH: [0],
-    NORTH: [1],
+    NORTH: [2],
 }
 
-# For display: which lane is drawn in which grey (upward = lighter, downward = darker).
-LANE_UPWARD_INDICES = {0}
-LANE_DOWNWARD_INDICES = {1}
+# At intersection: which lane to transition to (in-lane index → out-lane index).
+# Lane 0 (Housing→inter) → lane 1 (inter→Office). Lane 2 (Office→inter) → lane 3 (inter→Housing).
+NEXT_LANE_AT_INTERSECTION: dict[int, int] = {0: 1, 2: 3}
+
+# Lanes that are "in" (approach intersection); end of these = transition. Others = arrival, remove car.
+IN_LANE_INDICES = {0, 2}
+# Lanes that are "out" (leave intersection toward place); end = arrival.
+OUT_LANE_INDICES = {1, 3}
+
+# For display: upward = Housing→Office (lanes 0, 1), downward = Office→Housing (lanes 2, 3).
+LANE_UPWARD_INDICES = {0, 1}
+LANE_DOWNWARD_INDICES = {2, 3}
 
 
 def place_bounds(place: str) -> list[tuple[int, int]]:

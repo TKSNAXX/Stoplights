@@ -1,6 +1,6 @@
 """
 Single tick(dt) that updates spawn and all cars.
-Two locations: Housing and Office both spawn; two lanes, no intersection.
+Two locations, two-way road with midway intersection; cars transition at intersection or remove on arrival.
 """
 from __future__ import annotations
 
@@ -67,9 +67,18 @@ class GameState:
                 next_lane_index = car.lane_index
                 next_position = car.position_in_lane + 1
             else:
-                # At end of lane: arrived at Office, remove car
-                to_remove.append(car)
-                continue
+                # At end of lane: transition at intersection or arrival at place
+                if car.lane_index in places.IN_LANE_INDICES:
+                    next_lane_index = places.NEXT_LANE_AT_INTERSECTION.get(car.lane_index)
+                    if next_lane_index is not None:
+                        out_lane = ALL_LANES[next_lane_index]
+                        if out_lane:
+                            next_cell = out_lane[0]
+                            next_position = 0
+                if next_cell is None:
+                    # Arrival (end of out-lane) or no transition
+                    to_remove.append(car)
+                    continue
 
             if next_cell is None or next_cell in occupied or next_lane_index is None or next_position is None:
                 continue

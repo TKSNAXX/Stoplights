@@ -7,7 +7,7 @@ import arcade
 
 from sim.game import GameState
 from sim import places
-from sim.world import ALL_LANES, GRID_W, GRID_H
+from sim.world import ALL_LANES, GRID_W, GRID_H, get_intersection_cells
 
 # Sim ticks per second
 TICKS_PER_SECOND = 15
@@ -53,6 +53,17 @@ class StoplightsWindow(arcade.Window):
         self.clear()
         center_x = self.width / 2
         center_y = self.height / 2
+
+        # Grey filled intersection (2×2) midway
+        inter_cells = get_intersection_cells()
+        if inter_cells:
+            min_gx = min(p[0] for p in inter_cells)
+            max_gx = max(p[0] for p in inter_cells)
+            min_gy = min(p[1] for p in inter_cells)
+            max_gy = max(p[1] for p in inter_cells)
+            inter_corners = [(min_gx, min_gy), (max_gx + 1, min_gy), (max_gx + 1, max_gy + 1), (min_gx, max_gy + 1)]
+            pts = [grid_to_screen(gx, gy, center_x, center_y) for gx, gy in inter_corners]
+            arcade.draw_polygon_filled(pts, ROAD_GREY)
 
         # Lane lines: upward (Housing->Office) = lighter grey, downward (Office->Housing) = darker
         LANE_WIDTH = 4
