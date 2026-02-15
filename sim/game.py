@@ -24,8 +24,9 @@ MOVEMENT_EVERY_N_TICKS = 16
 class GameState:
     def __init__(self):
         self.cars: list[cars.Car] = []
+        self.spawn_interval: float = SPAWN_INTERVAL  # mutable; set by traffic slider
         self.spawn_timers: dict[str, float] = {
-            p: random.uniform(0, SPAWN_INTERVAL) for p in SPAWN_PLACES
+            p: random.uniform(0, self.spawn_interval) for p in SPAWN_PLACES
         }
         self._accumulated_time = 0.0
         self._tick_count = 0
@@ -35,8 +36,8 @@ class GameState:
         # Spawn: run every tick so spawn timing stays correct in real time.
         for place in SPAWN_PLACES:
             self.spawn_timers[place] += dt
-            if self.spawn_timers[place] >= SPAWN_INTERVAL:
-                interval = SPAWN_INTERVAL + random.uniform(-SPAWN_JITTER, SPAWN_JITTER)
+            if self.spawn_timers[place] >= self.spawn_interval:
+                interval = self.spawn_interval + random.uniform(-SPAWN_JITTER, SPAWN_JITTER)
                 interval = max(SPAWN_INTERVAL_MIN, interval)
                 self.spawn_timers[place] -= interval
                 self.cars.append(cars.spawn_car(place))
