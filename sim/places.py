@@ -42,6 +42,14 @@ OUT_LANE_INDICES = {1, 3, 5, 7}
 # Same-arm straight-through at intersection (in_lane, out_lane). Any other valid pair is a turn.
 STRAIGHT_TRANSITIONS = {(0, 1), (2, 3), (4, 5), (6, 7)}
 
+# U-turn at intersection: return to same arm (do not draw as valid path).
+U_TURN_TRANSITIONS = {(0, 3), (2, 1), (4, 5), (6, 7)}
+
+
+def is_valid_intersection_path(in_lane_index: int, out_lane_index: int) -> bool:
+    """True if this (in, out) pair is a valid path to draw (not a U-turn)."""
+    return (in_lane_index, out_lane_index) not in U_TURN_TRANSITIONS
+
 
 def is_turn_at_intersection(in_lane_index: int, out_lane_index: int) -> bool:
     """True if this in→out transition at the intersection is a turn (different arm), not straight."""

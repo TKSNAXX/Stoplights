@@ -70,6 +70,10 @@ LANE_DOWNWARD_GREY = (80, 80, 80)
 BUILDING_OUTLINE_WIDTH = 2
 PLACE_LABEL_COLOR = (220, 220, 220)
 PLACE_LABEL_FONT_SIZE = 12
+# Intersection path overlay (drawn on top of intersection)
+INTERSECTION_PATH_COLOR = (70, 70, 90)
+INTERSECTION_PATH_WIDTH = 1
+INTERSECTION_PATH_SAMPLES = 20
 
 # Traffic slider (custom): bottom-left
 SLIDER_LEFT = 20
@@ -233,6 +237,18 @@ class StoplightsWindow(arcade.Window):
         center_x = self.width / 2
         center_y = self.height / 2
 
+        # Dark grey isometric grid lines (under everything)
+        for gx in range(GRID_W + 1):
+            for gy in range(GRID_H):
+                sx1, sy1 = grid_to_screen(gx, gy, center_x, center_y)
+                sx2, sy2 = grid_to_screen(gx, gy + 1, center_x, center_y)
+                arcade.draw_line(sx1, sy1, sx2, sy2, GRID_COLOR, 1)
+        for gy in range(GRID_H + 1):
+            for gx in range(GRID_W):
+                sx1, sy1 = grid_to_screen(gx, gy, center_x, center_y)
+                sx2, sy2 = grid_to_screen(gx + 1, gy, center_x, center_y)
+                arcade.draw_line(sx1, sy1, sx2, sy2, GRID_COLOR, 1)
+
         # Grey filled intersection (2×2) midway
         inter_cells = get_intersection_cells()
         if inter_cells:
@@ -243,6 +259,23 @@ class StoplightsWindow(arcade.Window):
             inter_corners = [(min_gx, min_gy), (max_gx + 1, min_gy), (max_gx + 1, max_gy + 1), (min_gx, max_gy + 1)]
             pts = [grid_to_screen(gx, gy, center_x, center_y) for gx, gy in inter_corners]
             arcade.draw_polygon_filled(pts, ROAD_GREY)
+
+        # Intersection paths: sample each valid (in, out) path and draw polyline on top of intersection
+        n_samples = max(2, INTERSECTION_PATH_SAMPLES)
+        for in_lane in places.IN_LANE_INDICES:
+            for out_lane in places.OUT_LANE_INDICES:
+                if not places.is_valid_intersection_path(in_lane, out_lane):
+                    continue
+                path_pts = []
+                for i in range(n_samples):
+                    t = i / (n_samples - 1)
+                    gx, gy = path_position(in_lane, out_lane, t)
+                    sx, sy = grid_to_screen(gx, gy, center_x, center_y)
+                    path_pts.append((sx, sy))
+                for j in range(len(path_pts) - 1):
+                    sx1, sy1 = path_pts[j]
+                    sx2, sy2 = path_pts[j + 1]
+                    arcade.draw_line(sx1, sy1, sx2, sy2, INTERSECTION_PATH_COLOR, INTERSECTION_PATH_WIDTH)
 
         # Lane lines: upward (Housing->Office) = lighter grey, downward (Office->Housing) = darker
         LANE_WIDTH = 4
@@ -280,17 +313,17 @@ class StoplightsWindow(arcade.Window):
                 anchor_x="center", anchor_y="center",
             )
 
-        # Dark grey isometric grid lines
-        for gx in range(GRID_W + 1):
-            for gy in range(GRID_H):
-                sx1, sy1 = grid_to_screen(gx, gy, center_x, center_y)
-                sx2, sy2 = grid_to_screen(gx, gy + 1, center_x, center_y)
-                arcade.draw_line(sx1, sy1, sx2, sy2, GRID_COLOR, 1)
-        for gy in range(GRID_H + 1):
-            for gx in range(GRID_W):
-                sx1, sy1 = grid_to_screen(gx, gy, center_x, center_y)
-                sx2, sy2 = grid_to_screen(gx + 1, gy, center_x, center_y)
-                arcade.draw_line(sx1, sy1, sx2, sy2, GRID_COLOR, 1)
+        # Cardinal direction labels at map edges (N/S/E/W)
+        cx_grid = (GRID_W - 1) / 2
+        cy_grid = (GRID_H - 1) / 2
+        sx_n, sy_n = grid_to_screen(cx_grid, GRID_H - 1, center_x, center_y)
+        sx_s, sy_s = grid_to_screen(cx_grid, 0, center_x, center_y)
+        sx_e, sy_e = grid_to_screen(GRID_W - 1, cy_grid, center_x, center_y)
+        sx_w, sy_w = grid_to_screen(0, cy_grid, center_x, center_y)
+        arcade.draw_text("N", sx_n, sy_n, PLACE_LABEL_COLOR, PLACE_LABEL_FONT_SIZE, anchor_x="center", anchor_y="bottom")
+        arcade.draw_text("S", sx_s, sy_s, PLACE_LABEL_COLOR, PLACE_LABEL_FONT_SIZE, anchor_x="center", anchor_y="top")
+        arcade.draw_text("E", sx_e, sy_e, PLACE_LABEL_COLOR, PLACE_LABEL_FONT_SIZE, anchor_x="right", anchor_y="center")
+        arcade.draw_text("W", sx_w, sy_w, PLACE_LABEL_COLOR, PLACE_LABEL_FONT_SIZE, anchor_x="left", anchor_y="center")
 
         # Cars: interpolate prev -> curr; on path use path_position with blended path_t
         CAR_DEFAULT = (220, 60, 60)
