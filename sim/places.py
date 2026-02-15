@@ -39,8 +39,8 @@ IN_LANE_INDICES = {0, 2, 4, 6}
 # Lanes that are "out" (leave intersection toward place); end = arrival.
 OUT_LANE_INDICES = {1, 3, 5, 7}
 
-# Same-arm straight-through at intersection (in_lane, out_lane). Any other valid pair is a turn.
-STRAIGHT_TRANSITIONS = {(0, 1), (2, 3), (4, 5), (6, 7)}
+# Straight-through at intersection (in_lane, out_lane): N-S arm, E-W arm, and cross (Park↔Shopping).
+STRAIGHT_TRANSITIONS = {(0, 1), (2, 3), (4, 5), (6, 7), (4, 7), (6, 5)}
 
 # U-turn at intersection: return to same arm (do not draw as valid path).
 U_TURN_TRANSITIONS = {(0, 3), (2, 1), (4, 5), (6, 7)}
