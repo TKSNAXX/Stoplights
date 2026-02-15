@@ -30,6 +30,7 @@ class GameState:
         }
         self._accumulated_time = 0.0
         self._tick_count = 0
+        self.movement_every_n_ticks: int = MOVEMENT_EVERY_N_TICKS  # mutable; set by speed slider
 
     def tick(self, dt: float) -> None:
         self._accumulated_time += dt
@@ -43,7 +44,7 @@ class GameState:
                 self.cars.append(cars.spawn_car(place))
 
         self._tick_count += 1
-        if self._tick_count % MOVEMENT_EVERY_N_TICKS != 0:
+        if self._tick_count % self.movement_every_n_ticks != 0:
             return
 
         # Occupied cells at start of movement (includes intersection cells).
