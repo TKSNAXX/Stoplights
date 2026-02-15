@@ -7,7 +7,7 @@ from __future__ import annotations
 import random
 
 from sim import cars, places
-from sim.world import ALL_LANES
+from sim.world import ALL_LANES, intersection_cell_for_transition
 
 # Spawn: one car every N seconds per place (with jitter)
 SPAWN_INTERVAL = 2.0
@@ -46,18 +46,38 @@ class GameState:
         if self._tick_count % MOVEMENT_EVERY_N_TICKS != 0:
             return
 
-        # Occupied cells at start of movement (run every MOVEMENT_EVERY_N_TICKS ticks).
+        # Occupied cells at start of movement (includes intersection cells).
         occupied = {c.current_cell() for c in self.cars if c.current_cell() is not None}
+        to_remove: list[cars.Car] = []
 
-        # Process cars front-first (by lane, then by position descending)
+        # Pass 1: cars in the intersection move to the start of their outbound lane.
+        for car in self.cars:
+            if car in to_remove or car.intersection_cell is None or car.pending_out_lane_index is None:
+                continue
+            cell = car.current_cell()
+            if cell is None:
+                continue
+            out_lane = ALL_LANES[car.pending_out_lane_index]
+            if not out_lane:
+                continue
+            next_cell = out_lane[0]
+            if next_cell in occupied:
+                continue
+            occupied.discard(cell)
+            occupied.add(next_cell)
+            car.lane_index = car.pending_out_lane_index
+            car.position_in_lane = 0
+            car.intersection_cell = None
+            car.pending_out_lane_index = None
+
+        # Pass 2: cars not in the intersection advance (in lane, or enter intersection, or arrive).
         order = sorted(
             range(len(self.cars)),
             key=lambda i: (self.cars[i].lane_index, -self.cars[i].position_in_lane),
         )
-        to_remove: list[cars.Car] = []
         for i in order:
             car = self.cars[i]
-            if car in to_remove:
+            if car in to_remove or car.intersection_cell is not None:
                 continue
             cell = car.current_cell()
             if cell is None:
@@ -69,6 +89,7 @@ class GameState:
             next_cell: tuple[int, int] | None = None
             next_lane_index: int | None = None
             next_position: int | None = None
+            enter_intersection = False
 
             if car.position_in_lane + 1 < len(lane):
                 # Same lane: next position
@@ -76,27 +97,33 @@ class GameState:
                 next_lane_index = car.lane_index
                 next_position = car.position_in_lane + 1
             else:
-                # At end of lane: transition at intersection (by destination) or arrival at place
+                # At end of lane: enter intersection (inbound) or arrival (outbound)
                 if car.lane_index in places.IN_LANE_INDICES:
                     next_lane_index = places.OUT_LANE_BY_PLACE.get(car.destination)
                     if next_lane_index is not None:
-                        out_lane = ALL_LANES[next_lane_index]
-                        if out_lane:
-                            next_cell = out_lane[0]
-                            next_position = 0
-                if next_cell is None:
-                    # Arrival (end of out-lane) or no transition
+                        inter_cell = intersection_cell_for_transition(car.lane_index, next_lane_index)
+                        if inter_cell not in occupied:
+                            enter_intersection = True
+                            next_cell = inter_cell
+                            next_lane_index = car.lane_index  # keep lane; store pending in car
+                            next_position = car.position_in_lane
+                if not enter_intersection and next_cell is None:
                     to_remove.append(car)
                     continue
 
-            if next_cell is None or next_cell in occupied or next_lane_index is None or next_position is None:
+            if next_cell is None or next_cell in occupied:
                 continue
 
             # Move
             occupied.discard(cell)
             occupied.add(next_cell)
-            car.lane_index = next_lane_index
-            car.position_in_lane = next_position
+            if enter_intersection:
+                car.intersection_cell = next_cell
+                car.pending_out_lane_index = places.OUT_LANE_BY_PLACE.get(car.destination)
+            else:
+                if next_lane_index is not None and next_position is not None:
+                    car.lane_index = next_lane_index
+                    car.position_in_lane = next_position
 
         for c in to_remove:
             if c in self.cars:

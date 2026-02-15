@@ -75,6 +75,15 @@ def get_intersection_cells() -> list[tuple[int, int]]:
     return list(INTERSECTION_CELLS)
 
 
+def intersection_cell_for_transition(in_lane_index: int, out_lane_index: int) -> tuple[int, int]:
+    """Return one of the four intersection cells for this (in, out) lane pair. Different inbound lanes use different cells so up to 4 cars can be in the intersection."""
+    # 0→1 → cell 0, 2→3 → cell 1, 4→5 → cell 2, 6→7 → cell 3
+    idx = in_lane_index // 2
+    if idx < 0 or idx >= len(INTERSECTION_CELLS):
+        idx = 0
+    return INTERSECTION_CELLS[idx]
+
+
 if __name__ == "__main__":
     print("Lane count:", len(ALL_LANES))
     for i, lane in enumerate(ALL_LANES):

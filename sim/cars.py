@@ -30,9 +30,13 @@ class Car:
     lane_index: int
     position_in_lane: int  # 0 = at start of lane (place end), len(lane)-1 = at intersection end
     color: tuple[int, int, int]  # RGB for display
+    intersection_cell: tuple[int, int] | None = None  # when set, car is in intersection
+    pending_out_lane_index: int | None = None  # next lane when leaving intersection
 
     def current_cell(self) -> tuple[int, int] | None:
         """Current grid position, or None if invalid."""
+        if self.intersection_cell is not None:
+            return self.intersection_cell
         lane = self.get_lane()
         if not lane or self.position_in_lane < 0 or self.position_in_lane >= len(lane):
             return None
