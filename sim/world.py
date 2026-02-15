@@ -24,10 +24,10 @@ _LANE_1 = [(3, _INTER_Y_HI + i) for i in range(SEGMENT_LENGTH)]
 _LANE_2 = [(2, 15 - i) for i in range(SEGMENT_LENGTH)]
 # Lane 3: intersection → Housing (out to south), x=2
 _LANE_3 = [(2, _INTER_Y_LO - 1 - i) for i in range(SEGMENT_LENGTH)]
-# Lane 4: Park → intersection (in from east), y=10
-_LANE_4 = [(7 - i, 10) for i in range(SEGMENT_LENGTH)]
-# Lane 5: intersection → Park (out to east), y=11
-_LANE_5 = [(4 + i, 11) for i in range(SEGMENT_LENGTH)]
+# Lane 4: Park → intersection (in from east), y=11
+_LANE_4 = [(7 - i, 11) for i in range(SEGMENT_LENGTH)]
+# Lane 5: intersection → Park (out to east), y=10
+_LANE_5 = [(4 + i, 10) for i in range(SEGMENT_LENGTH)]
 
 ALL_LANES: list[list[tuple[int, int]]] = [_LANE_0, _LANE_1, _LANE_2, _LANE_3, _LANE_4, _LANE_5]
 
