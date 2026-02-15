@@ -1,6 +1,6 @@
 """
 Stoplights — entry point.
-Display layer: reads sim state, draws isometric grid, two lanes (two places), cars.
+Display layer: reads sim state, draws isometric grid, lanes (three places), cars.
 Game loop: fixed timestep calls sim.tick(); no player input.
 """
 import arcade
