@@ -14,8 +14,8 @@ SPAWN_INTERVAL = 2.0
 SPAWN_JITTER = 0.3
 SPAWN_INTERVAL_MIN = 1.0
 
-# Housing, Office, and Park spawn.
-SPAWN_PLACES = (places.SOUTH, places.NORTH, places.PARK)
+# Housing, Office, Park, and Shopping spawn.
+SPAWN_PLACES = (places.SOUTH, places.NORTH, places.PARK, places.SHOPPING)
 
 
 class GameState:
