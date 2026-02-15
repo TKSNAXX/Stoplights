@@ -58,6 +58,8 @@ CAR_TRIANGLES_BY_DIRECTION: list[list[tuple[float, float]]] = [
     _car_triangle_shape(_CAR_DIR_E[0], _CAR_DIR_E[1]),  # 2 E (lanes 4,5)
     _car_triangle_shape(_CAR_DIR_W[0], _CAR_DIR_W[1]),  # 3 W (lanes 6,7)
 ]
+# Lane index 0..7 -> direction index 0..3 (N,S,E,W) for sprite facing.
+LANE_TO_DIRECTION_INDEX: list[int] = [0, 0, 1, 1, 3, 2, 2, 3]
 
 # Display colors
 GRID_COLOR = (70, 70, 70)
@@ -125,7 +127,7 @@ def grid_to_screen(gx: float, gy: float, center_x: float, center_y: float) -> tu
 def _car_direction_index(car) -> int:
     """Direction index 0..3 (N,S,E,W) for drawing: use exit lane when in intersection, else current lane."""
     lane = car.pending_out_lane_index if (getattr(car, "intersection_cell", None) and getattr(car, "pending_out_lane_index", None) is not None) else car.lane_index
-    return min(max(0, lane // 2), 3)
+    return LANE_TO_DIRECTION_INDEX[min(max(0, lane), 7)]
 
 
 class StoplightsWindow(arcade.Window):
