@@ -5,12 +5,13 @@ Lanes are segments: Housing→inter, inter→Office, Office→inter, inter→Hou
 """
 from __future__ import annotations
 
-# Grid: 20 wide (west arm + shifted world), 22 tall.
-_WEST_ARM_WIDTH = 6  # columns for west arm (Shopping road + place); intersection and N–S/Park shift by this much
+# Grid: 30 wide (west arm 15-cell road + place + shifted world), 22 tall.
+_WEST_ARM_WIDTH = 16  # columns for west arm (Shopping road 15 cells + place); intersection and N–S/Park shift by this much
+_SHOPPING_ROAD_LENGTH = 15  # west arm road length (Lane 6 and 7 only)
 ROAD_LENGTH = 10
 INTERSECTION_SIZE = 2
 SEGMENT_LENGTH = (ROAD_LENGTH - INTERSECTION_SIZE) // 2  # 4 each side of intersection
-GRID_W = 14 + _WEST_ARM_WIDTH  # 20
+GRID_W = 14 + _WEST_ARM_WIDTH  # 30
 GRID_H = 6 + ROAD_LENGTH + 6  # 22
 
 # Intersection: 2×2 at x=8,9 (2+shift, 3+shift), y=10,11.
@@ -41,10 +42,10 @@ _LANE_3 = [(_SOUTHBOUND_X, _INTER_Y_LO - 1 - i) for i in range(SEGMENT_LENGTH)]
 _LANE_4 = [(4 + _WEST_ARM_WIDTH + (SEGMENT_LENGTH - 1 - i), _PARK_INBOUND_Y) for i in range(SEGMENT_LENGTH)]
 # Lane 5: intersection → Park (out to east), right-hand
 _LANE_5 = [(4 + _WEST_ARM_WIDTH + i, _PARK_OUTBOUND_Y) for i in range(SEGMENT_LENGTH)]
-# Lane 6: Shopping → intersection (in from west), right-hand; road x=4..7
-_LANE_6 = [(4 + i, _SHOPPING_INBOUND_Y) for i in range(SEGMENT_LENGTH)]
+# Lane 6: Shopping → intersection (in from west), right-hand; road x=3..17 (15 cells)
+_LANE_6 = [(3 + i, _SHOPPING_INBOUND_Y) for i in range(_SHOPPING_ROAD_LENGTH)]
 # Lane 7: intersection → Shopping (out to west), right-hand
-_LANE_7 = [(4 + (SEGMENT_LENGTH - 1 - i), _SHOPPING_OUTBOUND_Y) for i in range(SEGMENT_LENGTH)]
+_LANE_7 = [(3 + (_SHOPPING_ROAD_LENGTH - 1 - i), _SHOPPING_OUTBOUND_Y) for i in range(_SHOPPING_ROAD_LENGTH)]
 
 ALL_LANES: list[list[tuple[int, int]]] = [_LANE_0, _LANE_1, _LANE_2, _LANE_3, _LANE_4, _LANE_5, _LANE_6, _LANE_7]
 
