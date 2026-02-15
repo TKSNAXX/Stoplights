@@ -39,6 +39,14 @@ IN_LANE_INDICES = {0, 2, 4, 6}
 # Lanes that are "out" (leave intersection toward place); end = arrival.
 OUT_LANE_INDICES = {1, 3, 5, 7}
 
+# Same-arm straight-through at intersection (in_lane, out_lane). Any other valid pair is a turn.
+STRAIGHT_TRANSITIONS = {(0, 1), (2, 3), (4, 5), (6, 7)}
+
+
+def is_turn_at_intersection(in_lane_index: int, out_lane_index: int) -> bool:
+    """True if this in→out transition at the intersection is a turn (different arm), not straight."""
+    return (in_lane_index, out_lane_index) not in STRAIGHT_TRANSITIONS
+
 # For display: upward = lighter grey, downward = darker grey. Park/Shopping: upper strip = downward, lower = upward.
 LANE_UPWARD_INDICES = {0, 1, 5, 6}
 LANE_DOWNWARD_INDICES = {2, 3, 4, 7}

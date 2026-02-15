@@ -7,6 +7,7 @@ from __future__ import annotations
 import random
 
 from sim import cars, places
+from sim.places import is_turn_at_intersection
 from sim.world import ALL_LANES, intersection_cell_for_transition
 
 # Spawn: one car every N seconds per place (with jitter)
@@ -51,9 +52,12 @@ class GameState:
         occupied = {c.current_cell() for c in self.cars if c.current_cell() is not None}
         to_remove: list[cars.Car] = []
 
-        # Pass 1: cars in the intersection move to the start of their outbound lane.
+        # Pass 1: cars in the intersection move to the start of their outbound lane (when wait_ticks is 0).
         for car in self.cars:
             if car in to_remove or car.intersection_cell is None or car.pending_out_lane_index is None:
+                continue
+            if car.intersection_wait_ticks > 0:
+                car.intersection_wait_ticks -= 1
                 continue
             cell = car.current_cell()
             if cell is None:
@@ -70,6 +74,7 @@ class GameState:
             car.position_in_lane = 0
             car.intersection_cell = None
             car.pending_out_lane_index = None
+            car.intersection_wait_ticks = 0
 
         # Pass 2: cars not in the intersection advance (in lane, or enter intersection, or arrive).
         order = sorted(
@@ -119,8 +124,10 @@ class GameState:
             occupied.discard(cell)
             occupied.add(next_cell)
             if enter_intersection:
+                out_lane_idx = places.OUT_LANE_BY_PLACE.get(car.destination)
                 car.intersection_cell = next_cell
-                car.pending_out_lane_index = places.OUT_LANE_BY_PLACE.get(car.destination)
+                car.pending_out_lane_index = out_lane_idx
+                car.intersection_wait_ticks = 1 if (out_lane_idx is not None and is_turn_at_intersection(car.lane_index, out_lane_idx)) else 0
             else:
                 if next_lane_index is not None and next_position is not None:
                     car.lane_index = next_lane_index
