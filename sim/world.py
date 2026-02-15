@@ -21,12 +21,16 @@ GRID_W = 15 + _WEST_ARM_WIDTH  # 31 (room for Park 5×5 at east end)
 # Height: south place (5) + Housing road (12) + intersection (2) + Office road (9) + north place (5) = 33
 GRID_H = PLACE_SIZE + HOUSING_ROAD_LENGTH + INTERSECTION_SIZE + OFFICE_ROAD_LENGTH + PLACE_SIZE  # 33
 
-# Intersection: 2×2; y between Housing road and Office road.
+# Intersection: lane geometry uses 2×2-era bounds below; drawing and cell set use 3×3 box (so lanes do not move).
 _INTER_Y_LO = PLACE_SIZE + HOUSING_ROAD_LENGTH  # 17
 _INTER_Y_HI = _INTER_Y_LO + INTERSECTION_SIZE   # 19
 _INTER_X_LO = 2 + _WEST_ARM_WIDTH   # 18
 _INTER_X_HI = 4 + _WEST_ARM_WIDTH   # 20
-INTERSECTION_CELLS = [(x, y) for x in range(_INTER_X_LO, _INTER_X_HI) for y in range(_INTER_Y_LO, _INTER_Y_HI)]
+# 3×3 intersection box for display and occupancy only (x 17..19, y 16..18; includes south/west lane endpoints).
+_INTER_BOX_SIZE = 3
+_INTER_BOX_X_LO = 17
+_INTER_BOX_Y_LO = 16
+INTERSECTION_CELLS = [(x, y) for x in range(_INTER_BOX_X_LO, _INTER_BOX_X_LO + _INTER_BOX_SIZE) for y in range(_INTER_BOX_Y_LO, _INTER_BOX_Y_LO + _INTER_BOX_SIZE)]
 
 # Right-hand traffic: lanes are placed so traffic keeps to the right (in direction of travel).
 # N–S arm: northbound = east side (higher x), southbound = west side (lower x).
@@ -71,17 +75,20 @@ PARK_PLACE_Y_LO = _INTER_Y_LO - 2  # 15 (rows 15,16,17,18,19)
 SHOPPING_PLACE_Y_LO = _INTER_Y_LO - 2  # 15
 
 def get_intersection_cells() -> list[tuple[int, int]]:
-    """Return list of (gx, gy) that are part of the 2×2 intersection."""
+    """Return list of (gx, gy) that are part of the 3×3 intersection."""
     return list(INTERSECTION_CELLS)
+
+
+# One slot per inbound lane (4) within the 3×3; used for occupancy only.
+_INTER_SLOT_CELLS = [(18, 16), (18, 18), (19, 17), (17, 17)]
 
 
 def intersection_cell_for_transition(in_lane_index: int, out_lane_index: int) -> tuple[int, int]:
     """Return one of the four intersection cells for this (in, out) lane pair. Different inbound lanes use different cells so up to 4 cars can be in the intersection."""
-    # 0→1 → cell 0, 2→3 → cell 1, 4→5 → cell 2, 6→7 → cell 3
     idx = in_lane_index // 2
-    if idx < 0 or idx >= len(INTERSECTION_CELLS):
+    if idx < 0 or idx >= len(_INTER_SLOT_CELLS):
         idx = 0
-    return INTERSECTION_CELLS[idx]
+    return _INTER_SLOT_CELLS[idx]
 
 
 if __name__ == "__main__":
