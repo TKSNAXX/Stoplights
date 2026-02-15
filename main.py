@@ -113,15 +113,15 @@ class StoplightsWindow(arcade.Window):
                 sx2, sy2 = grid_to_screen(gx + 1, gy, center_x, center_y)
                 arcade.draw_line(sx1, sy1, sx2, sy2, GRID_COLOR, 1)
 
-        # Cars as red isometric cubes (small diamond / top face)
-        CAR_RED = (220, 60, 60)
+        # Cars as isometric cubes (small diamond / top face); color from car.color (random at spawn)
+        CAR_DEFAULT = (220, 60, 60)
         CAR_SIZE = 6
         for car in self.game.cars:
             cell = car.current_cell()
             if cell is None:
                 continue
             sx, sy = grid_to_screen(cell[0], cell[1], center_x, center_y)
-            # Isometric top of cube: diamond centered at (sx, sy)
+            color = getattr(car, "color", CAR_DEFAULT)
             arcade.draw_polygon_filled(
                 [
                     (sx, sy + CAR_SIZE),
@@ -129,7 +129,7 @@ class StoplightsWindow(arcade.Window):
                     (sx, sy - CAR_SIZE),
                     (sx - CAR_SIZE, sy),
                 ],
-                CAR_RED,
+                color,
             )
 
 

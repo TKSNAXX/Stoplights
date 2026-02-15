@@ -1,5 +1,5 @@
 """
-Car state: origin, destination, current lane, position in lane.
+Car state: origin, destination, current lane, position in lane, display color.
 Spawn at place start; movement and blocking in step 5.
 """
 from __future__ import annotations
@@ -10,6 +10,18 @@ from dataclasses import dataclass
 from sim.places import PLACES, spawn_lanes_for_place
 from sim.world import ALL_LANES
 
+# Palette of RGB tuples for random car colors (distinct, visible on dark background).
+_CAR_COLOR_PALETTE: tuple[tuple[int, int, int], ...] = (
+    (220, 60, 60),   # red
+    (60, 140, 220),  # blue
+    (80, 200, 100),  # green
+    (220, 180, 60),  # amber
+    (180, 100, 220), # purple
+    (60, 200, 200),  # teal
+    (220, 120, 180), # pink
+    (200, 160, 80),  # tan
+)
+
 
 @dataclass
 class Car:
@@ -17,6 +29,7 @@ class Car:
     destination: str
     lane_index: int
     position_in_lane: int  # 0 = at start of lane (place end), len(lane)-1 = at intersection end
+    color: tuple[int, int, int]  # RGB for display
 
     def current_cell(self) -> tuple[int, int] | None:
         """Current grid position, or None if invalid."""
@@ -36,4 +49,5 @@ def spawn_car(origin: str, destination: str | None = None) -> Car:
         destination = random.choice(others) if others else origin
     lanes = spawn_lanes_for_place(origin)
     lane_index = lanes[0] if lanes else 0
-    return Car(origin=origin, destination=destination, lane_index=lane_index, position_in_lane=0)
+    color = random.choice(_CAR_COLOR_PALETTE)
+    return Car(origin=origin, destination=destination, lane_index=lane_index, position_in_lane=0, color=color)
