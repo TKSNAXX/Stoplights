@@ -7,8 +7,7 @@ from __future__ import annotations
 import random
 
 from sim import cars, places
-from sim.paths import is_straight_path
-from sim.places import is_turn_at_intersection
+from sim.paths import path_length
 from sim.world import ALL_LANES, intersection_cell_for_transition
 
 # Spawn: one car every N seconds per place (with jitter)
@@ -35,7 +34,7 @@ class GameState:
         self._tick_count = 0
         self.movement_every_n_ticks: int = MOVEMENT_EVERY_N_TICKS  # mutable; set by speed slider
 
-    def tick(self, dt: float) -> None:
+    def tick(self, dt: float, current_time: float, base_duration: float = 0.2) -> None:
         self._accumulated_time += dt
         # Spawn: run every tick so spawn timing stays correct in real time; skip disabled places.
         for place in SPAWN_PLACES:
@@ -52,21 +51,27 @@ class GameState:
         if self._tick_count % self.movement_every_n_ticks != 0:
             return
 
+        speed = 1.0 / base_duration  # cells per second
+        # Clear one-frame exited-path state from previous tick
+        for c in self.cars:
+            c.exited_path_in_lane = None
+            c.exited_path_out_lane = None
+
         # Occupied cells at start of movement (includes intersection cells).
         occupied = {c.current_cell() for c in self.cars if c.current_cell() is not None}
         to_remove: list[cars.Car] = []
 
-        # Pass 1: cars in the intersection advance path_t; exit only when path_t >= 1.
+        # Pass 1: cars in the intersection; path_t from time, exit when path_t >= 1.
         for car in self.cars:
             if car in to_remove or car.intersection_cell is None or car.pending_out_lane_index is None:
+                continue
+            if car.path_entry_time is None or car.path_duration is None:
                 continue
             out_lane = ALL_LANES[car.pending_out_lane_index]
             if not out_lane:
                 continue
-            step = 1.0 if is_straight_path(car.lane_index, car.pending_out_lane_index) else 0.5
-            path_t = (car.path_t if car.path_t is not None else 0.0) + step
+            path_t = (current_time - car.path_entry_time) / car.path_duration
             path_t = min(1.0, path_t)
-            car.path_t = path_t
             if path_t < 1.0:
                 continue
             next_cell = out_lane[0]
@@ -76,12 +81,14 @@ class GameState:
             if cell is not None:
                 occupied.discard(cell)
             occupied.add(next_cell)
+            car.exited_path_in_lane = car.lane_index
+            car.exited_path_out_lane = car.pending_out_lane_index
             car.lane_index = car.pending_out_lane_index
             car.position_in_lane = 0
             car.intersection_cell = None
             car.pending_out_lane_index = None
-            car.path_t = None
-            # do not clear entered_intersection_as_turn; main uses it for exit-move duration then clears
+            car.path_entry_time = None
+            car.path_duration = None
 
         # Pass 2: cars not in the intersection advance (in lane, or enter intersection, or arrive).
         order = sorted(
@@ -134,8 +141,9 @@ class GameState:
                 out_lane_idx = places.OUT_LANE_BY_PLACE.get(car.destination)
                 car.intersection_cell = next_cell
                 car.pending_out_lane_index = out_lane_idx
-                car.path_t = 0.0
-                car.entered_intersection_as_turn = out_lane_idx is not None and is_turn_at_intersection(car.lane_index, out_lane_idx)
+                length = path_length(car.lane_index, out_lane_idx) if out_lane_idx is not None else 1.0
+                car.path_entry_time = current_time
+                car.path_duration = length / speed
             else:
                 if next_lane_index is not None and next_position is not None:
                     car.lane_index = next_lane_index

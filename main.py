@@ -16,8 +16,7 @@ except ImportError:
 
 from sim.game import GameState
 from sim import places
-from sim.paths import path_position
-from sim.places import is_turn_at_intersection
+from sim.paths import path_direction_index, path_position
 from sim.world import ALL_LANES, GRID_W, GRID_H, get_intersection_cells
 from ui import Slider, Switch
 
@@ -134,10 +133,11 @@ def grid_to_screen(gx: float, gy: float, center_x: float, center_y: float) -> tu
     return (sx, sy)
 
 
-def _car_direction_index(car) -> int:
-    """Direction index 0..3 (N,S,E,W) for drawing: use exit lane when in intersection, else current lane."""
-    lane = car.pending_out_lane_index if (getattr(car, "intersection_cell", None) and getattr(car, "pending_out_lane_index", None) is not None) else car.lane_index
-    return LANE_TO_DIRECTION_INDEX[min(max(0, lane), 7)]
+def _car_direction_index(car, path_t: float | None = None) -> int:
+    """Direction index 0..3 (N,S,E,W): from path tangent when on path (path_t set), else from lane."""
+    if path_t is not None and getattr(car, "path_entry_time", None) is not None and getattr(car, "path_duration", None) is not None and getattr(car, "pending_out_lane_index", None) is not None:
+        return path_direction_index(car.lane_index, car.pending_out_lane_index, path_t)
+    return LANE_TO_DIRECTION_INDEX[min(max(0, car.lane_index), 7)]
 
 
 class StoplightsWindow(arcade.Window):
@@ -147,8 +147,7 @@ class StoplightsWindow(arcade.Window):
         self.game = GameState()
         self._tick_accumulator = 0.0
         self._car_prev_cell: dict[int, tuple[int, int] | None] = {}
-        self._car_prev_path_t: dict[int, float] = {}  # path_t before last movement tick (for path interpolation)
-        self._car_move_duration: dict[int, float] = {}  # per-car duration for current move (2x for turn at inter)
+        self._car_move_duration: dict[int, float] = {}  # per-car duration for lane cell-to-cell moves
         self._time = 0.0
         self._last_movement_time: float | None = None
         # Interpolation duration (sec) for each cell move; slightly longer for smoother ease-in
@@ -219,33 +218,16 @@ class StoplightsWindow(arcade.Window):
             was_movement_tick = (self.game._tick_count % n) == (n - 1)
             if was_movement_tick:
                 self._car_prev_cell = {id(c): c.current_cell() for c in self.game.cars}
-                self._car_prev_path_t = {id(c): c.path_t for c in self.game.cars if c.path_t is not None}
                 self._last_movement_time = self._time
-            self.game.tick(TICK_DT)
+            self.game.tick(TICK_DT, self._time, self._move_duration)
             if was_movement_tick:
-                inter_set = frozenset(get_intersection_cells())
                 for car in self.game.cars:
-                    # Cars on path: duration 2x only for turns (straight stays 1x)
-                    if car.path_t is not None and car.pending_out_lane_index is not None:
-                        is_turn = is_turn_at_intersection(car.lane_index, car.pending_out_lane_index)
-                        self._car_move_duration[id(car)] = 2.0 * self._move_duration if is_turn else self._move_duration
-                        continue
                     prev = self._car_prev_cell.get(id(car))
                     curr = car.current_cell()
                     if prev is None or curr is None or prev == curr:
                         continue
-                    in_inter_prev = prev in inter_set
-                    in_inter_curr = curr in inter_set
-                    if curr in inter_set:
-                        is_turn = car.pending_out_lane_index is not None and is_turn_at_intersection(car.lane_index, car.pending_out_lane_index)
-                    elif prev in inter_set and curr not in inter_set:
-                        is_turn = getattr(car, "entered_intersection_as_turn", False)
-                    else:
-                        is_turn = False
-                    duration = 2.0 * self._move_duration if ((in_inter_prev or in_inter_curr) and is_turn) else self._move_duration
-                    self._car_move_duration[id(car)] = duration
-                    if curr not in inter_set:
-                        car.entered_intersection_as_turn = False
+                    # Lane cell-to-cell move: use base duration for interpolation
+                    self._car_move_duration[id(car)] = self._move_duration
             self._tick_accumulator -= TICK_DT
 
     def on_draw(self):
@@ -346,20 +328,22 @@ class StoplightsWindow(arcade.Window):
         arcade.draw_text("E", sx_e, sy_e, PLACE_LABEL_COLOR, PLACE_LABEL_FONT_SIZE, anchor_x="right", anchor_y="center")
         arcade.draw_text("W", sx_w, sy_w, PLACE_LABEL_COLOR, PLACE_LABEL_FONT_SIZE, anchor_x="left", anchor_y="center")
 
-        # Cars: interpolate prev -> curr; on path use path_position with blended path_t
+        # Cars: interpolate prev -> curr on lane; on path use time-based path_t; just-exited snap to curr
         CAR_DEFAULT = (220, 60, 60)
         for car in self.game.cars:
             curr = car.current_cell()
             if curr is None:
                 continue
-            # On intersection path: position from path with blended t
-            if car.path_t is not None and car.intersection_cell is not None and car.pending_out_lane_index is not None:
-                prev_t = self._car_prev_path_t.get(id(car), car.path_t)
-                elapsed = self._time - self._last_movement_time if self._last_movement_time is not None else 0.0
-                duration = self._car_move_duration.get(id(car), self._move_duration)
-                blend = smoothstep(min(1.0, elapsed / duration)) if duration > 0 else 1.0
-                blended_t = prev_t + blend * (car.path_t - prev_t)
-                gx, gy = path_position(car.lane_index, car.pending_out_lane_index, blended_t)
+            path_t_for_direction: float | None = None
+            # On intersection path: position from path_t = (time - path_entry_time) / path_duration
+            if car.path_entry_time is not None and car.path_duration is not None and car.intersection_cell is not None and car.pending_out_lane_index is not None:
+                path_t = (self._time - car.path_entry_time) / car.path_duration
+                path_t = max(0.0, min(1.0, path_t))
+                path_t_for_direction = path_t
+                gx, gy = path_position(car.lane_index, car.pending_out_lane_index, path_t)
+            # Just exited path this frame: draw at curr to avoid jump back to slot
+            elif getattr(car, "exited_path_in_lane", None) is not None and getattr(car, "exited_path_out_lane", None) is not None:
+                gx, gy = float(curr[0]), float(curr[1])
             else:
                 prev = self._car_prev_cell.get(id(car), curr)
                 if prev is None or self._last_movement_time is None:
@@ -372,7 +356,7 @@ class StoplightsWindow(arcade.Window):
                     gy = prev[1] + blend * (curr[1] - prev[1])
             sx, sy = grid_to_screen(gx, gy, center_x, center_y)
             color = getattr(car, "color", CAR_DEFAULT)
-            direction_index = _car_direction_index(car)
+            direction_index = _car_direction_index(car, path_t_for_direction)
             triangle = CAR_TRIANGLES_BY_DIRECTION[direction_index]
             points = [(sx + dx, sy + dy) for (dx, dy) in triangle]
             arcade.draw_polygon_filled(points, color)
