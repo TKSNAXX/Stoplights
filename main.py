@@ -71,9 +71,9 @@ CAR_TRIANGLES_BY_DIRECTION: list[list[tuple[float, float]]] = [
 LANE_TO_DIRECTION_INDEX: list[int] = [0, 0, 4, 4, 6, 2, 2, 6]  # N,S,E,W
 
 # Display colors
-GRID_COLOR = (70, 70, 70)
+GRID_COLOR = (45, 45, 45)
 ROAD_GREY = (80, 80, 80)
-LANE_UPWARD_GREY = (165, 165, 165)
+LANE_UPWARD_GREY = (95, 95, 95)
 LANE_DOWNWARD_GREY = (80, 80, 80)
 BUILDING_OUTLINE_WIDTH = 2
 PLACE_LABEL_COLOR = (220, 220, 220)
@@ -354,7 +354,10 @@ class StoplightsWindow(arcade.Window):
                 gx, gy = float(curr[0]), float(curr[1])
             else:
                 prev = self._car_prev_cell.get(id(car), curr)
+                inter_set = frozenset(get_intersection_cells())
                 if prev is None or self._last_movement_time is None:
+                    gx, gy = float(curr[0]), float(curr[1])
+                elif prev in inter_set and curr not in inter_set:
                     gx, gy = float(curr[0]), float(curr[1])
                 else:
                     elapsed = self._time - self._last_movement_time
