@@ -27,6 +27,7 @@ class GameState:
     def __init__(self):
         self.cars: list[cars.Car] = []
         self.spawn_interval: float = SPAWN_INTERVAL  # mutable; set by traffic slider
+        self.spawn_enabled: dict[str, bool] = {p: True for p in SPAWN_PLACES}
         self.spawn_timers: dict[str, float] = {
             p: random.uniform(0, self.spawn_interval) for p in SPAWN_PLACES
         }
@@ -36,8 +37,10 @@ class GameState:
 
     def tick(self, dt: float) -> None:
         self._accumulated_time += dt
-        # Spawn: run every tick so spawn timing stays correct in real time.
+        # Spawn: run every tick so spawn timing stays correct in real time; skip disabled places.
         for place in SPAWN_PLACES:
+            if not self.spawn_enabled.get(place, True):
+                continue
             self.spawn_timers[place] += dt
             if self.spawn_timers[place] >= self.spawn_interval:
                 interval = self.spawn_interval + random.uniform(-SPAWN_JITTER, SPAWN_JITTER)

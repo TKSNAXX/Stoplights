@@ -19,6 +19,7 @@ from sim import places
 from sim.paths import path_position
 from sim.places import is_turn_at_intersection
 from sim.world import ALL_LANES, GRID_W, GRID_H, get_intersection_cells
+from ui import Slider, Switch
 
 # Sim ticks per second (high rate for smooth interpolation; movement runs every Nth tick for half speed)
 TICKS_PER_SECOND = 120
@@ -85,6 +86,10 @@ SLIDER_COLOR = (100, 100, 100)
 SLIDER_THUMB_COLOR = (180, 180, 180)
 SLIDER_LABEL_FONT_SIZE = 14
 
+# Place spawn switch (below place label)
+PLACE_SWITCH_WIDTH = 32
+PLACE_SWITCH_HEIGHT = 14
+PLACE_SWITCH_OFFSET_Y = 20
 
 TRAFFIC_STEPS = 10  # 0..9; step 2 = current default
 TRAFFIC_DEFAULT_STEP = 2
@@ -148,12 +153,21 @@ class StoplightsWindow(arcade.Window):
         self._last_movement_time: float | None = None
         # Interpolation duration (sec) for each cell move; slightly longer for smoother ease-in
         self._move_duration = 0.2
-        # Traffic slider: step 0..9, default 2 (display "3 of 10")
-        self._traffic_step = TRAFFIC_DEFAULT_STEP
-        self._slider_dragging = False
-        # Speed slider: step 0..8, default 4 (1x)
-        self._speed_step = SPEED_DEFAULT_STEP
-        self._speed_slider_dragging = False
+        # Sliders (reusable UI)
+        self._traffic_slider = Slider(
+            SLIDER_LEFT, SLIDER_BOTTOM, SLIDER_WIDTH, SLIDER_HEIGHT,
+            TRAFFIC_STEPS, TRAFFIC_DEFAULT_STEP, SLIDER_COLOR, SLIDER_THUMB_COLOR,
+        )
+        self._speed_slider = Slider(
+            SLIDER_LEFT, SPEED_SLIDER_BOTTOM, SLIDER_WIDTH, SLIDER_HEIGHT,
+            SPEED_STEPS, SPEED_DEFAULT_STEP, SLIDER_COLOR, SLIDER_THUMB_COLOR,
+        )
+        self._place_switches: dict[str, Switch] = {
+            place: Switch(0, 0, PLACE_SWITCH_WIDTH, PLACE_SWITCH_HEIGHT,
+                          initial_value=self.game.spawn_enabled.get(place, True),
+                          bar_color=SLIDER_COLOR, thumb_color=SLIDER_THUMB_COLOR)
+            for place in places.PLACES
+        }
         # Reusable Text for slider labels (avoids slow draw_text per frame)
         self._traffic_label = arcade.Text(
             "",
@@ -171,26 +185,28 @@ class StoplightsWindow(arcade.Window):
         )
         self._apply_speed_step(SPEED_DEFAULT_STEP)  # sync movement_every_n_ticks and _move_duration
 
-    def _slider_step_from_x(self, x: float) -> int:
-        """Map screen x to step 0..TRAFFIC_STEPS-1."""
-        t = (x - SLIDER_LEFT) / SLIDER_WIDTH
-        t = max(0.0, min(1.0, t))
-        return int(t * (TRAFFIC_STEPS - 1) + 0.5) if TRAFFIC_STEPS > 1 else 0
+    def _place_switch_rect(self, place: str, center_x: float, center_y: float) -> tuple[float, float, float, float]:
+        """Screen rect (left, bottom, width, height) for this place's spawn switch."""
+        cells = places.place_bounds(place)
+        if not cells:
+            return (0, 0, PLACE_SWITCH_WIDTH, PLACE_SWITCH_HEIGHT)
+        min_gx = min(p[0] for p in cells)
+        max_gx = max(p[0] for p in cells)
+        min_gy = min(p[1] for p in cells)
+        max_gy = max(p[1] for p in cells)
+        center_gx = (min_gx + max_gx + 1) / 2
+        center_gy = (min_gy + max_gy + 1) / 2
+        sx, sy = grid_to_screen(center_gx, center_gy, center_x, center_y)
+        left = sx - PLACE_SWITCH_WIDTH / 2
+        bottom = sy - PLACE_SWITCH_OFFSET_Y - PLACE_SWITCH_HEIGHT / 2
+        return (left, bottom, PLACE_SWITCH_WIDTH, PLACE_SWITCH_HEIGHT)
 
     def _apply_traffic_step(self, step: int) -> None:
         step = max(0, min(TRAFFIC_STEPS - 1, step))
-        self._traffic_step = step
         self.game.spawn_interval = spawn_interval_for_step(step)
-
-    def _speed_step_from_x(self, x: float) -> int:
-        """Map screen x to speed step 0..SPEED_STEPS-1."""
-        t = (x - SLIDER_LEFT) / SLIDER_WIDTH
-        t = max(0.0, min(1.0, t))
-        return int(t * (SPEED_STEPS - 1) + 0.5) if SPEED_STEPS > 1 else 0
 
     def _apply_speed_step(self, step: int) -> None:
         step = max(0, min(SPEED_STEPS - 1, step))
-        self._speed_step = step
         mult = speed_multiplier_for_step(step)
         self.game.movement_every_n_ticks = max(1, round(MOVEMENT_BASE_TICKS / mult))
         self._move_duration = MOVE_DURATION_BASE / mult
@@ -312,6 +328,11 @@ class StoplightsWindow(arcade.Window):
                 place, sx, sy, PLACE_LABEL_COLOR, PLACE_LABEL_FONT_SIZE,
                 anchor_x="center", anchor_y="center",
             )
+            # Spawn switch below place label
+            switch = self._place_switches[place]
+            switch.rect = self._place_switch_rect(place, center_x, center_y)
+            switch.value = self.game.spawn_enabled.get(place, True)
+            switch.draw()
 
         # Cardinal direction labels at map edges (N/S/E/W)
         cx_grid = (GRID_W - 1) / 2
@@ -356,13 +377,12 @@ class StoplightsWindow(arcade.Window):
             points = [(sx + dx, sy + dy) for (dx, dy) in triangle]
             arcade.draw_polygon_filled(points, color)
 
-        # Speed slider (custom): bar + thumb + label "Speed: 1x" etc.
-        speed_bar_y = SPEED_SLIDER_BOTTOM + (SLIDER_HEIGHT - SLIDER_BAR_HEIGHT) / 2
-        _rect_filled(SLIDER_LEFT + SLIDER_WIDTH / 2, speed_bar_y, SLIDER_WIDTH, SLIDER_BAR_HEIGHT, SLIDER_COLOR)
-        thumb_w = 16
-        speed_thumb_x = SLIDER_LEFT + thumb_w / 2 + (self._speed_step / max(1, SPEED_STEPS - 1)) * (SLIDER_WIDTH - thumb_w) if SPEED_STEPS > 1 else SLIDER_LEFT + thumb_w / 2
-        _rect_filled(speed_thumb_x, speed_bar_y, thumb_w, SLIDER_HEIGHT - 4, SLIDER_THUMB_COLOR)
-        mult = speed_multiplier_for_step(self._speed_step)
+        # Sliders (reusable UI) + labels
+        self._traffic_slider.draw()
+        self._speed_slider.draw()
+        self._traffic_label.value = f"Traffic: {self._traffic_slider.value + 1}/{TRAFFIC_STEPS}"
+        self._traffic_label.draw()
+        mult = speed_multiplier_for_step(self._speed_slider.value)
         if mult >= 1.0:
             speed_str = f"Speed: {int(mult)}x" if mult == int(mult) else f"Speed: {mult:.1f}x"
         else:
@@ -370,37 +390,38 @@ class StoplightsWindow(arcade.Window):
         self._speed_label.value = speed_str
         self._speed_label.draw()
 
-        # Traffic slider (custom): bar + thumb + label "Traffic: X/10"
-        bar_y = SLIDER_BOTTOM + (SLIDER_HEIGHT - SLIDER_BAR_HEIGHT) / 2
-        _rect_filled(SLIDER_LEFT + SLIDER_WIDTH / 2, bar_y, SLIDER_WIDTH, SLIDER_BAR_HEIGHT, SLIDER_COLOR)
-        thumb_x = SLIDER_LEFT + thumb_w / 2 + (self._traffic_step / max(1, TRAFFIC_STEPS - 1)) * (SLIDER_WIDTH - thumb_w) if TRAFFIC_STEPS > 1 else SLIDER_LEFT + thumb_w / 2
-        _rect_filled(thumb_x, bar_y, thumb_w, SLIDER_HEIGHT - 4, SLIDER_THUMB_COLOR)
-        self._traffic_label.value = f"Traffic: {self._traffic_step + 1}/{TRAFFIC_STEPS}"
-        self._traffic_label.draw()
-
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int):
         if button != arcade.MOUSE_BUTTON_LEFT:
             return
-        if SLIDER_LEFT <= x <= SLIDER_LEFT + SLIDER_WIDTH:
-            if SPEED_SLIDER_BOTTOM <= y <= SPEED_SLIDER_BOTTOM + SLIDER_HEIGHT:
-                self._speed_slider_dragging = True
-                self._apply_speed_step(self._speed_step_from_x(x))
-            elif SLIDER_BOTTOM <= y <= SLIDER_BOTTOM + SLIDER_HEIGHT:
-                self._slider_dragging = True
-                self._apply_traffic_step(self._slider_step_from_x(x))
+        center_x = self.width / 2
+        center_y = self.height / 2
+        if self._traffic_slider.on_press(x, y):
+            self._apply_traffic_step(self._traffic_slider.value)
+            return
+        if self._speed_slider.on_press(x, y):
+            self._apply_speed_step(self._speed_slider.value)
+            return
+        for place in places.PLACES:
+            switch = self._place_switches[place]
+            switch.rect = self._place_switch_rect(place, center_x, center_y)
+            if switch.contains(x, y):
+                switch.toggle()
+                self.game.spawn_enabled[place] = switch.value
+                return
 
     def on_mouse_drag(self, x: float, y: float, dx: float, dy: float, buttons: int, modifiers: int):
         if not (buttons & arcade.MOUSE_BUTTON_LEFT):
             return
-        if self._speed_slider_dragging:
-            self._apply_speed_step(self._speed_step_from_x(x))
-        elif self._slider_dragging:
-            self._apply_traffic_step(self._slider_step_from_x(x))
+        if self._traffic_slider.on_drag(x):
+            self._apply_traffic_step(self._traffic_slider.value)
+            return
+        if self._speed_slider.on_drag(x):
+            self._apply_speed_step(self._speed_slider.value)
 
     def on_mouse_release(self, x: float, y: float, button: int, modifiers: int):
         if button == arcade.MOUSE_BUTTON_LEFT:
-            self._speed_slider_dragging = False
-            self._slider_dragging = False
+            self._traffic_slider.on_release()
+            self._speed_slider.on_release()
 
 
 def main():
