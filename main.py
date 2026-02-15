@@ -16,6 +16,7 @@ except ImportError:
 
 from sim.game import GameState
 from sim import places
+from sim.places import is_turn_at_intersection
 from sim.world import ALL_LANES, GRID_W, GRID_H, get_intersection_cells
 
 # Sim ticks per second (high rate for smooth interpolation; movement runs every Nth tick for half speed)
@@ -96,6 +97,7 @@ class StoplightsWindow(arcade.Window):
         self.game = GameState()
         self._tick_accumulator = 0.0
         self._car_prev_cell: dict[int, tuple[int, int] | None] = {}
+        self._car_move_duration: dict[int, float] = {}  # per-car duration for current move (2x for turn at inter)
         self._time = 0.0
         self._last_movement_time: float | None = None
         # Interpolation duration (sec) for each cell move; slightly longer for smoother ease-in
@@ -151,12 +153,31 @@ class StoplightsWindow(arcade.Window):
         self._time += delta_time
         self._tick_accumulator += delta_time
         while self._tick_accumulator >= TICK_DT:
-            # Snapshot only before a movement tick so prev isn't overwritten by no-op ticks
             n = self.game.movement_every_n_ticks
-            if (self.game._tick_count % n) == (n - 1):
+            was_movement_tick = (self.game._tick_count % n) == (n - 1)
+            if was_movement_tick:
                 self._car_prev_cell = {id(c): c.current_cell() for c in self.game.cars}
                 self._last_movement_time = self._time
             self.game.tick(TICK_DT)
+            if was_movement_tick:
+                inter_set = frozenset(get_intersection_cells())
+                for car in self.game.cars:
+                    prev = self._car_prev_cell.get(id(car))
+                    curr = car.current_cell()
+                    if prev is None or curr is None or prev == curr:
+                        continue
+                    in_inter_prev = prev in inter_set
+                    in_inter_curr = curr in inter_set
+                    if curr in inter_set:
+                        is_turn = car.pending_out_lane_index is not None and is_turn_at_intersection(car.lane_index, car.pending_out_lane_index)
+                    elif prev in inter_set and curr not in inter_set:
+                        is_turn = getattr(car, "entered_intersection_as_turn", False)
+                    else:
+                        is_turn = False
+                    duration = 2.0 * self._move_duration if ((in_inter_prev or in_inter_curr) and is_turn) else self._move_duration
+                    self._car_move_duration[id(car)] = duration
+                    if curr not in inter_set:
+                        car.entered_intersection_as_turn = False
             self._tick_accumulator -= TICK_DT
 
     def on_draw(self):
@@ -235,7 +256,8 @@ class StoplightsWindow(arcade.Window):
                 gx, gy = float(curr[0]), float(curr[1])
             else:
                 elapsed = self._time - self._last_movement_time
-                blend = smoothstep(min(1.0, elapsed / self._move_duration))
+                duration = self._car_move_duration.get(id(car), self._move_duration)
+                blend = smoothstep(min(1.0, elapsed / duration))
                 gx = prev[0] + blend * (curr[0] - prev[0])
                 gy = prev[1] + blend * (curr[1] - prev[1])
             sx, sy = grid_to_screen(gx, gy, center_x, center_y)

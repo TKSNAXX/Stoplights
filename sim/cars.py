@@ -32,7 +32,7 @@ class Car:
     color: tuple[int, int, int]  # RGB for display
     intersection_cell: tuple[int, int] | None = None  # when set, car is in intersection
     pending_out_lane_index: int | None = None  # next lane when leaving intersection
-    intersection_wait_ticks: int = 0  # when in intersection, wait this many ticks before exiting (turn = 1)
+    entered_intersection_as_turn: bool = False  # display uses this for 2x interpolation duration when exiting
 
     def current_cell(self) -> tuple[int, int] | None:
         """Current grid position, or None if invalid."""
