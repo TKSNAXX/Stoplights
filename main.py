@@ -9,8 +9,8 @@ from sim.game import GameState
 from sim import places
 from sim.world import ALL_LANES, GRID_W, GRID_H, get_intersection_cells
 
-# Sim ticks per second
-TICKS_PER_SECOND = 15
+# Sim ticks per second (high rate for smooth interpolation; movement runs every Nth tick for half speed)
+TICKS_PER_SECOND = 120
 TICK_DT = 1.0 / TICKS_PER_SECOND
 
 # Isometric tile half-size in pixels (diamond: width 2*TILE_W, height 2*TILE_H)

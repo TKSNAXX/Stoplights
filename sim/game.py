@@ -17,6 +17,9 @@ SPAWN_INTERVAL_MIN = 1.0
 # Housing, Office, Park, and Shopping spawn.
 SPAWN_PLACES = (places.SOUTH, places.NORTH, places.PARK, places.SHOPPING)
 
+# Run car movement only every Nth tick (120/16 = 7.5 moves/sec, half of original 15).
+MOVEMENT_EVERY_N_TICKS = 16
+
 
 class GameState:
     def __init__(self):
@@ -25,10 +28,11 @@ class GameState:
             p: random.uniform(0, SPAWN_INTERVAL) for p in SPAWN_PLACES
         }
         self._accumulated_time = 0.0
+        self._tick_count = 0
 
     def tick(self, dt: float) -> None:
         self._accumulated_time += dt
-        # Spawn at Housing and Office
+        # Spawn: run every tick so spawn timing stays correct in real time.
         for place in SPAWN_PLACES:
             self.spawn_timers[place] += dt
             if self.spawn_timers[place] >= SPAWN_INTERVAL:
@@ -37,7 +41,11 @@ class GameState:
                 self.spawn_timers[place] -= interval
                 self.cars.append(cars.spawn_car(place))
 
-        # Occupied cells at start of movement
+        self._tick_count += 1
+        if self._tick_count % MOVEMENT_EVERY_N_TICKS != 0:
+            return
+
+        # Occupied cells at start of movement (run every MOVEMENT_EVERY_N_TICKS ticks).
         occupied = {c.current_cell() for c in self.cars if c.current_cell() is not None}
 
         # Process cars front-first (by lane, then by position descending)
