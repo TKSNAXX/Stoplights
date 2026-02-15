@@ -16,7 +16,7 @@ except ImportError:
 
 from sim.game import GameState
 from sim import places
-from sim.paths import path_direction_index, path_position
+from sim.paths import path_direction_index_8, path_position
 from sim.world import ALL_LANES, GRID_W, GRID_H, get_intersection_cells
 from ui import Slider, Switch
 
@@ -48,19 +48,27 @@ def _car_triangle_shape(dir_sx: float, dir_sy: float) -> list[tuple[float, float
     return [(tx, ty), (b1_x, b1_y), (-b1_x, -b1_y)]
 
 
-# Four directions in screen space: N (grid +y), S (grid -y), E (grid +x), W (grid -x)
+# Eight directions in screen space: N, NE, E, SE, S, SW, W, NW
 _CAR_DIR_N = (-TILE_W, TILE_H)
 _CAR_DIR_S = (TILE_W, -TILE_H)
 _CAR_DIR_E = (TILE_W, TILE_H)
 _CAR_DIR_W = (-TILE_W, -TILE_H)
+_CAR_DIR_NE = (0, 2 * TILE_H)
+_CAR_DIR_SE = (2 * TILE_W, 0)
+_CAR_DIR_SW = (0, -2 * TILE_H)
+_CAR_DIR_NW = (-2 * TILE_W, 0)
 CAR_TRIANGLES_BY_DIRECTION: list[list[tuple[float, float]]] = [
-    _car_triangle_shape(_CAR_DIR_N[0], _CAR_DIR_N[1]),  # 0 N (lanes 0,1)
-    _car_triangle_shape(_CAR_DIR_S[0], _CAR_DIR_S[1]),  # 1 S (lanes 2,3)
-    _car_triangle_shape(_CAR_DIR_E[0], _CAR_DIR_E[1]),  # 2 E (lanes 4,5)
-    _car_triangle_shape(_CAR_DIR_W[0], _CAR_DIR_W[1]),  # 3 W (lanes 6,7)
+    _car_triangle_shape(_CAR_DIR_N[0], _CAR_DIR_N[1]),   # 0 N
+    _car_triangle_shape(_CAR_DIR_NE[0], _CAR_DIR_NE[1]),  # 1 NE
+    _car_triangle_shape(_CAR_DIR_E[0], _CAR_DIR_E[1]),   # 2 E
+    _car_triangle_shape(_CAR_DIR_SE[0], _CAR_DIR_SE[1]),  # 3 SE
+    _car_triangle_shape(_CAR_DIR_S[0], _CAR_DIR_S[1]),   # 4 S
+    _car_triangle_shape(_CAR_DIR_SW[0], _CAR_DIR_SW[1]),  # 5 SW
+    _car_triangle_shape(_CAR_DIR_W[0], _CAR_DIR_W[1]),   # 6 W
+    _car_triangle_shape(_CAR_DIR_NW[0], _CAR_DIR_NW[1]),  # 7 NW
 ]
-# Lane index 0..7 -> direction index 0..3 (N,S,E,W) for sprite facing.
-LANE_TO_DIRECTION_INDEX: list[int] = [0, 0, 1, 1, 3, 2, 2, 3]
+# Lane index 0..7 -> direction index 0..7 (N,S,E,W map to 0,4,2,6) for sprite facing.
+LANE_TO_DIRECTION_INDEX: list[int] = [0, 0, 4, 4, 6, 2, 2, 6]  # N,S,E,W
 
 # Display colors
 GRID_COLOR = (70, 70, 70)
@@ -134,9 +142,9 @@ def grid_to_screen(gx: float, gy: float, center_x: float, center_y: float) -> tu
 
 
 def _car_direction_index(car, path_t: float | None = None) -> int:
-    """Direction index 0..3 (N,S,E,W): from path tangent when on path (path_t set), else from lane."""
+    """Direction index 0..7 when on path (8-way), 0..3 when on lane (4-way)."""
     if path_t is not None and getattr(car, "path_entry_time", None) is not None and getattr(car, "path_duration", None) is not None and getattr(car, "pending_out_lane_index", None) is not None:
-        return path_direction_index(car.lane_index, car.pending_out_lane_index, path_t)
+        return path_direction_index_8(car.lane_index, car.pending_out_lane_index, path_t)
     return LANE_TO_DIRECTION_INDEX[min(max(0, car.lane_index), 7)]
 
 

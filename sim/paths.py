@@ -128,3 +128,13 @@ def path_direction_index(in_lane_index: int, out_lane_index: int, t: float) -> i
     if abs(dy) >= abs(dx):
         return 0 if dy > 0 else 1  # N or S
     return 2 if dx > 0 else 3  # E or W
+
+
+def path_direction_index_8(in_lane_index: int, out_lane_index: int, t: float) -> int:
+    """Direction index 0..7 (N, NE, E, SE, S, SW, W, NW) for sprite from path tangent at t."""
+    dx, dy = path_tangent(in_lane_index, out_lane_index, t)
+    if abs(dx) < 1e-9 and abs(dy) < 1e-9:
+        return 0
+    angle = math.atan2(dy, dx)
+    idx = round((math.pi / 2 - angle) / (math.pi / 4)) % 8
+    return int(idx)
