@@ -34,7 +34,7 @@ VIS_ZONE_LENGTH_CELLS = 2.0
 VIS_ZONE_WIDTH_CELLS = 1.0
 
 # Pair impasse remedy: mutual red for this long -> white override at IMPASSE_SPEED_SCALE
-IMPASSE_DURATION = 4.0
+IMPASSE_DURATION = 2.0
 IMPASSE_SPEED_SCALE = 0.3
 
 
@@ -75,6 +75,16 @@ class GameState:
         self._tick_count = 0
         self.movement_every_n_ticks: int = MOVEMENT_EVERY_N_TICKS  # mutable; set by speed slider
         self._impasse_timers: dict[tuple[int, int], float] = {}  # (id_lo, id_hi) -> seconds mutual near
+
+    def get_max_impasse_timer(self) -> float | None:
+        """Max timer value from _impasse_timers if any exist, else None (debug display)."""
+        if not self._impasse_timers:
+            return None
+        return max(self._impasse_timers.values())
+
+    def count_red_cars(self) -> int:
+        """Count of cars with visibility_state == 'red'."""
+        return sum(1 for c in self.cars if getattr(c, "visibility_state", "green") == "red")
 
     def _set_pose_for_current_segment(self, car: cars.Car, t: float) -> None:
         t = max(0.0, min(1.0, t))
@@ -262,6 +272,33 @@ class GameState:
             poses.append((gx, gy, di))
 
         id_to_index = {id(c): idx for idx, c in enumerate(self.cars)}
+        
+        # First, compute visibility states (but skip impasse partners in detection)
+        for i, car in enumerate(self.cars):
+            car.visibility_state = "green"
+            car.speed_scale = 1.0
+            p = poses[i]
+            if p is None:
+                continue
+            gx, gy, di = p
+            for j, other in enumerate(self.cars):
+                if i == j:
+                    continue
+                if getattr(car, "impasse_active", False) and getattr(car, "impasse_partner_id", None) == id(other):
+                    continue
+                op = poses[j]
+                if op is None:
+                    continue
+                ox, oy, _ = op
+                band = _visibility_zone_band(gx, gy, di, ox, oy, VIS_ZONE_LENGTH_CELLS, half_width)
+                if band == "near":
+                    car.visibility_state = "red"
+                    car.speed_scale = 0.0
+                    break
+                if band == "far" and car.visibility_state != "red":
+                    car.visibility_state = "yellow"
+                    car.speed_scale = 0.5
+        
         # Clear impasse for pairs no longer mutually in-zone
         to_clear: set[tuple[int, int]] = set()
         for i, car in enumerate(self.cars):
@@ -290,25 +327,31 @@ class GameState:
                     c.impasse_active = False
                     c.impasse_partner_id = None
 
-        # Mutual near set: unordered pairs (i,j) with band(i->j)=="near" and band(j->i)=="near"
-        mutual_near: set[tuple[int, int]] = set()
+        # Mutual red set: pairs where both cars are red AND mutually near
+        mutual_red: set[tuple[int, int]] = set()
         for i in range(len(self.cars)):
             for j in range(i + 1, len(self.cars)):
                 if poses[i] is None or poses[j] is None:
                     continue
+                # Both must be red
+                if getattr(self.cars[i], "visibility_state", "green") != "red":
+                    continue
+                if getattr(self.cars[j], "visibility_state", "green") != "red":
+                    continue
+                # Both must see each other in near zone
                 gx, gy, di = poses[i]
                 ox, oy, _ = poses[j]
                 band_ij = _visibility_zone_band(gx, gy, di, ox, oy, VIS_ZONE_LENGTH_CELLS, half_width)
                 gx2, gy2, di2 = poses[j]
                 band_ji = _visibility_zone_band(gx2, gy2, di2, poses[i][0], poses[i][1], VIS_ZONE_LENGTH_CELLS, half_width)
                 if band_ij == "near" and band_ji == "near":
-                    mutual_near.add((min(id(self.cars[i]), id(self.cars[j])), max(id(self.cars[i]), id(self.cars[j]))))
+                    mutual_red.add((min(id(self.cars[i]), id(self.cars[j])), max(id(self.cars[i]), id(self.cars[j]))))
 
-        # Update timers: remove keys not in mutual_near; add dt for keys in set; at 8s activate white
+        # Update timers: remove keys not in mutual_red; add dt for keys in set; at 4s activate white
         for key in list(self._impasse_timers.keys()):
-            if key not in mutual_near:
+            if key not in mutual_red:
                 del self._impasse_timers[key]
-        for key in mutual_near:
+        for key in mutual_red:
             self._impasse_timers[key] = self._impasse_timers.get(key, 0.0) + dt
             if self._impasse_timers[key] >= IMPASSE_DURATION:
                 id_lo, id_hi = key
@@ -319,30 +362,8 @@ class GameState:
                     self.cars[idx_hi].impasse_active = True
                     self.cars[idx_hi].impasse_partner_id = id_lo
 
+        # Apply white override after visibility computation
         for i, car in enumerate(self.cars):
-            car.visibility_state = "green"
-            car.speed_scale = 1.0
-            p = poses[i]
-            if p is None:
-                continue
-            gx, gy, di = p
-            for j, other in enumerate(self.cars):
-                if i == j:
-                    continue
-                if getattr(car, "impasse_active", False) and getattr(car, "impasse_partner_id", None) == id(other):
-                    continue
-                op = poses[j]
-                if op is None:
-                    continue
-                ox, oy, _ = op
-                band = _visibility_zone_band(gx, gy, di, ox, oy, VIS_ZONE_LENGTH_CELLS, half_width)
-                if band == "near":
-                    car.visibility_state = "red"
-                    car.speed_scale = 0.0
-                    break
-                if band == "far" and car.visibility_state != "red":
-                    car.visibility_state = "yellow"
-                    car.speed_scale = 0.5
             if getattr(car, "impasse_active", False):
                 car.visibility_state = "white"
                 car.speed_scale = IMPASSE_SPEED_SCALE

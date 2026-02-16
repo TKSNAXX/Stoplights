@@ -261,6 +261,14 @@ class StoplightsWindow(arcade.Window):
             "E": arcade.Text("E", 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE, anchor_x="right", anchor_y="center"),
             "W": arcade.Text("W", 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE, anchor_x="left", anchor_y="center"),
         }
+        self._impasse_timer_text = arcade.Text(
+            "", 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE,
+            anchor_x="left", anchor_y="top",
+        )
+        self._red_car_count_text = arcade.Text(
+            "", 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE,
+            anchor_x="left", anchor_y="top",
+        )
         self._show_visibility_fans = False
         self._apply_speed_step(SPEED_DEFAULT_STEP)  # sync movement_every_n_ticks and _move_duration
         self._rebuild_static_draw_cache(self.width / 2, self.height / 2)
@@ -408,6 +416,24 @@ class StoplightsWindow(arcade.Window):
         # Intersection paths.
         for sx1, sy1, sx2, sy2 in self._intersection_path_lines:
             arcade.draw_line(sx1, sy1, sx2, sy2, INTERSECTION_PATH_COLOR, INTERSECTION_PATH_WIDTH)
+
+        # Debug: impasse stopwatch and red car counter (SW corner of intersection)
+        inter_cells = get_intersection_cells()
+        if inter_cells:
+            sw_gx = min(p[0] for p in inter_cells)
+            sw_gy = min(p[1] for p in inter_cells)
+            sx, sy = grid_to_screen(sw_gx, sw_gy, center_x, center_y)
+            impasse_timer = self.game.get_max_impasse_timer()
+            if impasse_timer is not None:
+                self._impasse_timer_text.value = f"Impasse: {impasse_timer:.2f}s"
+                self._impasse_timer_text.x = sx
+                self._impasse_timer_text.y = sy
+                self._impasse_timer_text.draw()
+            red_count = self.game.count_red_cars()
+            self._red_car_count_text.value = f"Red cars: {red_count}"
+            self._red_car_count_text.x = sx
+            self._red_car_count_text.y = sy - 20
+            self._red_car_count_text.draw()
 
         # Lane lines.
         lane_width = 4
