@@ -74,8 +74,14 @@ class GameState:
             path_t = min(1.0, path_t)
             if path_t < 1.0:
                 continue
+            next_position = 0
             next_cell = out_lane[0]
-            if next_cell in occupied:
+            can_use_first = next_cell not in occupied
+            can_use_second = len(out_lane) > 1 and out_lane[1] not in occupied
+            if can_use_first and can_use_second:
+                next_position = 1
+                next_cell = out_lane[1]
+            elif not can_use_first:
                 continue
             cell = car.current_cell()
             if cell is not None:
@@ -84,7 +90,7 @@ class GameState:
             car.exited_path_in_lane = car.lane_index
             car.exited_path_out_lane = car.pending_out_lane_index
             car.lane_index = car.pending_out_lane_index
-            car.position_in_lane = 0
+            car.position_in_lane = next_position
             car.intersection_cell = None
             car.pending_out_lane_index = None
             car.path_entry_time = None

@@ -336,7 +336,7 @@ class StoplightsWindow(arcade.Window):
         arcade.draw_text("E", sx_e, sy_e, PLACE_LABEL_COLOR, PLACE_LABEL_FONT_SIZE, anchor_x="right", anchor_y="center")
         arcade.draw_text("W", sx_w, sy_w, PLACE_LABEL_COLOR, PLACE_LABEL_FONT_SIZE, anchor_x="left", anchor_y="center")
 
-        # Cars: interpolate prev -> curr on lane; on path use time-based path_t; just-exited snap to curr
+        # Cars: interpolate prev -> curr on lane; on path use time-based path_t; just-exited blends path end -> lane cell
         CAR_DEFAULT = (220, 60, 60)
         for car in self.game.cars:
             curr = car.current_cell()
