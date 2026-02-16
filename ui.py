@@ -102,6 +102,15 @@ class Switch:
         self.value = initial_value
         self.bar_color = bar_color
         self.thumb_color = thumb_color
+        label_color = (220, 220, 220)
+        self._text_on = arcade.Text(
+            "On", 0, 0, color=label_color, font_size=10,
+            anchor_x="center", anchor_y="center",
+        )
+        self._text_off = arcade.Text(
+            "Off", 0, 0, color=label_color, font_size=10,
+            anchor_x="center", anchor_y="center",
+        )
 
     def contains(self, x: float, y: float) -> bool:
         left, bottom, width, height = self.rect
@@ -115,10 +124,11 @@ class Switch:
         left, bottom, width, height = self.rect
         color = self.thumb_color if self.value else self.bar_color
         _rect_filled(left, bottom, width, height, color)
-        text = "On" if self.value else "Off"
         cx = left + width / 2
         cy = bottom + height / 2
-        arcade.draw_text(
-            text, cx, cy, (220, 220, 220), 10,
-            anchor_x="center", anchor_y="center",
-        )
+        if self.value:
+            self._text_on.x, self._text_on.y = cx, cy
+            self._text_on.draw()
+        else:
+            self._text_off.x, self._text_off.y = cx, cy
+            self._text_off.draw()

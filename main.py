@@ -72,7 +72,8 @@ CAR_TRIANGLES_BY_DIRECTION: list[list[tuple[float, float]]] = [
 LANE_TO_DIRECTION_INDEX: list[int] = [0, 0, 4, 4, 6, 2, 2, 6]  # N,S,E,W
 
 # Display colors
-GRID_COLOR = (45, 45, 45)
+GRID_COLOR = (18, 18, 18)
+GRID_LINE_WIDTH = 1
 ROAD_GREY = (80, 80, 80)
 LANE_UPWARD_GREY = (95, 95, 95)
 LANE_DOWNWARD_GREY = (80, 80, 80)
@@ -341,7 +342,7 @@ class StoplightsWindow(arcade.Window):
 
         # Dark grey isometric grid lines (under everything).
         for sx1, sy1, sx2, sy2 in self._grid_lines:
-            arcade.draw_line(sx1, sy1, sx2, sy2, GRID_COLOR, 1)
+            arcade.draw_line(sx1, sy1, sx2, sy2, GRID_COLOR, GRID_LINE_WIDTH)
 
         # Grey filled intersection midway.
         if self._intersection_polygon:
