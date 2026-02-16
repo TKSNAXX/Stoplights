@@ -355,7 +355,8 @@ class StoplightsWindow(arcade.Window):
             else:
                 prev = self._car_prev_cell.get(id(car), curr)
                 inter_set = frozenset(get_intersection_cells())
-                if prev is None or self._last_movement_time is None:
+                prev_implausible = prev is not None and curr is not None and (abs(prev[0] - curr[0]) + abs(prev[1] - curr[1]) > 3)
+                if prev is None or self._last_movement_time is None or prev_implausible:
                     gx, gy = float(curr[0]), float(curr[1])
                 elif prev in inter_set and curr not in inter_set:
                     gx, gy = float(curr[0]), float(curr[1])
