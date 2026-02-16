@@ -22,14 +22,14 @@ POLICE_PRIORITY_SCALE = 0.3
 
 # Light cycle: white(0) -> blue(1) -> white(2) -> red(3)
 LIGHT_CYCLE = [(255, 255, 255), (60, 140, 220), (255, 255, 255), (220, 80, 80)]
-LIGHT_PHASE_DURATION = 0.25
+LIGHT_PHASE_DURATION = 0.25 / 3
 
 
 @dataclass
 class PoliceCar:
     """Police car state machine for gridlock response."""
 
-    state: str = "idle"  # idle | deploying | holding | returning
+    state: str = "idle"  # idle | deploying | holding | returning | despawned
     lane_pos: float = 0.0  # continuous position on lane 7 (0=intersection, len-1=Shopping)
     direction: int = 1  # +1 toward Shopping, -1 toward intersection
     light_phase: int = 0
@@ -87,7 +87,7 @@ class PoliceCar:
                 self.light_timer -= LIGHT_PHASE_DURATION
                 self.light_phase = (self.light_phase + 1) % len(LIGHT_CYCLE)
 
-        if self.state == "idle":
+        if self.state in ("idle", "despawned"):
             if red_count >= RED_TRIGGER:
                 self.state = "deploying"
                 self.lane_pos = float(lane_len - 1)
@@ -119,8 +119,8 @@ class PoliceCar:
         if self.state == "returning":
             advance = POLICE_SPEED * dt * self.direction
             self.lane_pos += advance
-            if self.lane_pos >= lane_len - 0.5:
-                self.state = "idle"
+            if self.lane_pos >= lane_len - 1:
+                self.state = "despawned"
                 self.lane_pos = float(lane_len - 1)
             else:
                 self.lane_pos = min(float(lane_len - 1), self.lane_pos)

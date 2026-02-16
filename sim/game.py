@@ -282,7 +282,7 @@ class GameState:
                 car.police_hold_until_exit = False
 
         police = self.police
-        if police.state not in ("idle",):
+        if police.state in ("deploying", "holding", "returning"):
             px, py, pdi = police.get_pose()
             if police.state in ("deploying", "returning"):
                 for i, car in enumerate(self.cars):
@@ -305,7 +305,7 @@ class GameState:
                     dist_sq = (gx - px) ** 2 + (gy - py) ** 2
                     in_inter.append((dist_sq, car))
                 in_inter.sort(key=lambda t: t[0])
-                for _, car in in_inter[:2]:
+                for _, car in in_inter[:3]:
                     car.police_hold_until_exit = True
 
         # First, compute visibility states (but skip impasse partners and apply police priority)

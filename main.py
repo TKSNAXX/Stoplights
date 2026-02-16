@@ -477,7 +477,7 @@ class StoplightsWindow(arcade.Window):
 
         # Police car (when active)
         police = self.game.police
-        if police.state != "idle":
+        if police.state in ("deploying", "holding", "returning"):
             gx, gy, di = police.get_pose()
             sx, sy = grid_to_screen(gx, gy, center_x, center_y)
             color = police.get_light_color()
