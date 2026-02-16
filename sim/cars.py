@@ -36,6 +36,14 @@ class Car:
     path_duration: float | None = None  # when in intersection: path_length/speed
     exited_path_in_lane: int | None = None  # set for one frame on exit for display (prev = path(1))
     exited_path_out_lane: int | None = None  # set for one frame on exit for display
+    motion_mode: str = "lane"  # "lane" or "path"
+    segment_start_time: float | None = None
+    segment_duration: float | None = None
+    segment_start_pos: int | None = None  # lane cell index for lane segments
+    segment_end_pos: int | None = None  # lane cell index for lane segments
+    pose_gx: float | None = None  # continuous render position (grid x)
+    pose_gy: float | None = None  # continuous render position (grid y)
+    pose_dir_index_8: int = 0  # direction from continuous tangent
 
     def current_cell(self) -> tuple[int, int] | None:
         """Current grid position, or None if invalid."""

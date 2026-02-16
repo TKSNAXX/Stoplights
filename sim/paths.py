@@ -133,6 +133,43 @@ def path_direction_index(in_lane_index: int, out_lane_index: int, t: float) -> i
 def path_direction_index_8(in_lane_index: int, out_lane_index: int, t: float) -> int:
     """Direction index 0..7 (N, NE, E, SE, S, SW, W, NW) for sprite from path tangent at t."""
     dx, dy = path_tangent(in_lane_index, out_lane_index, t)
+    return direction_index_8_from_tangent(dx, dy)
+
+
+def lane_segment_position(lane_index: int, from_pos: int, to_pos: int, t: float) -> tuple[float, float]:
+    """Continuous position on a lane segment between two lane cell indices."""
+    t = max(0.0, min(1.0, t))
+    if lane_index < 0 or lane_index >= len(ALL_LANES):
+        return (0.0, 0.0)
+    lane = ALL_LANES[lane_index]
+    if not lane:
+        return (0.0, 0.0)
+    if from_pos < 0 or from_pos >= len(lane) or to_pos < 0 or to_pos >= len(lane):
+        return (float(lane[0][0]), float(lane[0][1]))
+    start = lane[from_pos]
+    end = lane[to_pos]
+    return (start[0] + t * (end[0] - start[0]), start[1] + t * (end[1] - start[1]))
+
+
+def lane_segment_tangent(lane_index: int, from_pos: int, to_pos: int) -> tuple[float, float]:
+    """Unit tangent of a lane segment between two lane cell indices."""
+    if lane_index < 0 or lane_index >= len(ALL_LANES):
+        return (0.0, 0.0)
+    lane = ALL_LANES[lane_index]
+    if not lane:
+        return (0.0, 0.0)
+    if from_pos < 0 or from_pos >= len(lane) or to_pos < 0 or to_pos >= len(lane):
+        return (0.0, 0.0)
+    dx = lane[to_pos][0] - lane[from_pos][0]
+    dy = lane[to_pos][1] - lane[from_pos][1]
+    length = math.hypot(dx, dy)
+    if length < 1e-9:
+        return (0.0, 0.0)
+    return (dx / length, dy / length)
+
+
+def direction_index_8_from_tangent(dx: float, dy: float) -> int:
+    """Direction index 0..7 (N, NE, E, SE, S, SW, W, NW) from tangent."""
     if abs(dx) < 1e-9 and abs(dy) < 1e-9:
         return 0
     angle = math.atan2(dy, dx)

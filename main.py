@@ -16,13 +16,14 @@ except ImportError:
 
 from sim.game import GameState
 from sim import places
-from sim.paths import path_direction_index_8, path_position
+from sim.paths import path_position
 from sim.world import ALL_LANES, GRID_W, GRID_H, get_intersection_cells
 from ui import Slider, Switch
 
-# Sim ticks per second (high rate for smooth interpolation; movement runs every Nth tick for half speed)
-TICKS_PER_SECOND = 120
+# Sim ticks per second (higher cadence for smoother motion pacing).
+TICKS_PER_SECOND = 240
 TICK_DT = 1.0 / TICKS_PER_SECOND
+MAX_SUBSTEPS_PER_FRAME = 8
 
 # Isometric tile half-size in pixels (diamond: width 2*TILE_W, height 2*TILE_H)
 TILE_W = 12
@@ -142,9 +143,9 @@ def grid_to_screen(gx: float, gy: float, center_x: float, center_y: float) -> tu
 
 
 def _car_direction_index(car, path_t: float | None = None) -> int:
-    """Direction index 0..7 when on path (8-way), 0..3 when on lane (4-way)."""
-    if path_t is not None and getattr(car, "path_entry_time", None) is not None and getattr(car, "path_duration", None) is not None and getattr(car, "pending_out_lane_index", None) is not None:
-        return path_direction_index_8(car.lane_index, car.pending_out_lane_index, path_t)
+    """Direction index 0..7 from continuous pose; lane fallback uses cardinal mapping."""
+    if getattr(car, "pose_dir_index_8", None) is not None:
+        return int(car.pose_dir_index_8) % 8
     return LANE_TO_DIRECTION_INDEX[min(max(0, car.lane_index), 7)]
 
 
@@ -154,12 +155,18 @@ class StoplightsWindow(arcade.Window):
         arcade.set_background_color(arcade.color.BLACK)
         self.game = GameState()
         self._tick_accumulator = 0.0
-        self._car_prev_cell: dict[int, tuple[int, int] | None] = {}
-        self._car_move_duration: dict[int, float] = {}  # per-car duration for lane cell-to-cell moves
-        self._time = 0.0
-        self._last_movement_time: float | None = None
-        # Interpolation duration (sec) for each cell move; slightly longer for smoother ease-in
+        self._sim_time = 0.0
+        # Base segment duration for unified continuous movement.
         self._move_duration = 0.2
+        self._cached_center: tuple[float, float] | None = None
+        self._grid_lines: list[tuple[float, float, float, float]] = []
+        self._intersection_polygon: list[tuple[float, float]] = []
+        self._intersection_path_lines: list[tuple[float, float, float, float]] = []
+        self._lane_lines: list[tuple[float, float, float, float, tuple[int, int, int]]] = []
+        self._place_polygons: dict[str, list[tuple[float, float]]] = {}
+        self._place_label_positions: dict[str, tuple[float, float]] = {}
+        self._place_texts: dict[str, arcade.Text] = {}
+        self._cardinal_texts: dict[str, arcade.Text] = {}
         # Sliders (reusable UI)
         self._traffic_slider = Slider(
             SLIDER_LEFT, SLIDER_BOTTOM, SLIDER_WIDTH, SLIDER_HEIGHT,
@@ -190,7 +197,19 @@ class StoplightsWindow(arcade.Window):
             color=PLACE_LABEL_COLOR,
             font_size=SLIDER_LABEL_FONT_SIZE,
         )
+        for place in places.PLACES:
+            self._place_texts[place] = arcade.Text(
+                place, 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE,
+                anchor_x="center", anchor_y="center",
+            )
+        self._cardinal_texts = {
+            "N": arcade.Text("N", 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE, anchor_x="center", anchor_y="bottom"),
+            "S": arcade.Text("S", 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE, anchor_x="center", anchor_y="top"),
+            "E": arcade.Text("E", 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE, anchor_x="right", anchor_y="center"),
+            "W": arcade.Text("W", 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE, anchor_x="left", anchor_y="center"),
+        }
         self._apply_speed_step(SPEED_DEFAULT_STEP)  # sync movement_every_n_ticks and _move_duration
+        self._rebuild_static_draw_cache(self.width / 2, self.height / 2)
 
     def _place_switch_rect(self, place: str, center_x: float, center_y: float) -> tuple[float, float, float, float]:
         """Screen rect (left, bottom, width, height) for this place's spawn switch."""
@@ -215,47 +234,29 @@ class StoplightsWindow(arcade.Window):
     def _apply_speed_step(self, step: int) -> None:
         step = max(0, min(SPEED_STEPS - 1, step))
         mult = speed_multiplier_for_step(step)
-        self.game.movement_every_n_ticks = max(1, round(MOVEMENT_BASE_TICKS / mult))
+        self.game.movement_every_n_ticks = 1
         self._move_duration = MOVE_DURATION_BASE / mult
 
-    def on_update(self, delta_time: float):
-        self._time += delta_time
-        self._tick_accumulator += delta_time
-        while self._tick_accumulator >= TICK_DT:
-            n = self.game.movement_every_n_ticks
-            was_movement_tick = (self.game._tick_count % n) == (n - 1)
-            if was_movement_tick:
-                self._car_prev_cell = {id(c): c.current_cell() for c in self.game.cars}
-                self._last_movement_time = self._time
-            self.game.tick(TICK_DT, self._time, self._move_duration)
-            if was_movement_tick:
-                for car in self.game.cars:
-                    prev = self._car_prev_cell.get(id(car))
-                    curr = car.current_cell()
-                    if prev is None or curr is None or prev == curr:
-                        continue
-                    # Lane cell-to-cell move: use base duration for interpolation
-                    self._car_move_duration[id(car)] = self._move_duration
-            self._tick_accumulator -= TICK_DT
+    def _rebuild_static_draw_cache(self, center_x: float, center_y: float) -> None:
+        self._cached_center = (center_x, center_y)
+        self._grid_lines = []
+        self._intersection_polygon = []
+        self._intersection_path_lines = []
+        self._lane_lines = []
+        self._place_polygons = {}
+        self._place_label_positions = {}
 
-    def on_draw(self):
-        self.clear()
-        center_x = self.width / 2
-        center_y = self.height / 2
-
-        # Dark grey isometric grid lines (under everything)
         for gx in range(GRID_W + 1):
             for gy in range(GRID_H):
                 sx1, sy1 = grid_to_screen(gx, gy, center_x, center_y)
                 sx2, sy2 = grid_to_screen(gx, gy + 1, center_x, center_y)
-                arcade.draw_line(sx1, sy1, sx2, sy2, GRID_COLOR, 1)
+                self._grid_lines.append((sx1, sy1, sx2, sy2))
         for gy in range(GRID_H + 1):
             for gx in range(GRID_W):
                 sx1, sy1 = grid_to_screen(gx, gy, center_x, center_y)
                 sx2, sy2 = grid_to_screen(gx + 1, gy, center_x, center_y)
-                arcade.draw_line(sx1, sy1, sx2, sy2, GRID_COLOR, 1)
+                self._grid_lines.append((sx1, sy1, sx2, sy2))
 
-        # Grey filled intersection (2×2) midway
         inter_cells = get_intersection_cells()
         if inter_cells:
             min_gx = min(p[0] for p in inter_cells)
@@ -263,10 +264,8 @@ class StoplightsWindow(arcade.Window):
             min_gy = min(p[1] for p in inter_cells)
             max_gy = max(p[1] for p in inter_cells)
             inter_corners = [(min_gx, min_gy), (max_gx + 1, min_gy), (max_gx + 1, max_gy + 1), (min_gx, max_gy + 1)]
-            pts = [grid_to_screen(gx, gy, center_x, center_y) for gx, gy in inter_corners]
-            arcade.draw_polygon_filled(pts, ROAD_GREY)
+            self._intersection_polygon = [grid_to_screen(gx, gy, center_x, center_y) for gx, gy in inter_corners]
 
-        # Intersection paths: sample each valid (in, out) path and draw polyline on top of intersection
         n_samples = max(2, INTERSECTION_PATH_SAMPLES)
         for in_lane in places.IN_LANE_INDICES:
             for out_lane in places.OUT_LANE_INDICES:
@@ -281,10 +280,8 @@ class StoplightsWindow(arcade.Window):
                 for j in range(len(path_pts) - 1):
                     sx1, sy1 = path_pts[j]
                     sx2, sy2 = path_pts[j + 1]
-                    arcade.draw_line(sx1, sy1, sx2, sy2, INTERSECTION_PATH_COLOR, INTERSECTION_PATH_WIDTH)
+                    self._intersection_path_lines.append((sx1, sy1, sx2, sy2))
 
-        # Lane lines: upward (Housing->Office) = lighter grey, downward (Office->Housing) = darker
-        LANE_WIDTH = 4
         for lane_index, lane in enumerate(ALL_LANES):
             color = LANE_UPWARD_GREY if lane_index in places.LANE_UPWARD_INDICES else LANE_DOWNWARD_GREY
             for i in range(len(lane) - 1):
@@ -292,9 +289,8 @@ class StoplightsWindow(arcade.Window):
                 gx2, gy2 = lane[i + 1]
                 sx1, sy1 = grid_to_screen(gx1, gy1, center_x, center_y)
                 sx2, sy2 = grid_to_screen(gx2, gy2, center_x, center_y)
-                arcade.draw_line(sx1, sy1, sx2, sy2, color, LANE_WIDTH)
+                self._lane_lines.append((sx1, sy1, sx2, sy2, color))
 
-        # Place outlines: 5×5 bounding box at the end of each road (from place_bounds)
         for place in places.PLACES:
             cells = places.place_bounds(place)
             if not cells:
@@ -303,80 +299,93 @@ class StoplightsWindow(arcade.Window):
             max_gx = max(p[0] for p in cells)
             min_gy = min(p[1] for p in cells)
             max_gy = max(p[1] for p in cells)
-            corners = [
-                (min_gx, min_gy),
-                (max_gx + 1, min_gy),
-                (max_gx + 1, max_gy + 1),
-                (min_gx, max_gy + 1),
-            ]
+            corners = [(min_gx, min_gy), (max_gx + 1, min_gy), (max_gx + 1, max_gy + 1), (min_gx, max_gy + 1)]
             pts = [grid_to_screen(gx, gy, center_x, center_y) for gx, gy in corners]
-            arcade.draw_polygon_outline(pts, arcade.color.BLUE, BUILDING_OUTLINE_WIDTH)
+            self._place_polygons[place] = pts
             center_gx = (min_gx + max_gx + 1) / 2
             center_gy = (min_gy + max_gy + 1) / 2
             sx, sy = grid_to_screen(center_gx, center_gy, center_x, center_y)
-            arcade.draw_text(
-                place, sx, sy, PLACE_LABEL_COLOR, PLACE_LABEL_FONT_SIZE,
-                anchor_x="center", anchor_y="center",
-            )
-            # Spawn switch below place label
-            switch = self._place_switches[place]
-            switch.rect = self._place_switch_rect(place, center_x, center_y)
-            switch.value = self.game.spawn_enabled.get(place, True)
-            switch.draw()
+            self._place_label_positions[place] = (sx, sy)
+            if place in self._place_texts:
+                self._place_texts[place].x = sx
+                self._place_texts[place].y = sy
 
-        # Cardinal direction labels at map edges (N/S/E/W)
         cx_grid = (GRID_W - 1) / 2
         cy_grid = (GRID_H - 1) / 2
         sx_n, sy_n = grid_to_screen(cx_grid, GRID_H - 1, center_x, center_y)
         sx_s, sy_s = grid_to_screen(cx_grid, 0, center_x, center_y)
         sx_e, sy_e = grid_to_screen(GRID_W - 1, cy_grid, center_x, center_y)
         sx_w, sy_w = grid_to_screen(0, cy_grid, center_x, center_y)
-        arcade.draw_text("N", sx_n, sy_n, PLACE_LABEL_COLOR, PLACE_LABEL_FONT_SIZE, anchor_x="center", anchor_y="bottom")
-        arcade.draw_text("S", sx_s, sy_s, PLACE_LABEL_COLOR, PLACE_LABEL_FONT_SIZE, anchor_x="center", anchor_y="top")
-        arcade.draw_text("E", sx_e, sy_e, PLACE_LABEL_COLOR, PLACE_LABEL_FONT_SIZE, anchor_x="right", anchor_y="center")
-        arcade.draw_text("W", sx_w, sy_w, PLACE_LABEL_COLOR, PLACE_LABEL_FONT_SIZE, anchor_x="left", anchor_y="center")
+        self._cardinal_texts["N"].x, self._cardinal_texts["N"].y = sx_n, sy_n
+        self._cardinal_texts["S"].x, self._cardinal_texts["S"].y = sx_s, sy_s
+        self._cardinal_texts["E"].x, self._cardinal_texts["E"].y = sx_e, sy_e
+        self._cardinal_texts["W"].x, self._cardinal_texts["W"].y = sx_w, sy_w
 
-        # Cars: interpolate prev -> curr on lane; on path use time-based path_t; just-exited blends path end -> lane cell
+    def on_update(self, delta_time: float):
+        self._tick_accumulator += delta_time
+        substeps = 0
+        while self._tick_accumulator >= TICK_DT and substeps < MAX_SUBSTEPS_PER_FRAME:
+            self._sim_time += TICK_DT
+            self.game.tick(TICK_DT, self._sim_time, self._move_duration)
+            self._tick_accumulator -= TICK_DT
+            substeps += 1
+        if substeps >= MAX_SUBSTEPS_PER_FRAME and self._tick_accumulator >= TICK_DT:
+            self._tick_accumulator = min(self._tick_accumulator, TICK_DT)
+
+    def on_draw(self):
+        self.clear()
+        center_x = self.width / 2
+        center_y = self.height / 2
+        if self._cached_center != (center_x, center_y):
+            self._rebuild_static_draw_cache(center_x, center_y)
+
+        # Dark grey isometric grid lines (under everything).
+        for sx1, sy1, sx2, sy2 in self._grid_lines:
+            arcade.draw_line(sx1, sy1, sx2, sy2, GRID_COLOR, 1)
+
+        # Grey filled intersection midway.
+        if self._intersection_polygon:
+            arcade.draw_polygon_filled(self._intersection_polygon, ROAD_GREY)
+
+        # Intersection paths.
+        for sx1, sy1, sx2, sy2 in self._intersection_path_lines:
+            arcade.draw_line(sx1, sy1, sx2, sy2, INTERSECTION_PATH_COLOR, INTERSECTION_PATH_WIDTH)
+
+        # Lane lines.
+        lane_width = 4
+        for sx1, sy1, sx2, sy2, color in self._lane_lines:
+            arcade.draw_line(sx1, sy1, sx2, sy2, color, lane_width)
+
+        # Place outlines and labels.
+        for place in places.PLACES:
+            if place not in self._place_polygons:
+                continue
+            arcade.draw_polygon_outline(self._place_polygons[place], arcade.color.BLUE, BUILDING_OUTLINE_WIDTH)
+            if place in self._place_texts:
+                self._place_texts[place].draw()
+            # Spawn switch below place label
+            switch = self._place_switches[place]
+            switch.rect = self._place_switch_rect(place, center_x, center_y)
+            switch.value = self.game.spawn_enabled.get(place, True)
+            switch.draw()
+
+        # Cardinal direction labels.
+        for txt in self._cardinal_texts.values():
+            txt.draw()
+
+        # Cars: render from simulation-provided continuous pose.
         CAR_DEFAULT = (220, 60, 60)
         for car in self.game.cars:
-            curr = car.current_cell()
-            if curr is None:
-                continue
-            path_t_for_direction: float | None = None
-            # On intersection path: position from path_t = (time - path_entry_time) / path_duration
-            if car.path_entry_time is not None and car.path_duration is not None and car.intersection_cell is not None and car.pending_out_lane_index is not None:
-                path_t = (self._time - car.path_entry_time) / car.path_duration
-                path_t = max(0.0, min(1.0, path_t))
-                path_t_for_direction = path_t
-                gx, gy = path_position(car.lane_index, car.pending_out_lane_index, path_t)
-            # Just exited path: interpolate from path end to first out-lane cell.
-            elif getattr(car, "exited_path_in_lane", None) is not None and getattr(car, "exited_path_out_lane", None) is not None:
-                if self._last_movement_time is None:
-                    gx, gy = float(curr[0]), float(curr[1])
-                else:
-                    prev_gx, prev_gy = path_position(car.exited_path_in_lane, car.exited_path_out_lane, 1.0)
-                    elapsed = self._time - self._last_movement_time
-                    duration = self._car_move_duration.get(id(car), self._move_duration)
-                    blend = smoothstep(min(1.0, elapsed / duration))
-                    gx = prev_gx + blend * (curr[0] - prev_gx)
-                    gy = prev_gy + blend * (curr[1] - prev_gy)
+            if car.pose_gx is None or car.pose_gy is None:
+                curr = car.current_cell()
+                if curr is None:
+                    continue
+                gx, gy = float(curr[0]), float(curr[1])
             else:
-                prev = self._car_prev_cell.get(id(car), curr)
-                inter_set = frozenset(get_intersection_cells())
-                prev_implausible = prev is not None and curr is not None and (abs(prev[0] - curr[0]) + abs(prev[1] - curr[1]) > 3)
-                if prev is None or self._last_movement_time is None or prev_implausible:
-                    gx, gy = float(curr[0]), float(curr[1])
-                elif prev in inter_set and curr not in inter_set:
-                    gx, gy = float(curr[0]), float(curr[1])
-                else:
-                    elapsed = self._time - self._last_movement_time
-                    duration = self._car_move_duration.get(id(car), self._move_duration)
-                    blend = smoothstep(min(1.0, elapsed / duration))
-                    gx = prev[0] + blend * (curr[0] - prev[0])
-                    gy = prev[1] + blend * (curr[1] - prev[1])
+                gx, gy = car.pose_gx, car.pose_gy
             sx, sy = grid_to_screen(gx, gy, center_x, center_y)
             color = getattr(car, "color", CAR_DEFAULT)
-            direction_index = _car_direction_index(car, path_t_for_direction)
+            direction_index = _car_direction_index(car)
             triangle = CAR_TRIANGLES_BY_DIRECTION[direction_index]
             points = [(sx + dx, sy + dy) for (dx, dy) in triangle]
             arcade.draw_polygon_filled(points, color)

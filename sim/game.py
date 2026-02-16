@@ -7,7 +7,14 @@ from __future__ import annotations
 import random
 
 from sim import cars, places
-from sim.paths import path_length
+from sim.paths import (
+    direction_index_8_from_tangent,
+    lane_segment_position,
+    lane_segment_tangent,
+    path_length,
+    path_position,
+    path_tangent,
+)
 from sim.world import ALL_LANES, intersection_cell_for_transition
 
 # Spawn: one car every N seconds per place (with jitter)
@@ -34,6 +41,138 @@ class GameState:
         self._tick_count = 0
         self.movement_every_n_ticks: int = MOVEMENT_EVERY_N_TICKS  # mutable; set by speed slider
 
+    def _set_pose_for_current_segment(self, car: cars.Car, t: float) -> None:
+        t = max(0.0, min(1.0, t))
+        if car.motion_mode == "path" and car.pending_out_lane_index is not None:
+            gx, gy = path_position(car.lane_index, car.pending_out_lane_index, t)
+            dx, dy = path_tangent(car.lane_index, car.pending_out_lane_index, t)
+        else:
+            if car.segment_start_pos is None or car.segment_end_pos is None:
+                cell = car.current_cell()
+                if cell is None:
+                    return
+                gx, gy = float(cell[0]), float(cell[1])
+                dx, dy = (0.0, 1.0)
+            else:
+                gx, gy = lane_segment_position(car.lane_index, car.segment_start_pos, car.segment_end_pos, t)
+                dx, dy = lane_segment_tangent(car.lane_index, car.segment_start_pos, car.segment_end_pos)
+        car.pose_gx = gx
+        car.pose_gy = gy
+        car.pose_dir_index_8 = direction_index_8_from_tangent(dx, dy)
+
+    def _start_lane_segment(self, car: cars.Car, start_time: float, speed: float, start_pos: int) -> bool:
+        lane = car.get_lane()
+        if not lane or start_pos < 0 or start_pos >= len(lane):
+            return False
+        if start_pos + 1 >= len(lane):
+            return False
+        car.motion_mode = "lane"
+        car.segment_start_time = start_time
+        car.segment_duration = 1.0 / speed
+        car.segment_start_pos = start_pos
+        car.segment_end_pos = start_pos + 1
+        return True
+
+    def _start_path_segment(self, car: cars.Car, start_time: float, speed: float) -> bool:
+        out_lane_idx = places.OUT_LANE_BY_PLACE.get(car.destination)
+        if out_lane_idx is None:
+            return False
+        car.intersection_cell = intersection_cell_for_transition(car.lane_index, out_lane_idx)
+        car.pending_out_lane_index = out_lane_idx
+        car.motion_mode = "path"
+        car.segment_start_time = start_time
+        length = path_length(car.lane_index, out_lane_idx)
+        car.segment_duration = length / speed if speed > 0 else 0.2
+        car.segment_start_pos = None
+        car.segment_end_pos = None
+        car.path_entry_time = start_time
+        car.path_duration = car.segment_duration
+        return True
+
+    def _start_segment_for_current_state(self, car: cars.Car, start_time: float, speed: float) -> bool:
+        lane = car.get_lane()
+        if not lane:
+            return False
+        if car.position_in_lane + 1 < len(lane):
+            return self._start_lane_segment(car, start_time, speed, car.position_in_lane)
+        if car.lane_index in places.IN_LANE_INDICES:
+            return self._start_path_segment(car, start_time, speed)
+        return False
+
+    def _advance_car(self, car: cars.Car, current_time: float, speed: float, to_remove: list[cars.Car]) -> None:
+        # Loop so one tick can consume multiple completed segments (keeps handoffs continuous).
+        for _ in range(8):
+            if car.segment_start_time is None or car.segment_duration is None:
+                if not self._start_segment_for_current_state(car, current_time, speed):
+                    to_remove.append(car)
+                    return
+            duration = max(1e-9, car.segment_duration)
+            t = (current_time - car.segment_start_time) / duration
+            if t < 1.0:
+                self._set_pose_for_current_segment(car, t)
+                return
+
+            # Complete current segment.
+            self._set_pose_for_current_segment(car, 1.0)
+            segment_end_time = car.segment_start_time + duration
+
+            if car.motion_mode == "lane":
+                if car.segment_end_pos is not None:
+                    car.position_in_lane = car.segment_end_pos
+                car.segment_start_time = None
+                car.segment_duration = None
+                car.segment_start_pos = None
+                car.segment_end_pos = None
+
+                lane = car.get_lane()
+                if not lane:
+                    to_remove.append(car)
+                    return
+                if car.position_in_lane + 1 < len(lane):
+                    if not self._start_lane_segment(car, segment_end_time, speed, car.position_in_lane):
+                        to_remove.append(car)
+                        return
+                    continue
+                if car.lane_index in places.IN_LANE_INDICES:
+                    if not self._start_path_segment(car, segment_end_time, speed):
+                        to_remove.append(car)
+                        return
+                    continue
+                to_remove.append(car)
+                return
+
+            # Path complete -> transition to outbound lane.
+            out_lane_idx = car.pending_out_lane_index
+            if out_lane_idx is None:
+                to_remove.append(car)
+                return
+            car.lane_index = out_lane_idx
+            car.position_in_lane = 0
+            car.intersection_cell = None
+            car.pending_out_lane_index = None
+            car.path_entry_time = None
+            car.path_duration = None
+            car.motion_mode = "lane"
+            car.segment_start_time = None
+            car.segment_duration = None
+            car.segment_start_pos = None
+            car.segment_end_pos = None
+
+            lane = car.get_lane()
+            if not lane:
+                to_remove.append(car)
+                return
+            if car.position_in_lane + 1 < len(lane):
+                if not self._start_lane_segment(car, segment_end_time, speed, car.position_in_lane):
+                    to_remove.append(car)
+                    return
+                continue
+            to_remove.append(car)
+            return
+
+        # Safety fallback if too many segment transitions in one tick.
+        self._set_pose_for_current_segment(car, 1.0)
+
     def tick(self, dt: float, current_time: float, base_duration: float = 0.2) -> None:
         self._accumulated_time += dt
         # Spawn: run every tick so spawn timing stays correct in real time; skip disabled places.
@@ -48,113 +187,12 @@ class GameState:
                 self.cars.append(cars.spawn_car(place))
 
         self._tick_count += 1
-        if self._tick_count % self.movement_every_n_ticks != 0:
-            return
-
-        speed = 1.0 / base_duration  # cells per second
-        # Clear one-frame exited-path state from previous tick
-        for c in self.cars:
-            c.exited_path_in_lane = None
-            c.exited_path_out_lane = None
-
-        # Occupied cells at start of movement (includes intersection cells).
-        occupied = {c.current_cell() for c in self.cars if c.current_cell() is not None}
+        speed = 1.0 / max(1e-6, base_duration)  # cells per second
         to_remove: list[cars.Car] = []
-
-        # Pass 1: cars in the intersection; path_t from time, exit when path_t >= 1.
         for car in self.cars:
-            if car in to_remove or car.intersection_cell is None or car.pending_out_lane_index is None:
+            if car in to_remove:
                 continue
-            if car.path_entry_time is None or car.path_duration is None:
-                continue
-            out_lane = ALL_LANES[car.pending_out_lane_index]
-            if not out_lane:
-                continue
-            path_t = (current_time - car.path_entry_time) / car.path_duration
-            path_t = min(1.0, path_t)
-            if path_t < 1.0:
-                continue
-            next_position = 0
-            next_cell = out_lane[0]
-            can_use_first = next_cell not in occupied
-            can_use_second = len(out_lane) > 1 and out_lane[1] not in occupied
-            if can_use_first and can_use_second:
-                next_position = 1
-                next_cell = out_lane[1]
-            elif not can_use_first:
-                continue
-            cell = car.current_cell()
-            if cell is not None:
-                occupied.discard(cell)
-            occupied.add(next_cell)
-            car.exited_path_in_lane = car.lane_index
-            car.exited_path_out_lane = car.pending_out_lane_index
-            car.lane_index = car.pending_out_lane_index
-            car.position_in_lane = next_position
-            car.intersection_cell = None
-            car.pending_out_lane_index = None
-            car.path_entry_time = None
-            car.path_duration = None
-
-        # Pass 2: cars not in the intersection advance (in lane, or enter intersection, or arrive).
-        order = sorted(
-            range(len(self.cars)),
-            key=lambda i: (self.cars[i].lane_index, -self.cars[i].position_in_lane),
-        )
-        for i in order:
-            car = self.cars[i]
-            if car in to_remove or car.intersection_cell is not None:
-                continue
-            cell = car.current_cell()
-            if cell is None:
-                continue
-            lane = car.get_lane()
-            if not lane:
-                continue
-
-            next_cell: tuple[int, int] | None = None
-            next_lane_index: int | None = None
-            next_position: int | None = None
-            enter_intersection = False
-
-            if car.position_in_lane + 1 < len(lane):
-                # Same lane: next position
-                next_cell = lane[car.position_in_lane + 1]
-                next_lane_index = car.lane_index
-                next_position = car.position_in_lane + 1
-            else:
-                # At end of lane: enter intersection (inbound) or arrival (outbound)
-                if car.lane_index in places.IN_LANE_INDICES:
-                    next_lane_index = places.OUT_LANE_BY_PLACE.get(car.destination)
-                    if next_lane_index is not None:
-                        inter_cell = intersection_cell_for_transition(car.lane_index, next_lane_index)
-                        if inter_cell not in occupied or inter_cell == cell:
-                            enter_intersection = True
-                            next_cell = inter_cell
-                            next_lane_index = car.lane_index  # keep lane; store pending in car
-                            next_position = car.position_in_lane
-                if not enter_intersection and next_cell is None:
-                    to_remove.append(car)
-                    continue
-
-            if next_cell is None or (next_cell in occupied and next_cell != cell):
-                continue
-
-            # Move
-            if next_cell != cell:
-                occupied.discard(cell)
-                occupied.add(next_cell)
-            if enter_intersection:
-                out_lane_idx = places.OUT_LANE_BY_PLACE.get(car.destination)
-                car.intersection_cell = next_cell
-                car.pending_out_lane_index = out_lane_idx
-                length = path_length(car.lane_index, out_lane_idx) if out_lane_idx is not None else 1.0
-                car.path_entry_time = current_time
-                car.path_duration = length / speed
-            else:
-                if next_lane_index is not None and next_position is not None:
-                    car.lane_index = next_lane_index
-                    car.position_in_lane = next_position
+            self._advance_car(car, current_time, speed, to_remove)
 
         for c in to_remove:
             if c in self.cars:
