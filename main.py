@@ -447,43 +447,23 @@ class StoplightsWindow(arcade.Window):
             points = [(sx + dx, sy + dy) for (dx, dy) in triangle]
             arcade.draw_polygon_filled(points, color)
 
-        # Visibility zone wireframe (debug: press V to toggle); color by proximity (green / yellow / red)
+        # Visibility zone wireframe (debug: press V to toggle); color from sim visibility_state
         if self._show_visibility_fans:
             half = VIS_ZONE_WIDTH_CELLS / 2.0
-            car_poses: list[tuple[float, float, int] | None] = []
-            for c in self.game.cars:
-                gx = getattr(c, "pose_gx", None)
-                gy = getattr(c, "pose_gy", None)
-                di = getattr(c, "pose_dir_index_8", None)
+            for car in self.game.cars:
+                gx = getattr(car, "pose_gx", None)
+                gy = getattr(car, "pose_gy", None)
+                di = getattr(car, "pose_dir_index_8", None)
                 if gx is None or gy is None:
-                    curr = c.current_cell()
+                    curr = car.current_cell()
                     if curr is None:
-                        car_poses.append(None)
                         continue
                     gx, gy = float(curr[0]), float(curr[1])
                 if di is None:
-                    di = _car_direction_index(c)
-                car_poses.append((gx, gy, di))
-            for i, car in enumerate(self.game.cars):
-                pose = car_poses[i]
-                if pose is None:
-                    continue
-                gx, gy, di = pose
+                    di = _car_direction_index(car)
                 verts = visibility_fan_vertices(gx, gy, di, VIS_ZONE_LENGTH_CELLS, half)
-                fan_color = VIS_ZONE_COLOR
-                for j, other in enumerate(self.game.cars):
-                    if i == j:
-                        continue
-                    other_pose = car_poses[j]
-                    if other_pose is None:
-                        continue
-                    ox, oy, _ = other_pose
-                    band = visibility_zone_band(gx, gy, di, ox, oy, VIS_ZONE_LENGTH_CELLS, half)
-                    if band == "near":
-                        fan_color = VIS_ZONE_COLOR_RED
-                        break
-                    if band == "far" and fan_color != VIS_ZONE_COLOR_RED:
-                        fan_color = VIS_ZONE_COLOR_YELLOW
+                state = getattr(car, "visibility_state", "green")
+                fan_color = VIS_ZONE_COLOR_RED if state == "red" else (VIS_ZONE_COLOR_YELLOW if state == "yellow" else VIS_ZONE_COLOR)
                 screen_pts = [grid_to_screen(vx, vy, center_x, center_y) for vx, vy in verts]
                 arcade.draw_polygon_outline(screen_pts, fan_color, VIS_ZONE_LINE_WIDTH)
 

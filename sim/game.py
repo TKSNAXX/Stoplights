@@ -4,6 +4,7 @@ Three places, roads with midway intersection; cars route by destination at inter
 """
 from __future__ import annotations
 
+import math
 import random
 
 from sim import cars, places
@@ -27,6 +28,35 @@ SPAWN_PLACES = (places.SOUTH, places.NORTH, places.PARK, places.SHOPPING)
 
 # Run car movement only every Nth tick (120/16 = 7.5 moves/sec, half of original 15).
 MOVEMENT_EVERY_N_TICKS = 16
+
+# Visibility zone (must match main.py for display): length and width in grid cells
+VIS_ZONE_LENGTH_CELLS = 2.0
+VIS_ZONE_WIDTH_CELLS = 1.0
+
+
+def _forward_right_vectors(dir_index_8: int) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Forward and right unit vectors in grid space for dir_index_8 (0=N..7=NW)."""
+    idx = dir_index_8 % 8
+    angle = math.pi / 2 - idx * (math.pi / 4)
+    fx, fy = math.cos(angle), math.sin(angle)
+    rx, ry = fy, -fx
+    return ((fx, fy), (rx, ry))
+
+
+def _visibility_zone_band(
+    observer_gx: float, observer_gy: float, dir_index_8: int,
+    target_gx: float, target_gy: float, length: float, half_width: float
+) -> str | None:
+    """Return 'near' if target in closest half of fan, 'far' if in farthest half, None if outside."""
+    (fx, fy), (rx, ry) = _forward_right_vectors(dir_index_8)
+    dx = target_gx - observer_gx
+    dy = target_gy - observer_gy
+    forward_dist = dx * fx + dy * fy
+    lateral = abs(dx * rx + dy * ry)
+    if forward_dist <= 0 or forward_dist > length or lateral > half_width:
+        return None
+    half_len = length / 2.0
+    return "near" if forward_dist <= half_len else "far"
 
 
 class GameState:
@@ -107,7 +137,8 @@ class GameState:
                     to_remove.append(car)
                     return
             duration = max(1e-9, car.segment_duration)
-            t = (current_time - car.segment_start_time) / duration
+            scale = max(0.0, getattr(car, "speed_scale", 1.0))
+            t = (current_time - car.segment_start_time) * scale / duration if scale > 0 else 0.0
             if t < 1.0:
                 self._set_pose_for_current_segment(car, t)
                 return
@@ -188,6 +219,41 @@ class GameState:
 
         self._tick_count += 1
         speed = 1.0 / max(1e-6, base_duration)  # cells per second
+        half_width = VIS_ZONE_WIDTH_CELLS / 2.0
+        poses: list[tuple[float, float, int] | None] = []
+        for c in self.cars:
+            gx = getattr(c, "pose_gx", None)
+            gy = getattr(c, "pose_gy", None)
+            di = getattr(c, "pose_dir_index_8", 0)
+            if gx is None or gy is None:
+                cell = c.current_cell()
+                if cell is None:
+                    poses.append(None)
+                    continue
+                gx, gy = float(cell[0]), float(cell[1])
+            poses.append((gx, gy, di))
+        for i, car in enumerate(self.cars):
+            car.visibility_state = "green"
+            car.speed_scale = 1.0
+            p = poses[i]
+            if p is None:
+                continue
+            gx, gy, di = p
+            for j, other in enumerate(self.cars):
+                if i == j:
+                    continue
+                op = poses[j]
+                if op is None:
+                    continue
+                ox, oy, _ = op
+                band = _visibility_zone_band(gx, gy, di, ox, oy, VIS_ZONE_LENGTH_CELLS, half_width)
+                if band == "near":
+                    car.visibility_state = "red"
+                    car.speed_scale = 0.0
+                    break
+                if band == "far" and car.visibility_state != "red":
+                    car.visibility_state = "yellow"
+                    car.speed_scale = 0.5
         to_remove: list[cars.Car] = []
         for car in self.cars:
             if car in to_remove:

@@ -44,6 +44,8 @@ class Car:
     pose_gx: float | None = None  # continuous render position (grid x)
     pose_gy: float | None = None  # continuous render position (grid y)
     pose_dir_index_8: int = 0  # direction from continuous tangent
+    visibility_state: str = "green"  # green | yellow | red from visibility zone
+    speed_scale: float = 1.0  # 1.0 / 0.5 / 0.0 applied to segment progression
 
     def current_cell(self) -> tuple[int, int] | None:
         """Current grid position, or None if invalid."""
