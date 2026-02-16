@@ -349,9 +349,17 @@ class StoplightsWindow(arcade.Window):
                 path_t = max(0.0, min(1.0, path_t))
                 path_t_for_direction = path_t
                 gx, gy = path_position(car.lane_index, car.pending_out_lane_index, path_t)
-            # Just exited path this frame: draw at curr to avoid jump back to slot
+            # Just exited path: interpolate from path end to first out-lane cell.
             elif getattr(car, "exited_path_in_lane", None) is not None and getattr(car, "exited_path_out_lane", None) is not None:
-                gx, gy = float(curr[0]), float(curr[1])
+                if self._last_movement_time is None:
+                    gx, gy = float(curr[0]), float(curr[1])
+                else:
+                    prev_gx, prev_gy = path_position(car.exited_path_in_lane, car.exited_path_out_lane, 1.0)
+                    elapsed = self._time - self._last_movement_time
+                    duration = self._car_move_duration.get(id(car), self._move_duration)
+                    blend = smoothstep(min(1.0, elapsed / duration))
+                    gx = prev_gx + blend * (curr[0] - prev_gx)
+                    gy = prev_gy + blend * (curr[1] - prev_gy)
             else:
                 prev = self._car_prev_cell.get(id(car), curr)
                 inter_set = frozenset(get_intersection_cells())

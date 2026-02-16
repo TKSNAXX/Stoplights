@@ -122,7 +122,7 @@ class GameState:
                     next_lane_index = places.OUT_LANE_BY_PLACE.get(car.destination)
                     if next_lane_index is not None:
                         inter_cell = intersection_cell_for_transition(car.lane_index, next_lane_index)
-                        if inter_cell not in occupied:
+                        if inter_cell not in occupied or inter_cell == cell:
                             enter_intersection = True
                             next_cell = inter_cell
                             next_lane_index = car.lane_index  # keep lane; store pending in car
@@ -131,12 +131,13 @@ class GameState:
                     to_remove.append(car)
                     continue
 
-            if next_cell is None or next_cell in occupied:
+            if next_cell is None or (next_cell in occupied and next_cell != cell):
                 continue
 
             # Move
-            occupied.discard(cell)
-            occupied.add(next_cell)
+            if next_cell != cell:
+                occupied.discard(cell)
+                occupied.add(next_cell)
             if enter_intersection:
                 out_lane_idx = places.OUT_LANE_BY_PLACE.get(car.destination)
                 car.intersection_cell = next_cell
