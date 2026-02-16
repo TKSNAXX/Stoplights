@@ -85,6 +85,12 @@ INTERSECTION_PATH_COLOR = (70, 70, 90)
 INTERSECTION_PATH_WIDTH = 1
 INTERSECTION_PATH_SAMPLES = 20
 
+# Visibility zone (debug): fan in grid space, 2 car-lengths long, 1 wide
+VIS_ZONE_LENGTH_CELLS = 2.0
+VIS_ZONE_WIDTH_CELLS = 1.0
+VIS_ZONE_COLOR = (60, 220, 100)
+VIS_ZONE_LINE_WIDTH = 1
+
 # Traffic slider (custom): bottom-left
 SLIDER_LEFT = 20
 SLIDER_BOTTOM = 20
@@ -141,6 +147,26 @@ def grid_to_screen(gx: float, gy: float, center_x: float, center_y: float) -> tu
     sx = center_x + (gx - gy) * TILE_W
     sy = center_y + (gx + gy - cx - cy) * TILE_H
     return (sx, sy)
+
+
+def visibility_fan_vertices(
+    gx: float, gy: float, dir_index_8: int, length: float, half_width: float
+) -> list[tuple[float, float]]:
+    """Return 4 grid-space corners of the visibility fan: back_left, front_left, front_right, back_right.
+    dir_index_8: 0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW in grid (y up)."""
+    idx = dir_index_8 % 8
+    angle = math.pi / 2 - idx * (math.pi / 4)
+    fx = math.cos(angle)
+    fy = math.sin(angle)
+    rx = fy
+    ry = -fx
+    back_center = (gx, gy)
+    front_center = (gx + fx * length, gy + fy * length)
+    back_left = (back_center[0] - rx * half_width, back_center[1] - ry * half_width)
+    back_right = (back_center[0] + rx * half_width, back_center[1] + ry * half_width)
+    front_left = (front_center[0] - rx * half_width, front_center[1] - ry * half_width)
+    front_right = (front_center[0] + rx * half_width, front_center[1] + ry * half_width)
+    return [back_left, front_left, front_right, back_right]
 
 
 def _car_direction_index(car, path_t: float | None = None) -> int:
@@ -209,6 +235,7 @@ class StoplightsWindow(arcade.Window):
             "E": arcade.Text("E", 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE, anchor_x="right", anchor_y="center"),
             "W": arcade.Text("W", 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE, anchor_x="left", anchor_y="center"),
         }
+        self._show_visibility_fans = False
         self._apply_speed_step(SPEED_DEFAULT_STEP)  # sync movement_every_n_ticks and _move_duration
         self._rebuild_static_draw_cache(self.width / 2, self.height / 2)
 
@@ -322,6 +349,10 @@ class StoplightsWindow(arcade.Window):
         self._cardinal_texts["E"].x, self._cardinal_texts["E"].y = sx_e, sy_e
         self._cardinal_texts["W"].x, self._cardinal_texts["W"].y = sx_w, sy_w
 
+    def on_key_press(self, key: int, modifiers: int) -> None:
+        if key == arcade.key.V:
+            self._show_visibility_fans = not self._show_visibility_fans
+
     def on_update(self, delta_time: float):
         self._tick_accumulator += delta_time
         substeps = 0
@@ -390,6 +421,24 @@ class StoplightsWindow(arcade.Window):
             triangle = CAR_TRIANGLES_BY_DIRECTION[direction_index]
             points = [(sx + dx, sy + dy) for (dx, dy) in triangle]
             arcade.draw_polygon_filled(points, color)
+
+        # Visibility zone wireframe (debug: press V to toggle)
+        if self._show_visibility_fans:
+            for car in self.game.cars:
+                gx = getattr(car, "pose_gx", None)
+                gy = getattr(car, "pose_gy", None)
+                di = getattr(car, "pose_dir_index_8", None)
+                if gx is None or gy is None:
+                    curr = car.current_cell()
+                    if curr is None:
+                        continue
+                    gx, gy = float(curr[0]), float(curr[1])
+                if di is None:
+                    di = _car_direction_index(car)
+                half = VIS_ZONE_WIDTH_CELLS / 2.0
+                verts = visibility_fan_vertices(gx, gy, di, VIS_ZONE_LENGTH_CELLS, half)
+                screen_pts = [grid_to_screen(vx, vy, center_x, center_y) for vx, vy in verts]
+                arcade.draw_polygon_outline(screen_pts, VIS_ZONE_COLOR, VIS_ZONE_LINE_WIDTH)
 
         # Sliders (reusable UI) + labels
         self._traffic_slider.draw()
