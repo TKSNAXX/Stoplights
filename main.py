@@ -89,6 +89,8 @@ INTERSECTION_PATH_SAMPLES = 20
 VIS_ZONE_LENGTH_CELLS = 2.0
 VIS_ZONE_WIDTH_CELLS = 1.0
 VIS_ZONE_COLOR = (60, 220, 100)
+VIS_ZONE_COLOR_YELLOW = (220, 220, 80)
+VIS_ZONE_COLOR_RED = (220, 80, 80)
 VIS_ZONE_LINE_WIDTH = 1
 
 # Traffic slider (custom): bottom-left
@@ -149,17 +151,40 @@ def grid_to_screen(gx: float, gy: float, center_x: float, center_y: float) -> tu
     return (sx, sy)
 
 
-def visibility_fan_vertices(
-    gx: float, gy: float, dir_index_8: int, length: float, half_width: float
-) -> list[tuple[float, float]]:
-    """Return 4 grid-space corners of the visibility fan: back_left, front_left, front_right, back_right.
-    dir_index_8: 0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW in grid (y up)."""
+def _forward_right_vectors(dir_index_8: int) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Return (forward, right) unit vectors in grid space for dir_index_8 (0=N..7=NW)."""
     idx = dir_index_8 % 8
     angle = math.pi / 2 - idx * (math.pi / 4)
     fx = math.cos(angle)
     fy = math.sin(angle)
     rx = fy
     ry = -fx
+    return ((fx, fy), (rx, ry))
+
+
+def visibility_zone_band(
+    observer_gx: float, observer_gy: float, dir_index_8: int,
+    target_gx: float, target_gy: float, length: float, half_width: float
+) -> str | None:
+    """Return 'near' if target is in the closest half of the fan, 'far' if in the farthest half, None if outside.
+    Fan is in front of observer; halves are split by length/2 along forward."""
+    (fx, fy), (rx, ry) = _forward_right_vectors(dir_index_8)
+    dx = target_gx - observer_gx
+    dy = target_gy - observer_gy
+    forward_dist = dx * fx + dy * fy
+    lateral = abs(dx * rx + dy * ry)
+    if forward_dist <= 0 or forward_dist > length or lateral > half_width:
+        return None
+    half_len = length / 2.0
+    return "near" if forward_dist <= half_len else "far"
+
+
+def visibility_fan_vertices(
+    gx: float, gy: float, dir_index_8: int, length: float, half_width: float
+) -> list[tuple[float, float]]:
+    """Return 4 grid-space corners of the visibility fan: back_left, front_left, front_right, back_right.
+    dir_index_8: 0=N, 1=NE, 2=E, 3=SE, 4=S, 5=SW, 6=W, 7=NW in grid (y up)."""
+    (fx, fy), (rx, ry) = _forward_right_vectors(dir_index_8)
     back_center = (gx, gy)
     front_center = (gx + fx * length, gy + fy * length)
     back_left = (back_center[0] - rx * half_width, back_center[1] - ry * half_width)
@@ -422,23 +447,45 @@ class StoplightsWindow(arcade.Window):
             points = [(sx + dx, sy + dy) for (dx, dy) in triangle]
             arcade.draw_polygon_filled(points, color)
 
-        # Visibility zone wireframe (debug: press V to toggle)
+        # Visibility zone wireframe (debug: press V to toggle); color by proximity (green / yellow / red)
         if self._show_visibility_fans:
-            for car in self.game.cars:
-                gx = getattr(car, "pose_gx", None)
-                gy = getattr(car, "pose_gy", None)
-                di = getattr(car, "pose_dir_index_8", None)
+            half = VIS_ZONE_WIDTH_CELLS / 2.0
+            car_poses: list[tuple[float, float, int] | None] = []
+            for c in self.game.cars:
+                gx = getattr(c, "pose_gx", None)
+                gy = getattr(c, "pose_gy", None)
+                di = getattr(c, "pose_dir_index_8", None)
                 if gx is None or gy is None:
-                    curr = car.current_cell()
+                    curr = c.current_cell()
                     if curr is None:
+                        car_poses.append(None)
                         continue
                     gx, gy = float(curr[0]), float(curr[1])
                 if di is None:
-                    di = _car_direction_index(car)
-                half = VIS_ZONE_WIDTH_CELLS / 2.0
+                    di = _car_direction_index(c)
+                car_poses.append((gx, gy, di))
+            for i, car in enumerate(self.game.cars):
+                pose = car_poses[i]
+                if pose is None:
+                    continue
+                gx, gy, di = pose
                 verts = visibility_fan_vertices(gx, gy, di, VIS_ZONE_LENGTH_CELLS, half)
+                fan_color = VIS_ZONE_COLOR
+                for j, other in enumerate(self.game.cars):
+                    if i == j:
+                        continue
+                    other_pose = car_poses[j]
+                    if other_pose is None:
+                        continue
+                    ox, oy, _ = other_pose
+                    band = visibility_zone_band(gx, gy, di, ox, oy, VIS_ZONE_LENGTH_CELLS, half)
+                    if band == "near":
+                        fan_color = VIS_ZONE_COLOR_RED
+                        break
+                    if band == "far" and fan_color != VIS_ZONE_COLOR_RED:
+                        fan_color = VIS_ZONE_COLOR_YELLOW
                 screen_pts = [grid_to_screen(vx, vy, center_x, center_y) for vx, vy in verts]
-                arcade.draw_polygon_outline(screen_pts, VIS_ZONE_COLOR, VIS_ZONE_LINE_WIDTH)
+                arcade.draw_polygon_outline(screen_pts, fan_color, VIS_ZONE_LINE_WIDTH)
 
         # Sliders (reusable UI) + labels
         self._traffic_slider.draw()
