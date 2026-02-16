@@ -46,6 +46,8 @@ class Car:
     pose_dir_index_8: int = 0  # direction from continuous tangent
     visibility_state: str = "green"  # green | yellow | red from visibility zone
     speed_scale: float = 1.0  # 1.0 / 0.5 / 0.0 applied to segment progression
+    segment_t_offset: float = 0.0  # normalized progress saved across speed-scale changes
+    segment_scale_reference: float = 1.0  # speed_scale used by current segment time origin
 
     def current_cell(self) -> tuple[int, int] | None:
         """Current grid position, or None if invalid."""
