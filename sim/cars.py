@@ -50,6 +50,8 @@ class Car:
     segment_scale_reference: float = 1.0  # speed_scale used by current segment time origin
     impasse_partner_id: int | None = None  # id(partner) when in pair impasse remedy
     impasse_active: bool = False  # true while in white override with partner
+    police_priority_active: bool = False  # cyan mode: ignore all cars, move at 0.3x
+    police_hold_until_exit: bool = False  # stay cyan until exiting intersection
 
     def current_cell(self) -> tuple[int, int] | None:
         """Current grid position, or None if invalid."""

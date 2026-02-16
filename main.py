@@ -92,6 +92,7 @@ VIS_ZONE_COLOR = (60, 220, 100)
 VIS_ZONE_COLOR_YELLOW = (220, 220, 80)
 VIS_ZONE_COLOR_RED = (220, 80, 80)
 VIS_ZONE_COLOR_WHITE = (220, 220, 220)
+VIS_ZONE_COLOR_CYAN = (60, 220, 220)
 VIS_ZONE_LINE_WIDTH = 1
 
 # Traffic slider (custom): bottom-left
@@ -474,6 +475,16 @@ class StoplightsWindow(arcade.Window):
             points = [(sx + dx, sy + dy) for (dx, dy) in triangle]
             arcade.draw_polygon_filled(points, color)
 
+        # Police car (when active)
+        police = self.game.police
+        if police.state != "idle":
+            gx, gy, di = police.get_pose()
+            sx, sy = grid_to_screen(gx, gy, center_x, center_y)
+            color = police.get_light_color()
+            triangle = CAR_TRIANGLES_BY_DIRECTION[di % 8]
+            points = [(sx + dx, sy + dy) for (dx, dy) in triangle]
+            arcade.draw_polygon_filled(points, color)
+
         # Visibility zone wireframe (debug: press V to toggle); color from sim visibility_state
         if self._show_visibility_fans:
             half = VIS_ZONE_WIDTH_CELLS / 2.0
@@ -493,7 +504,8 @@ class StoplightsWindow(arcade.Window):
                 fan_color = (
                     VIS_ZONE_COLOR_RED if state == "red"
                     else (VIS_ZONE_COLOR_YELLOW if state == "yellow"
-                    else (VIS_ZONE_COLOR_WHITE if state == "white" else VIS_ZONE_COLOR))
+                    else (VIS_ZONE_COLOR_WHITE if state == "white"
+                    else (VIS_ZONE_COLOR_CYAN if state == "cyan" else VIS_ZONE_COLOR)))
                 )
                 screen_pts = [grid_to_screen(vx, vy, center_x, center_y) for vx, vy in verts]
                 arcade.draw_polygon_outline(screen_pts, fan_color, VIS_ZONE_LINE_WIDTH)

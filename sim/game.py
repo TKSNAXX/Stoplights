@@ -7,7 +7,7 @@ from __future__ import annotations
 import math
 import random
 
-from sim import cars, places
+from sim import cars, cop, places
 from sim.paths import (
     direction_index_8_from_tangent,
     lane_segment_position,
@@ -16,7 +16,7 @@ from sim.paths import (
     path_position,
     path_tangent,
 )
-from sim.world import ALL_LANES, intersection_cell_for_transition
+from sim.world import ALL_LANES, get_intersection_cells, intersection_cell_for_transition
 
 # Spawn: one car every N seconds per place (with jitter)
 SPAWN_INTERVAL = 2.0
@@ -75,6 +75,7 @@ class GameState:
         self._tick_count = 0
         self.movement_every_n_ticks: int = MOVEMENT_EVERY_N_TICKS  # mutable; set by speed slider
         self._impasse_timers: dict[tuple[int, int], float] = {}  # (id_lo, id_hi) -> seconds mutual near
+        self.police = cop.PoliceCar()
 
     def get_max_impasse_timer(self) -> float | None:
         """Max timer value from _impasse_timers if any exist, else None (debug display)."""
@@ -272,11 +273,49 @@ class GameState:
             poses.append((gx, gy, di))
 
         id_to_index = {id(c): idx for idx, c in enumerate(self.cars)}
-        
-        # First, compute visibility states (but skip impasse partners in detection)
+
+        # Police influence: clear flags, then set based on current frame
+        for car in self.cars:
+            car.police_priority_active = False
+            # Clear police_hold_until_exit when car has exited intersection
+            if car.motion_mode != "path":
+                car.police_hold_until_exit = False
+
+        police = self.police
+        if police.state not in ("idle",):
+            px, py, pdi = police.get_pose()
+            if police.state in ("deploying", "returning"):
+                for i, car in enumerate(self.cars):
+                    p = poses[i]
+                    if p is None:
+                        continue
+                    gx, gy, di = p
+                    band = _visibility_zone_band(gx, gy, di, px, py, VIS_ZONE_LENGTH_CELLS, half_width)
+                    if band in ("near", "far"):
+                        car.police_priority_active = True
+            elif police.state == "holding":
+                in_inter: list[tuple[float, cars.Car]] = []
+                for i, car in enumerate(self.cars):
+                    if car.motion_mode != "path":
+                        continue
+                    p = poses[i]
+                    if p is None:
+                        continue
+                    gx, gy, _ = p
+                    dist_sq = (gx - px) ** 2 + (gy - py) ** 2
+                    in_inter.append((dist_sq, car))
+                in_inter.sort(key=lambda t: t[0])
+                for _, car in in_inter[:2]:
+                    car.police_hold_until_exit = True
+
+        # First, compute visibility states (but skip impasse partners and apply police priority)
         for i, car in enumerate(self.cars):
             car.visibility_state = "green"
             car.speed_scale = 1.0
+            if getattr(car, "police_priority_active", False) or getattr(car, "police_hold_until_exit", False):
+                car.visibility_state = "cyan"
+                car.speed_scale = cop.POLICE_PRIORITY_SCALE
+                continue
             p = poses[i]
             if p is None:
                 continue
@@ -367,6 +406,10 @@ class GameState:
             if getattr(car, "impasse_active", False):
                 car.visibility_state = "white"
                 car.speed_scale = IMPASSE_SPEED_SCALE
+
+        red_count = self.count_red_cars()
+        police.tick(dt, red_count)
+
         to_remove: list[cars.Car] = []
         for car in self.cars:
             if car in to_remove:
