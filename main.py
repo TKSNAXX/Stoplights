@@ -91,6 +91,7 @@ VIS_ZONE_WIDTH_CELLS = 1.0
 VIS_ZONE_COLOR = (60, 220, 100)
 VIS_ZONE_COLOR_YELLOW = (220, 220, 80)
 VIS_ZONE_COLOR_RED = (220, 80, 80)
+VIS_ZONE_COLOR_WHITE = (220, 220, 220)
 VIS_ZONE_LINE_WIDTH = 1
 
 # Traffic slider (custom): bottom-left
@@ -463,7 +464,11 @@ class StoplightsWindow(arcade.Window):
                     di = _car_direction_index(car)
                 verts = visibility_fan_vertices(gx, gy, di, VIS_ZONE_LENGTH_CELLS, half)
                 state = getattr(car, "visibility_state", "green")
-                fan_color = VIS_ZONE_COLOR_RED if state == "red" else (VIS_ZONE_COLOR_YELLOW if state == "yellow" else VIS_ZONE_COLOR)
+                fan_color = (
+                    VIS_ZONE_COLOR_RED if state == "red"
+                    else (VIS_ZONE_COLOR_YELLOW if state == "yellow"
+                    else (VIS_ZONE_COLOR_WHITE if state == "white" else VIS_ZONE_COLOR))
+                )
                 screen_pts = [grid_to_screen(vx, vy, center_x, center_y) for vx, vy in verts]
                 arcade.draw_polygon_outline(screen_pts, fan_color, VIS_ZONE_LINE_WIDTH)
 

@@ -48,6 +48,8 @@ class Car:
     speed_scale: float = 1.0  # 1.0 / 0.5 / 0.0 applied to segment progression
     segment_t_offset: float = 0.0  # normalized progress saved across speed-scale changes
     segment_scale_reference: float = 1.0  # speed_scale used by current segment time origin
+    impasse_partner_id: int | None = None  # id(partner) when in pair impasse remedy
+    impasse_active: bool = False  # true while in white override with partner
 
     def current_cell(self) -> tuple[int, int] | None:
         """Current grid position, or None if invalid."""
