@@ -21,7 +21,7 @@ from sim.world import ALL_LANES, GRID_W, GRID_H, get_intersection_cells
 from ui import Slider, Switch
 
 # Sim ticks per second (higher cadence for smoother motion pacing).
-TICKS_PER_SECOND = 240
+TICKS_PER_SECOND = 120
 TICK_DT = 1.0 / TICKS_PER_SECOND
 MAX_SUBSTEPS_PER_FRAME = 8
 
