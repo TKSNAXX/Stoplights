@@ -33,7 +33,8 @@ MOVEMENT_EVERY_N_TICKS = 16
 # Visibility zone (must match main.py for display): length and width in grid cells
 VIS_ZONE_LENGTH_CELLS = 2.0
 VIS_ZONE_WIDTH_CELLS = 1.0
-SPATIAL_QUERY_RADIUS_CELLS = int(math.ceil(VIS_ZONE_LENGTH_CELLS + 1.0))
+# Keep spatial candidate queries tight to the visibility fan footprint.
+SPATIAL_QUERY_RADIUS_CELLS = int(math.ceil(VIS_ZONE_LENGTH_CELLS))
 
 # Pair impasse remedy: mutual red for this long -> white override at IMPASSE_SPEED_SCALE
 IMPASSE_DURATION = 2.0
@@ -411,11 +412,22 @@ class GameState:
                     c.impasse_active = False
                     c.impasse_partner_id = None
 
-        # Mutual red set: pairs where both cars are red AND mutually near
+        # Mutual red set: pairs where both cars are red AND mutually near.
+        # Restrict to pairs with at least one car in/near intersection approach.
         pair_start = time.perf_counter()
         mutual_red: set[tuple[int, int]] = set()
         seen_pairs: set[tuple[int, int]] = set()
+        impasse_candidates: set[int] = set()
+        for i, car in enumerate(self.cars):
+            lane = car.get_lane()
+            if car.motion_mode == "path":
+                impasse_candidates.add(i)
+                continue
+            if car.lane_index in places.IN_LANE_INDICES and lane and car.position_in_lane >= max(0, len(lane) - 2):
+                impasse_candidates.add(i)
         for i, p in enumerate(poses):
+            if i not in impasse_candidates:
+                continue
             if p is None:
                 continue
             if getattr(self.cars[i], "visibility_state", "green") != "red":
