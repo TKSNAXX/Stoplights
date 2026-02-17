@@ -37,7 +37,7 @@ class PoliceCar:
     direction: int = 1  # +1 toward home, -1 toward intersection
     light_phase: int = 0
     light_timer: float = 0.0
-    red_zero_timer: float = 0.0  # seconds with red_count == 0 while holding
+    red_zero_timer: float = 0.0  # seconds with red_count <= 1 while holding
 
     def _current_lane(self) -> int:
         """Lane index for current state: deploy_lane when deploying/holding, return_lane when returning."""
@@ -126,7 +126,7 @@ class PoliceCar:
             return
 
         if self.state == "holding":
-            if red_count == 0:
+            if red_count <= 1:
                 self.red_zero_timer += dt
                 if self.red_zero_timer >= RED_ZERO_DURATION:
                     self.state = "returning"

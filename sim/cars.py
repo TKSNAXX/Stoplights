@@ -52,6 +52,7 @@ class Car:
     impasse_active: bool = False  # true while in white override with partner
     police_priority_active: bool = False  # cyan mode: ignore all cars, move at 0.3x
     police_hold_until_exit: bool = False  # stay cyan until exiting intersection
+    base_speed_multiplier: float = 1.0  # per-car random speed (0.6–1.2), set at spawn
 
     def current_cell(self) -> tuple[int, int] | None:
         """Current grid position, or None if invalid."""
@@ -74,4 +75,5 @@ def spawn_car(origin: str, destination: str | None = None) -> Car:
     lanes = spawn_lanes_for_place(origin)
     lane_index = lanes[0] if lanes else 0
     color = random.choice(_CAR_COLOR_PALETTE)
-    return Car(origin=origin, destination=destination, lane_index=lane_index, position_in_lane=0, color=color)
+    base_speed_multiplier = random.uniform(0.6, 1.2)
+    return Car(origin=origin, destination=destination, lane_index=lane_index, position_in_lane=0, color=color, base_speed_multiplier=base_speed_multiplier)

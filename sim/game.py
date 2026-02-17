@@ -173,6 +173,7 @@ class GameState:
         return False
 
     def _advance_car(self, car: cars.Car, current_time: float, speed: float, to_remove: list[cars.Car]) -> None:
+        speed = speed * getattr(car, "base_speed_multiplier", 1.0)
         # Loop so one tick can consume multiple completed segments (keeps handoffs continuous).
         for _ in range(8):
             if car.segment_start_time is None or car.segment_duration is None:
