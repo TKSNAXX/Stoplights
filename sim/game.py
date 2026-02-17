@@ -83,7 +83,10 @@ class GameState:
         self._tick_count = 0
         self.movement_every_n_ticks: int = MOVEMENT_EVERY_N_TICKS  # mutable; set by speed slider
         self._impasse_timers: dict[tuple[int, int], float] = {}  # (id_lo, id_hi) -> seconds mutual near
-        self.police = cop.PoliceCar()
+        self.police_list = [
+            cop.PoliceCar(deploy_lane=7, return_lane=7, red_trigger=10),   # Shopping
+            cop.PoliceCar(deploy_lane=5, return_lane=5, red_trigger=20),   # Park: lane 5 (southerly, y=17), same orientation as Shopping
+        ]
         self._perf_stats: dict[str, float | int] = {
             "cars": 0,
             "tick_ms_ema": 0.0,
@@ -322,34 +325,34 @@ class GameState:
             if car.motion_mode != "path":
                 car.police_hold_until_exit = False
 
-        police = self.police
-        if police.state in ("deploying", "holding", "returning"):
-            px, py, pdi = police.get_pose()
-            if police.state in ("deploying", "returning"):
-                for i in nearby_indices(px, py):
-                    car = self.cars[i]
-                    p = poses[i]
-                    if p is None:
-                        continue
-                    gx, gy, di = p
-                    band = _visibility_zone_band(gx, gy, di, px, py, VIS_ZONE_LENGTH_CELLS, half_width)
-                    visibility_checks += 1
-                    if band in ("near", "far"):
-                        car.police_priority_active = True
-            elif police.state == "holding":
-                in_inter: list[tuple[float, cars.Car]] = []
-                for i, car in enumerate(self.cars):
-                    if car.motion_mode != "path":
-                        continue
-                    p = poses[i]
-                    if p is None:
-                        continue
-                    gx, gy, _ = p
-                    dist_sq = (gx - px) ** 2 + (gy - py) ** 2
-                    in_inter.append((dist_sq, car))
-                in_inter.sort(key=lambda t: t[0])
-                for _, car in in_inter[:3]:
-                    car.police_hold_until_exit = True
+        for police in self.police_list:
+            if police.state in ("deploying", "holding", "returning"):
+                px, py, pdi = police.get_pose()
+                if police.state in ("deploying", "returning"):
+                    for i in nearby_indices(px, py):
+                        car = self.cars[i]
+                        p = poses[i]
+                        if p is None:
+                            continue
+                        gx, gy, di = p
+                        band = _visibility_zone_band(gx, gy, di, px, py, VIS_ZONE_LENGTH_CELLS, half_width)
+                        visibility_checks += 1
+                        if band in ("near", "far"):
+                            car.police_priority_active = True
+                elif police.state == "holding":
+                    in_inter: list[tuple[float, cars.Car]] = []
+                    for i, car in enumerate(self.cars):
+                        if car.motion_mode != "path":
+                            continue
+                        p = poses[i]
+                        if p is None:
+                            continue
+                        gx, gy, _ = p
+                        dist_sq = (gx - px) ** 2 + (gy - py) ** 2
+                        in_inter.append((dist_sq, car))
+                    in_inter.sort(key=lambda t: t[0])
+                    for _, car in in_inter[:3]:
+                        car.police_hold_until_exit = True
 
         # First, compute visibility states (but skip impasse partners and apply police priority)
         visibility_start = time.perf_counter()
@@ -473,7 +476,8 @@ class GameState:
                 car.speed_scale = IMPASSE_SPEED_SCALE
 
         red_count = self.count_red_cars()
-        police.tick(dt, red_count)
+        for p in self.police_list:
+            p.tick(dt, red_count)
 
         to_remove: list[cars.Car] = []
         for car in self.cars:

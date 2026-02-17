@@ -426,15 +426,15 @@ class StoplightsWindow(arcade.Window):
             points = [(sx + dx, sy + dy) for (dx, dy) in triangle]
             arcade.draw_polygon_filled(points, color)
 
-        # Police car (when active)
-        police = self.game.police
-        if police.state in ("deploying", "holding", "returning"):
-            gx, gy, di = police.get_pose()
-            sx, sy = grid_to_screen(gx, gy, center_x, center_y)
-            color = police.get_light_color()
-            triangle = CAR_TRIANGLES_BY_DIRECTION[di % 8]
-            points = [(sx + dx, sy + dy) for (dx, dy) in triangle]
-            arcade.draw_polygon_filled(points, color)
+        # Police cars (when active)
+        for police in self.game.police_list:
+            if police.state in ("deploying", "holding", "returning"):
+                gx, gy, di = police.get_pose()
+                sx, sy = grid_to_screen(gx, gy, center_x, center_y)
+                color = police.get_light_color()
+                triangle = CAR_TRIANGLES_BY_DIRECTION[di % 8]
+                points = [(sx + dx, sy + dy) for (dx, dy) in triangle]
+                arcade.draw_polygon_filled(points, color)
 
         # Visibility zone wireframe (debug: press V to toggle); color from sim visibility_state
         if self._show_visibility_fans:
