@@ -5,6 +5,7 @@ Game loop: fixed timestep calls sim.tick(); traffic slider for first interactive
 """
 import math
 import time
+from pathlib import Path
 import arcade
 
 # Arcade 3.x moved rectangles to arcade.draw.rect; 2.x has draw_rectangle_filled on arcade
@@ -73,8 +74,6 @@ CAR_TRIANGLES_BY_DIRECTION: list[list[tuple[float, float]]] = [
 LANE_TO_DIRECTION_INDEX: list[int] = [0, 0, 4, 4, 6, 2, 2, 6]  # N,S,E,W
 
 # Display colors
-GRID_COLOR = (18, 18, 18)
-GRID_LINE_WIDTH = 1
 ROAD_GREY = (80, 80, 80)
 LANE_UPWARD_GREY = (95, 95, 95)
 LANE_DOWNWARD_GREY = (80, 80, 80)
@@ -209,7 +208,6 @@ class StoplightsWindow(arcade.Window):
         # Base segment duration for unified continuous movement.
         self._move_duration = 0.2
         self._cached_center: tuple[float, float] | None = None
-        self._grid_lines: list[tuple[float, float, float, float]] = []
         self._intersection_polygon: list[tuple[float, float]] = []
         self._intersection_path_lines: list[tuple[float, float, float, float]] = []
         self._lane_lines: list[tuple[float, float, float, float, tuple[int, int, int]]] = []
@@ -260,6 +258,9 @@ class StoplightsWindow(arcade.Window):
         self._last_substeps = 0
         self._draw_ms_ema = 0.0
         self._show_visibility_fans = False
+        # Static grid background (800x600 PNG)
+        grid_path = Path(__file__).resolve().parent / "assets" / "grid_background.png"
+        self._grid_texture = arcade.load_texture(str(grid_path)) if grid_path.exists() else None
         self._apply_speed_step(SPEED_DEFAULT_STEP)  # sync movement_every_n_ticks and _move_duration
         self._rebuild_static_draw_cache(self.width / 2, self.height / 2)
 
@@ -275,23 +276,11 @@ class StoplightsWindow(arcade.Window):
 
     def _rebuild_static_draw_cache(self, center_x: float, center_y: float) -> None:
         self._cached_center = (center_x, center_y)
-        self._grid_lines = []
         self._intersection_polygon = []
         self._intersection_path_lines = []
         self._lane_lines = []
         self._place_polygons = {}
         self._place_label_positions = {}
-
-        for gx in range(GRID_W + 1):
-            for gy in range(GRID_H):
-                sx1, sy1 = grid_to_screen(gx, gy, center_x, center_y)
-                sx2, sy2 = grid_to_screen(gx, gy + 1, center_x, center_y)
-                self._grid_lines.append((sx1, sy1, sx2, sy2))
-        for gy in range(GRID_H + 1):
-            for gx in range(GRID_W):
-                sx1, sy1 = grid_to_screen(gx, gy, center_x, center_y)
-                sx2, sy2 = grid_to_screen(gx + 1, gy, center_x, center_y)
-                self._grid_lines.append((sx1, sy1, sx2, sy2))
 
         inter_cells = get_intersection_cells()
         if inter_cells:
@@ -388,9 +377,12 @@ class StoplightsWindow(arcade.Window):
         if self._cached_center != (center_x, center_y):
             self._rebuild_static_draw_cache(center_x, center_y)
 
-        # Dark grey isometric grid lines (under everything).
-        for sx1, sy1, sx2, sy2 in self._grid_lines:
-            arcade.draw_line(sx1, sy1, sx2, sy2, GRID_COLOR, GRID_LINE_WIDTH)
+        # Static grid background (800x600 PNG) before overlays.
+        if self._grid_texture is not None:
+            arcade.draw_texture_rect(
+                self._grid_texture,
+                arcade.LRBT(0, self.width, 0, self.height),
+            )
 
         # Grey filled intersection midway.
         if self._intersection_polygon:
@@ -489,7 +481,7 @@ class StoplightsWindow(arcade.Window):
         else:
             self._draw_ms_ema = (1.0 - alpha) * self._draw_ms_ema + alpha * draw_ms
         perf = self.game.get_perf_stats()
-        static_line_draws = len(self._grid_lines) + len(self._intersection_path_lines) + len(self._lane_lines)
+        static_line_draws = len(self._intersection_path_lines) + len(self._lane_lines)
         self._perf_text.x = 10
         self._perf_text.y = self.height - 10
         self._perf_text.value = (
