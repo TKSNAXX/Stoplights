@@ -4,6 +4,7 @@ Display layer: reads sim state, draws isometric grid, lanes (three places), cars
 Game loop: fixed timestep calls sim.tick(); traffic slider for first interactive feature.
 """
 import math
+import time
 import arcade
 
 # Arcade 3.x moved rectangles to arcade.draw.rect; 2.x has draw_rectangle_filled on arcade
@@ -18,10 +19,10 @@ from sim.game import GameState
 from sim import places
 from sim.paths import path_position
 from sim.world import ALL_LANES, GRID_W, GRID_H, get_intersection_cells
-from ui import Slider, Switch
+from ui import Slider
 
 # Sim ticks per second (higher cadence for smoother motion pacing).
-TICKS_PER_SECOND = 120
+TICKS_PER_SECOND = 60
 TICK_DT = 1.0 / TICKS_PER_SECOND
 MAX_SUBSTEPS_PER_FRAME = 8
 
@@ -104,11 +105,6 @@ SLIDER_BAR_HEIGHT = 8
 SLIDER_COLOR = (100, 100, 100)
 SLIDER_THUMB_COLOR = (180, 180, 180)
 SLIDER_LABEL_FONT_SIZE = 14
-
-# Place spawn switch (below place label)
-PLACE_SWITCH_WIDTH = 32
-PLACE_SWITCH_HEIGHT = 14
-PLACE_SWITCH_OFFSET_Y = 20
 
 TRAFFIC_STEPS = 10  # 0..9; step 2 = current default
 TRAFFIC_DEFAULT_STEP = 2
@@ -230,12 +226,6 @@ class StoplightsWindow(arcade.Window):
             SLIDER_LEFT, SPEED_SLIDER_BOTTOM, SLIDER_WIDTH, SLIDER_HEIGHT,
             SPEED_STEPS, SPEED_DEFAULT_STEP, SLIDER_COLOR, SLIDER_THUMB_COLOR,
         )
-        self._place_switches: dict[str, Switch] = {
-            place: Switch(0, 0, PLACE_SWITCH_WIDTH, PLACE_SWITCH_HEIGHT,
-                          initial_value=self.game.spawn_enabled.get(place, True),
-                          bar_color=SLIDER_COLOR, thumb_color=SLIDER_THUMB_COLOR)
-            for place in places.PLACES
-        }
         # Reusable Text for slider labels (avoids slow draw_text per frame)
         self._traffic_label = arcade.Text(
             "",
@@ -262,39 +252,16 @@ class StoplightsWindow(arcade.Window):
             "E": arcade.Text("E", 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE, anchor_x="right", anchor_y="center"),
             "W": arcade.Text("W", 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE, anchor_x="left", anchor_y="center"),
         }
-        self._impasse_timer_text = arcade.Text(
-            "", 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE,
-            anchor_x="left", anchor_y="top",
-        )
-        self._red_car_count_text = arcade.Text(
-            "", 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE,
-            anchor_x="left", anchor_y="top",
-        )
         self._perf_text = arcade.Text(
             "", 10, self.height - 10, color=PLACE_LABEL_COLOR, font_size=11,
             anchor_x="left", anchor_y="top",
         )
         self._fps_ema = 0.0
         self._last_substeps = 0
+        self._draw_ms_ema = 0.0
         self._show_visibility_fans = False
         self._apply_speed_step(SPEED_DEFAULT_STEP)  # sync movement_every_n_ticks and _move_duration
         self._rebuild_static_draw_cache(self.width / 2, self.height / 2)
-
-    def _place_switch_rect(self, place: str, center_x: float, center_y: float) -> tuple[float, float, float, float]:
-        """Screen rect (left, bottom, width, height) for this place's spawn switch."""
-        cells = places.place_bounds(place)
-        if not cells:
-            return (0, 0, PLACE_SWITCH_WIDTH, PLACE_SWITCH_HEIGHT)
-        min_gx = min(p[0] for p in cells)
-        max_gx = max(p[0] for p in cells)
-        min_gy = min(p[1] for p in cells)
-        max_gy = max(p[1] for p in cells)
-        center_gx = (min_gx + max_gx + 1) / 2
-        center_gy = (min_gy + max_gy + 1) / 2
-        sx, sy = grid_to_screen(center_gx, center_gy, center_x, center_y)
-        left = sx - PLACE_SWITCH_WIDTH / 2
-        bottom = sy - PLACE_SWITCH_OFFSET_Y - PLACE_SWITCH_HEIGHT / 2
-        return (left, bottom, PLACE_SWITCH_WIDTH, PLACE_SWITCH_HEIGHT)
 
     def _apply_traffic_step(self, step: int) -> None:
         step = max(0, min(TRAFFIC_STEPS - 1, step))
@@ -414,6 +381,7 @@ class StoplightsWindow(arcade.Window):
             self._tick_accumulator = min(self._tick_accumulator, TICK_DT)
 
     def on_draw(self):
+        draw_start = time.perf_counter()
         self.clear()
         center_x = self.width / 2
         center_y = self.height / 2
@@ -432,34 +400,6 @@ class StoplightsWindow(arcade.Window):
         for sx1, sy1, sx2, sy2 in self._intersection_path_lines:
             arcade.draw_line(sx1, sy1, sx2, sy2, INTERSECTION_PATH_COLOR, INTERSECTION_PATH_WIDTH)
 
-        # Debug: impasse stopwatch and red car counter (SW corner of intersection)
-        inter_cells = get_intersection_cells()
-        if inter_cells:
-            sw_gx = min(p[0] for p in inter_cells)
-            sw_gy = min(p[1] for p in inter_cells)
-            sx, sy = grid_to_screen(sw_gx, sw_gy, center_x, center_y)
-            impasse_timer = self.game.get_max_impasse_timer()
-            if impasse_timer is not None:
-                self._impasse_timer_text.value = f"Impasse: {impasse_timer:.2f}s"
-                self._impasse_timer_text.x = sx
-                self._impasse_timer_text.y = sy
-                self._impasse_timer_text.draw()
-            red_count = self.game.count_red_cars()
-            self._red_car_count_text.value = f"Red cars: {red_count}"
-            self._red_car_count_text.x = sx
-            self._red_car_count_text.y = sy - 20
-            self._red_car_count_text.draw()
-        perf = self.game.get_perf_stats()
-        self._perf_text.x = 10
-        self._perf_text.y = self.height - 10
-        self._perf_text.value = (
-            f"FPS~{self._fps_ema:5.1f}  substeps:{self._last_substeps}  cars:{perf['cars']}  "
-            f"tick:{float(perf['tick_ms_ema']):5.2f}ms  vis:{float(perf['visibility_ms_ema']):5.2f}ms "
-            f"checks:{perf['visibility_checks']}  pair:{float(perf['pair_ms_ema']):5.2f}ms "
-            f"checks:{perf['pair_checks']}"
-        )
-        self._perf_text.draw()
-
         # Lane lines.
         lane_width = 4
         for sx1, sy1, sx2, sy2, color in self._lane_lines:
@@ -472,11 +412,6 @@ class StoplightsWindow(arcade.Window):
             arcade.draw_polygon_outline(self._place_polygons[place], arcade.color.BLUE, BUILDING_OUTLINE_WIDTH)
             if place in self._place_texts:
                 self._place_texts[place].draw()
-            # Spawn switch below place label
-            switch = self._place_switches[place]
-            switch.rect = self._place_switch_rect(place, center_x, center_y)
-            switch.value = self.game.spawn_enabled.get(place, True)
-            switch.draw()
 
         # Cardinal direction labels.
         for txt in self._cardinal_texts.values():
@@ -547,24 +482,33 @@ class StoplightsWindow(arcade.Window):
         self._speed_label.value = speed_str
         self._speed_label.draw()
 
+        draw_ms = (time.perf_counter() - draw_start) * 1000.0
+        alpha = 0.1
+        if self._draw_ms_ema <= 0.0:
+            self._draw_ms_ema = draw_ms
+        else:
+            self._draw_ms_ema = (1.0 - alpha) * self._draw_ms_ema + alpha * draw_ms
+        perf = self.game.get_perf_stats()
+        static_line_draws = len(self._grid_lines) + len(self._intersection_path_lines) + len(self._lane_lines)
+        self._perf_text.x = 10
+        self._perf_text.y = self.height - 10
+        self._perf_text.value = (
+            f"FPS~{self._fps_ema:5.1f} substeps:{self._last_substeps} draw:{self._draw_ms_ema:5.2f}ms "
+            f"cars:{perf['cars']} lines:{static_line_draws} tick:{float(perf['tick_ms_ema']):5.2f}ms "
+            f"vis:{float(perf['visibility_ms_ema']):5.2f}ms checks:{perf['visibility_checks']} "
+            f"pair:{float(perf['pair_ms_ema']):5.2f}ms checks:{perf['pair_checks']}"
+        )
+        self._perf_text.draw()
+
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int):
         if button != arcade.MOUSE_BUTTON_LEFT:
             return
-        center_x = self.width / 2
-        center_y = self.height / 2
         if self._traffic_slider.on_press(x, y):
             self._apply_traffic_step(self._traffic_slider.value)
             return
         if self._speed_slider.on_press(x, y):
             self._apply_speed_step(self._speed_slider.value)
             return
-        for place in places.PLACES:
-            switch = self._place_switches[place]
-            switch.rect = self._place_switch_rect(place, center_x, center_y)
-            if switch.contains(x, y):
-                switch.toggle()
-                self.game.spawn_enabled[place] = switch.value
-                return
 
     def on_mouse_drag(self, x: float, y: float, dx: float, dy: float, buttons: int, modifiers: int):
         if not (buttons & arcade.MOUSE_BUTTON_LEFT):
