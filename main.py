@@ -270,6 +270,12 @@ class StoplightsWindow(arcade.Window):
             "", 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE,
             anchor_x="left", anchor_y="top",
         )
+        self._perf_text = arcade.Text(
+            "", 10, self.height - 10, color=PLACE_LABEL_COLOR, font_size=11,
+            anchor_x="left", anchor_y="top",
+        )
+        self._fps_ema = 0.0
+        self._last_substeps = 0
         self._show_visibility_fans = False
         self._apply_speed_step(SPEED_DEFAULT_STEP)  # sync movement_every_n_ticks and _move_duration
         self._rebuild_static_draw_cache(self.width / 2, self.height / 2)
@@ -389,6 +395,13 @@ class StoplightsWindow(arcade.Window):
             self._show_visibility_fans = not self._show_visibility_fans
 
     def on_update(self, delta_time: float):
+        if delta_time > 1e-9:
+            fps_now = 1.0 / delta_time
+            alpha = 0.1
+            if self._fps_ema <= 0.0:
+                self._fps_ema = fps_now
+            else:
+                self._fps_ema = (1.0 - alpha) * self._fps_ema + alpha * fps_now
         self._tick_accumulator += delta_time
         substeps = 0
         while self._tick_accumulator >= TICK_DT and substeps < MAX_SUBSTEPS_PER_FRAME:
@@ -396,6 +409,7 @@ class StoplightsWindow(arcade.Window):
             self.game.tick(TICK_DT, self._sim_time, self._move_duration)
             self._tick_accumulator -= TICK_DT
             substeps += 1
+        self._last_substeps = substeps
         if substeps >= MAX_SUBSTEPS_PER_FRAME and self._tick_accumulator >= TICK_DT:
             self._tick_accumulator = min(self._tick_accumulator, TICK_DT)
 
@@ -435,6 +449,16 @@ class StoplightsWindow(arcade.Window):
             self._red_car_count_text.x = sx
             self._red_car_count_text.y = sy - 20
             self._red_car_count_text.draw()
+        perf = self.game.get_perf_stats()
+        self._perf_text.x = 10
+        self._perf_text.y = self.height - 10
+        self._perf_text.value = (
+            f"FPS~{self._fps_ema:5.1f}  substeps:{self._last_substeps}  cars:{perf['cars']}  "
+            f"tick:{float(perf['tick_ms_ema']):5.2f}ms  vis:{float(perf['visibility_ms_ema']):5.2f}ms "
+            f"checks:{perf['visibility_checks']}  pair:{float(perf['pair_ms_ema']):5.2f}ms "
+            f"checks:{perf['pair_checks']}"
+        )
+        self._perf_text.draw()
 
         # Lane lines.
         lane_width = 4

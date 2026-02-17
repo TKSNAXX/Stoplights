@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import math
 import random
+import time
 
 from sim import cars, cop, places
 from sim.paths import (
@@ -32,6 +33,7 @@ MOVEMENT_EVERY_N_TICKS = 16
 # Visibility zone (must match main.py for display): length and width in grid cells
 VIS_ZONE_LENGTH_CELLS = 2.0
 VIS_ZONE_WIDTH_CELLS = 1.0
+SPATIAL_QUERY_RADIUS_CELLS = int(math.ceil(VIS_ZONE_LENGTH_CELLS + 1.0))
 
 # Pair impasse remedy: mutual red for this long -> white override at IMPASSE_SPEED_SCALE
 IMPASSE_DURATION = 2.0
@@ -63,6 +65,11 @@ def _visibility_zone_band(
     return "near" if forward_dist <= half_len else "far"
 
 
+def _spatial_bucket_key(gx: float, gy: float) -> tuple[int, int]:
+    """Integer grid bucket key for simple spatial hashing."""
+    return (int(math.floor(gx)), int(math.floor(gy)))
+
+
 class GameState:
     def __init__(self):
         self.cars: list[cars.Car] = []
@@ -76,6 +83,14 @@ class GameState:
         self.movement_every_n_ticks: int = MOVEMENT_EVERY_N_TICKS  # mutable; set by speed slider
         self._impasse_timers: dict[tuple[int, int], float] = {}  # (id_lo, id_hi) -> seconds mutual near
         self.police = cop.PoliceCar()
+        self._perf_stats: dict[str, float | int] = {
+            "cars": 0,
+            "tick_ms_ema": 0.0,
+            "visibility_ms_ema": 0.0,
+            "pair_ms_ema": 0.0,
+            "visibility_checks": 0,
+            "pair_checks": 0,
+        }
 
     def get_max_impasse_timer(self) -> float | None:
         """Max timer value from _impasse_timers if any exist, else None (debug display)."""
@@ -86,6 +101,10 @@ class GameState:
     def count_red_cars(self) -> int:
         """Count of cars with visibility_state == 'red'."""
         return sum(1 for c in self.cars if getattr(c, "visibility_state", "green") == "red")
+
+    def get_perf_stats(self) -> dict[str, float | int]:
+        """Snapshot of lightweight sim performance counters."""
+        return dict(self._perf_stats)
 
     def _set_pose_for_current_segment(self, car: cars.Car, t: float) -> None:
         t = max(0.0, min(1.0, t))
@@ -244,6 +263,7 @@ class GameState:
         self._set_pose_for_current_segment(car, 1.0)
 
     def tick(self, dt: float, current_time: float, base_duration: float = 0.2) -> None:
+        tick_start = time.perf_counter()
         self._accumulated_time += dt
         # Spawn: run every tick so spawn timing stays correct in real time; skip disabled places.
         for place in SPAWN_PLACES:
@@ -273,6 +293,26 @@ class GameState:
             poses.append((gx, gy, di))
 
         id_to_index = {id(c): idx for idx, c in enumerate(self.cars)}
+        spatial_buckets: dict[tuple[int, int], list[int]] = {}
+        for idx, p in enumerate(poses):
+            if p is None:
+                continue
+            key = _spatial_bucket_key(p[0], p[1])
+            if key not in spatial_buckets:
+                spatial_buckets[key] = []
+            spatial_buckets[key].append(idx)
+
+        def nearby_indices(gx: float, gy: float) -> list[int]:
+            bx, by = _spatial_bucket_key(gx, gy)
+            out: list[int] = []
+            r = SPATIAL_QUERY_RADIUS_CELLS
+            for dx in range(-r, r + 1):
+                for dy in range(-r, r + 1):
+                    out.extend(spatial_buckets.get((bx + dx, by + dy), []))
+            return out
+
+        visibility_checks = 0
+        pair_checks = 0
 
         # Police influence: clear flags, then set based on current frame
         for car in self.cars:
@@ -285,12 +325,14 @@ class GameState:
         if police.state in ("deploying", "holding", "returning"):
             px, py, pdi = police.get_pose()
             if police.state in ("deploying", "returning"):
-                for i, car in enumerate(self.cars):
+                for i in nearby_indices(px, py):
+                    car = self.cars[i]
                     p = poses[i]
                     if p is None:
                         continue
                     gx, gy, di = p
                     band = _visibility_zone_band(gx, gy, di, px, py, VIS_ZONE_LENGTH_CELLS, half_width)
+                    visibility_checks += 1
                     if band in ("near", "far"):
                         car.police_priority_active = True
             elif police.state == "holding":
@@ -309,6 +351,7 @@ class GameState:
                     car.police_hold_until_exit = True
 
         # First, compute visibility states (but skip impasse partners and apply police priority)
+        visibility_start = time.perf_counter()
         for i, car in enumerate(self.cars):
             car.visibility_state = "green"
             car.speed_scale = 1.0
@@ -320,7 +363,8 @@ class GameState:
             if p is None:
                 continue
             gx, gy, di = p
-            for j, other in enumerate(self.cars):
+            for j in nearby_indices(gx, gy):
+                other = self.cars[j]
                 if i == j:
                     continue
                 if getattr(car, "impasse_active", False) and getattr(car, "impasse_partner_id", None) == id(other):
@@ -330,6 +374,7 @@ class GameState:
                     continue
                 ox, oy, _ = op
                 band = _visibility_zone_band(gx, gy, di, ox, oy, VIS_ZONE_LENGTH_CELLS, half_width)
+                visibility_checks += 1
                 if band == "near":
                     car.visibility_state = "red"
                     car.speed_scale = 0.0
@@ -367,22 +412,30 @@ class GameState:
                     c.impasse_partner_id = None
 
         # Mutual red set: pairs where both cars are red AND mutually near
+        pair_start = time.perf_counter()
         mutual_red: set[tuple[int, int]] = set()
-        for i in range(len(self.cars)):
-            for j in range(i + 1, len(self.cars)):
-                if poses[i] is None or poses[j] is None:
+        seen_pairs: set[tuple[int, int]] = set()
+        for i, p in enumerate(poses):
+            if p is None:
+                continue
+            if getattr(self.cars[i], "visibility_state", "green") != "red":
+                continue
+            gx, gy, di = p
+            for j in nearby_indices(gx, gy):
+                if j <= i:
                     continue
-                # Both must be red
-                if getattr(self.cars[i], "visibility_state", "green") != "red":
+                if (i, j) in seen_pairs:
+                    continue
+                seen_pairs.add((i, j))
+                if poses[j] is None:
                     continue
                 if getattr(self.cars[j], "visibility_state", "green") != "red":
                     continue
-                # Both must see each other in near zone
-                gx, gy, di = poses[i]
                 ox, oy, _ = poses[j]
                 band_ij = _visibility_zone_band(gx, gy, di, ox, oy, VIS_ZONE_LENGTH_CELLS, half_width)
                 gx2, gy2, di2 = poses[j]
-                band_ji = _visibility_zone_band(gx2, gy2, di2, poses[i][0], poses[i][1], VIS_ZONE_LENGTH_CELLS, half_width)
+                band_ji = _visibility_zone_band(gx2, gy2, di2, gx, gy, VIS_ZONE_LENGTH_CELLS, half_width)
+                pair_checks += 2
                 if band_ij == "near" and band_ji == "near":
                     mutual_red.add((min(id(self.cars[i]), id(self.cars[j])), max(id(self.cars[i]), id(self.cars[j]))))
 
@@ -419,3 +472,14 @@ class GameState:
         for c in to_remove:
             if c in self.cars:
                 self.cars.remove(c)
+
+        tick_ms = (time.perf_counter() - tick_start) * 1000.0
+        visibility_ms = (pair_start - visibility_start) * 1000.0
+        pair_ms = (time.perf_counter() - pair_start) * 1000.0
+        alpha = 0.1
+        self._perf_stats["cars"] = len(self.cars)
+        self._perf_stats["visibility_checks"] = visibility_checks
+        self._perf_stats["pair_checks"] = pair_checks
+        self._perf_stats["tick_ms_ema"] = (1.0 - alpha) * float(self._perf_stats["tick_ms_ema"]) + alpha * tick_ms
+        self._perf_stats["visibility_ms_ema"] = (1.0 - alpha) * float(self._perf_stats["visibility_ms_ema"]) + alpha * visibility_ms
+        self._perf_stats["pair_ms_ema"] = (1.0 - alpha) * float(self._perf_stats["pair_ms_ema"]) + alpha * pair_ms
