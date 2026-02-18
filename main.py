@@ -261,6 +261,16 @@ class StoplightsWindow(arcade.Window):
         # Static grid background (800x600 PNG)
         grid_path = Path(__file__).resolve().parent / "assets" / "grid_background.png"
         self._grid_texture = arcade.load_texture(str(grid_path)) if grid_path.exists() else None
+        # Four cardinal lane tiles (rhombus, no rotation)
+        assets_dir = Path(__file__).resolve().parent / "assets"
+        self._lane_textures_by_cardinal: dict[str, arcade.Texture] | None = None
+        try:
+            tex = {c: arcade.load_texture(str(assets_dir / f"lane_{c}.png")) for c in ("N", "S", "E", "W")}
+            if all(tex.values()):
+                self._lane_textures_by_cardinal = tex
+        except Exception:
+            pass
+        self._lane_tile_list: arcade.SpriteList | None = None
         self._apply_speed_step(SPEED_DEFAULT_STEP)  # sync movement_every_n_ticks and _move_duration
         self._rebuild_static_draw_cache(self.width / 2, self.height / 2)
 
@@ -307,14 +317,33 @@ class StoplightsWindow(arcade.Window):
                     sx2, sy2 = path_pts[j + 1]
                     self._intersection_path_lines.append((sx1, sy1, sx2, sy2))
 
-        for lane_index, lane in enumerate(ALL_LANES):
-            color = LANE_UPWARD_GREY if lane_index in places.LANE_UPWARD_INDICES else LANE_DOWNWARD_GREY
-            for i in range(len(lane) - 1):
-                gx1, gy1 = lane[i]
-                gx2, gy2 = lane[i + 1]
-                sx1, sy1 = grid_to_screen(gx1, gy1, center_x, center_y)
-                sx2, sy2 = grid_to_screen(gx2, gy2, center_x, center_y)
-                self._lane_lines.append((sx1, sy1, sx2, sy2, color))
+        if self._lane_textures_by_cardinal is not None:
+            self._lane_tile_list = arcade.SpriteList()
+            # One sprite per lane cell; texture 32x20, tile 24x12
+            scale_x = (2 * 12) / 32  # TILE_W*2 / tex_w
+            scale_y = (2 * 6) / 20  # TILE_H*2 / tex_h
+            for lane_index, lane in enumerate(ALL_LANES):
+                cardinal = "N" if lane_index in (0, 1) else "S" if lane_index in (2, 3) else "E" if lane_index in (4, 5) else "W"
+                tex = self._lane_textures_by_cardinal[cardinal]
+                for gx, gy in lane:
+                    sx, sy = grid_to_screen(gx, gy, center_x, center_y)
+                    spr = arcade.Sprite(tex, scale=1.0)
+                    spr.center_x = sx
+                    spr.center_y = sy
+                    spr.angle = 0
+                    spr.scale_x = scale_x
+                    spr.scale_y = scale_y
+                    self._lane_tile_list.append(spr)
+        else:
+            self._lane_tile_list = None
+            for lane_index, lane in enumerate(ALL_LANES):
+                color = LANE_UPWARD_GREY if lane_index in places.LANE_UPWARD_INDICES else LANE_DOWNWARD_GREY
+                for i in range(len(lane) - 1):
+                    gx1, gy1 = lane[i]
+                    gx2, gy2 = lane[i + 1]
+                    sx1, sy1 = grid_to_screen(gx1, gy1, center_x, center_y)
+                    sx2, sy2 = grid_to_screen(gx2, gy2, center_x, center_y)
+                    self._lane_lines.append((sx1, sy1, sx2, sy2, color))
 
         for place in places.PLACES:
             cells = places.place_bounds(place)
@@ -392,10 +421,13 @@ class StoplightsWindow(arcade.Window):
         for sx1, sy1, sx2, sy2 in self._intersection_path_lines:
             arcade.draw_line(sx1, sy1, sx2, sy2, INTERSECTION_PATH_COLOR, INTERSECTION_PATH_WIDTH)
 
-        # Lane lines.
-        lane_width = 4
-        for sx1, sy1, sx2, sy2, color in self._lane_lines:
-            arcade.draw_line(sx1, sy1, sx2, sy2, color, lane_width)
+        # Lane tiles (rhombus sprites) or fallback to lines
+        if self._lane_tile_list is not None:
+            self._lane_tile_list.draw()
+        else:
+            lane_width = 4
+            for sx1, sy1, sx2, sy2, color in self._lane_lines:
+                arcade.draw_line(sx1, sy1, sx2, sy2, color, lane_width)
 
         # Place outlines and labels.
         for place in places.PLACES:
