@@ -319,9 +319,11 @@ class StoplightsWindow(arcade.Window):
 
         if self._lane_textures_by_cardinal is not None:
             self._lane_tile_list = arcade.SpriteList()
-            # One sprite per lane cell; texture 32x20, tile 24x12
-            scale_x = (2 * 12) / 32  # TILE_W*2 / tex_w
-            scale_y = (2 * 6) / 20  # TILE_H*2 / tex_h
+            # One sprite per lane cell; texture 32x20, tile 24x12; scale 1.5
+            base_x = (2 * 12) / 32  # TILE_W*2 / tex_w
+            base_y = (2 * 6) / 20  # TILE_H*2 / tex_h
+            scale_x = base_x * 1.5
+            scale_y = base_y * 1.5
             for lane_index, lane in enumerate(ALL_LANES):
                 # Direction of travel per lane: 0,1 N; 2,3 S; 4 W (Park inbound); 5 E (Park outbound); 6 E (Shop inbound); 7 W (Shop outbound)
                 cardinal = "N" if lane_index in (0, 1) else "S" if lane_index in (2, 3) else "E" if lane_index in (5, 6) else "W"
@@ -424,7 +426,7 @@ class StoplightsWindow(arcade.Window):
 
         # Lane tiles (rhombus sprites) or fallback to lines
         if self._lane_tile_list is not None:
-            self._lane_tile_list.draw()
+            self._lane_tile_list.draw(pixelated=True)
         else:
             lane_width = 4
             for sx1, sy1, sx2, sy2, color in self._lane_lines:
