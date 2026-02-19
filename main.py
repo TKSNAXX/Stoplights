@@ -266,6 +266,16 @@ class StoplightsWindow(arcade.Window):
             pass
         self._lane_tile_list: arcade.SpriteList | None = None
         self._intersection_sprite_list: arcade.SpriteList | None = None
+        # Car sprites (8 directions: N, NE, E, SE, S, SW, W, NW)
+        CAR_DIRECTION_NAMES = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+        self._car_textures_by_dir: list[arcade.Texture] | None = None
+        try:
+            tex_list = [arcade.load_texture(str(assets_dir / f"car_{d}.png")) for d in CAR_DIRECTION_NAMES]
+            if all(tex_list):
+                self._car_textures_by_dir = tex_list
+        except Exception:
+            pass
+        self._car_sprite_list = arcade.SpriteList()
         self._apply_speed_step(SPEED_DEFAULT_STEP)  # sync movement_every_n_ticks and _move_duration
         self._rebuild_static_draw_cache(self.width / 2, self.height / 2)
 
@@ -432,32 +442,60 @@ class StoplightsWindow(arcade.Window):
         for txt in self._cardinal_texts.values():
             txt.draw()
 
-        # Cars: render from simulation-provided continuous pose.
+        # Cars and police: sprites when available, else procedural polygons.
         CAR_DEFAULT = (220, 60, 60)
-        for car in self.game.cars:
-            if car.pose_gx is None or car.pose_gy is None:
-                curr = car.current_cell()
-                if curr is None:
-                    continue
-                gx, gy = float(curr[0]), float(curr[1])
-            else:
-                gx, gy = car.pose_gx, car.pose_gy
-            sx, sy = grid_to_screen(gx, gy, center_x, center_y)
-            color = getattr(car, "color", CAR_DEFAULT)
-            direction_index = _car_direction_index(car)
-            triangle = CAR_TRIANGLES_BY_DIRECTION[direction_index]
-            points = [(sx + dx, sy + dy) for (dx, dy) in triangle]
-            arcade.draw_polygon_filled(points, color)
-
-        # Police cars (when active)
-        for police in self.game.police_list:
-            if police.state in ("deploying", "holding", "returning"):
-                gx, gy, di = police.get_pose()
+        if self._car_textures_by_dir is not None:
+            self._car_sprite_list.clear()
+            for car in self.game.cars:
+                if car.pose_gx is None or car.pose_gy is None:
+                    curr = car.current_cell()
+                    if curr is None:
+                        continue
+                    gx, gy = float(curr[0]), float(curr[1])
+                else:
+                    gx, gy = car.pose_gx, car.pose_gy
                 sx, sy = grid_to_screen(gx, gy, center_x, center_y)
-                color = police.get_light_color()
-                triangle = CAR_TRIANGLES_BY_DIRECTION[di % 8]
+                direction_index = _car_direction_index(car)
+                tex = self._car_textures_by_dir[direction_index]
+                spr = arcade.Sprite(tex, scale=1.5)
+                spr.center_x = sx
+                spr.center_y = sy
+                spr.color = getattr(car, "color", CAR_DEFAULT)
+                self._car_sprite_list.append(spr)
+            for police in self.game.police_list:
+                if police.state in ("deploying", "holding", "returning"):
+                    gx, gy, di = police.get_pose()
+                    sx, sy = grid_to_screen(gx, gy, center_x, center_y)
+                    tex = self._car_textures_by_dir[di % 8]
+                    spr = arcade.Sprite(tex, scale=1.5)
+                    spr.center_x = sx
+                    spr.center_y = sy
+                    spr.color = police.get_light_color()
+                    self._car_sprite_list.append(spr)
+            self._car_sprite_list.draw(pixelated=True)
+        else:
+            for car in self.game.cars:
+                if car.pose_gx is None or car.pose_gy is None:
+                    curr = car.current_cell()
+                    if curr is None:
+                        continue
+                    gx, gy = float(curr[0]), float(curr[1])
+                else:
+                    gx, gy = car.pose_gx, car.pose_gy
+                sx, sy = grid_to_screen(gx, gy, center_x, center_y)
+                color = getattr(car, "color", CAR_DEFAULT)
+                direction_index = _car_direction_index(car)
+                triangle = CAR_TRIANGLES_BY_DIRECTION[direction_index]
                 points = [(sx + dx, sy + dy) for (dx, dy) in triangle]
                 arcade.draw_polygon_filled(points, color)
+            for police in self.game.police_list:
+                if police.state in ("deploying", "holding", "returning"):
+                    gx, gy, di = police.get_pose()
+                    sx, sy = grid_to_screen(gx, gy, center_x, center_y)
+                    color = police.get_light_color()
+                    triangle = CAR_TRIANGLES_BY_DIRECTION[di % 8]
+                    points = [(sx + dx, sy + dy) for (dx, dy) in triangle]
+                    arcade.draw_polygon_filled(points, color)
 
         # Visibility zone wireframe (debug: press V to toggle); color from sim visibility_state
         if self._show_visibility_fans:
