@@ -323,7 +323,8 @@ class StoplightsWindow(arcade.Window):
             scale_x = (2 * 12) / 32  # TILE_W*2 / tex_w
             scale_y = (2 * 6) / 20  # TILE_H*2 / tex_h
             for lane_index, lane in enumerate(ALL_LANES):
-                cardinal = "N" if lane_index in (0, 1) else "S" if lane_index in (2, 3) else "E" if lane_index in (4, 5) else "W"
+                # Direction of travel per lane: 0,1 N; 2,3 S; 4 W (Park inbound); 5 E (Park outbound); 6 E (Shop inbound); 7 W (Shop outbound)
+                cardinal = "N" if lane_index in (0, 1) else "S" if lane_index in (2, 3) else "E" if lane_index in (5, 6) else "W"
                 tex = self._lane_textures_by_cardinal[cardinal]
                 for gx, gy in lane:
                     sx, sy = grid_to_screen(gx, gy, center_x, center_y)
