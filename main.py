@@ -18,7 +18,6 @@ except ImportError:
 
 from sim.game import GameState
 from sim import places
-from sim.paths import path_position
 from sim.world import ALL_LANES, GRID_W, GRID_H, get_intersection_cells
 from ui import Slider
 
@@ -74,17 +73,11 @@ CAR_TRIANGLES_BY_DIRECTION: list[list[tuple[float, float]]] = [
 LANE_TO_DIRECTION_INDEX: list[int] = [0, 0, 4, 4, 6, 2, 2, 6]  # N,S,E,W
 
 # Display colors
-ROAD_GREY = (80, 80, 80)
 LANE_UPWARD_GREY = (95, 95, 95)
 LANE_DOWNWARD_GREY = (80, 80, 80)
 BUILDING_OUTLINE_WIDTH = 2
 PLACE_LABEL_COLOR = (220, 220, 220)
 PLACE_LABEL_FONT_SIZE = 12
-# Intersection path overlay (drawn on top of intersection)
-INTERSECTION_PATH_COLOR = (70, 70, 90)
-INTERSECTION_PATH_WIDTH = 1
-INTERSECTION_PATH_SAMPLES = 20
-
 # Visibility zone (debug): fan in grid space, 2 car-lengths long, 1 wide
 VIS_ZONE_LENGTH_CELLS = 2.0
 VIS_ZONE_WIDTH_CELLS = 1.0
@@ -208,8 +201,6 @@ class StoplightsWindow(arcade.Window):
         # Base segment duration for unified continuous movement.
         self._move_duration = 0.2
         self._cached_center: tuple[float, float] | None = None
-        self._intersection_polygon: list[tuple[float, float]] = []
-        self._intersection_path_lines: list[tuple[float, float, float, float]] = []
         self._lane_lines: list[tuple[float, float, float, float, tuple[int, int, int]]] = []
         self._place_polygons: dict[str, list[tuple[float, float]]] = {}
         self._place_label_positions: dict[str, tuple[float, float]] = {}
@@ -261,6 +252,9 @@ class StoplightsWindow(arcade.Window):
         # Static grid background (800x600 PNG)
         grid_path = Path(__file__).resolve().parent / "assets" / "grid_background.png"
         self._grid_texture = arcade.load_texture(str(grid_path)) if grid_path.exists() else None
+        # Intersection sprite (solid grey, no path draws)
+        inter_path = Path(__file__).resolve().parent / "assets" / "intersection.png"
+        self._intersection_texture = arcade.load_texture(str(inter_path)) if inter_path.exists() else None
         # Four cardinal lane tiles (rhombus, no rotation)
         assets_dir = Path(__file__).resolve().parent / "assets"
         self._lane_textures_by_cardinal: dict[str, arcade.Texture] | None = None
@@ -271,6 +265,7 @@ class StoplightsWindow(arcade.Window):
         except Exception:
             pass
         self._lane_tile_list: arcade.SpriteList | None = None
+        self._intersection_sprite_list: arcade.SpriteList | None = None
         self._apply_speed_step(SPEED_DEFAULT_STEP)  # sync movement_every_n_ticks and _move_duration
         self._rebuild_static_draw_cache(self.width / 2, self.height / 2)
 
@@ -286,8 +281,6 @@ class StoplightsWindow(arcade.Window):
 
     def _rebuild_static_draw_cache(self, center_x: float, center_y: float) -> None:
         self._cached_center = (center_x, center_y)
-        self._intersection_polygon = []
-        self._intersection_path_lines = []
         self._lane_lines = []
         self._place_polygons = {}
         self._place_label_positions = {}
@@ -298,24 +291,23 @@ class StoplightsWindow(arcade.Window):
             max_gx = max(p[0] for p in inter_cells)
             min_gy = min(p[1] for p in inter_cells)
             max_gy = max(p[1] for p in inter_cells)
-            inter_corners = [(min_gx, min_gy), (max_gx + 1, min_gy), (max_gx + 1, max_gy + 1), (min_gx, max_gy + 1)]
-            self._intersection_polygon = [grid_to_screen(gx, gy, center_x, center_y) for gx, gy in inter_corners]
-
-        n_samples = max(2, INTERSECTION_PATH_SAMPLES)
-        for in_lane in places.IN_LANE_INDICES:
-            for out_lane in places.OUT_LANE_INDICES:
-                if not places.is_valid_intersection_path(in_lane, out_lane):
-                    continue
-                path_pts = []
-                for i in range(n_samples):
-                    t = i / (n_samples - 1)
-                    gx, gy = path_position(in_lane, out_lane, t)
-                    sx, sy = grid_to_screen(gx, gy, center_x, center_y)
-                    path_pts.append((sx, sy))
-                for j in range(len(path_pts) - 1):
-                    sx1, sy1 = path_pts[j]
-                    sx2, sy2 = path_pts[j + 1]
-                    self._intersection_path_lines.append((sx1, sy1, sx2, sy2))
+            # Intersection sprite: center at grid midpoint; texture 44x22, polygon ~72x36
+            if self._intersection_texture is not None:
+                cx_grid = (min_gx + max_gx + 1) / 2
+                cy_grid = (min_gy + max_gy + 1) / 2
+                sx, sy = grid_to_screen(cx_grid, cy_grid, center_x, center_y)
+                spr = arcade.Sprite(self._intersection_texture, scale=1.0)
+                spr.center_x = sx
+                spr.center_y = sy
+                spr.angle = 0
+                spr.scale_x = 72 / 44
+                spr.scale_y = 36 / 22
+                self._intersection_sprite_list = arcade.SpriteList()
+                self._intersection_sprite_list.append(spr)
+            else:
+                self._intersection_sprite_list = None
+        else:
+            self._intersection_sprite_list = None
 
         if self._lane_textures_by_cardinal is not None:
             self._lane_tile_list = arcade.SpriteList()
@@ -416,13 +408,9 @@ class StoplightsWindow(arcade.Window):
                 arcade.LRBT(0, self.width, 0, self.height),
             )
 
-        # Grey filled intersection midway.
-        if self._intersection_polygon:
-            arcade.draw_polygon_filled(self._intersection_polygon, ROAD_GREY)
-
-        # Intersection paths.
-        for sx1, sy1, sx2, sy2 in self._intersection_path_lines:
-            arcade.draw_line(sx1, sy1, sx2, sy2, INTERSECTION_PATH_COLOR, INTERSECTION_PATH_WIDTH)
+        # Intersection: sprite (no path draws)
+        if self._intersection_sprite_list is not None:
+            self._intersection_sprite_list.draw(pixelated=True)
 
         # Lane tiles (rhombus sprites) or fallback to lines
         if self._lane_tile_list is not None:
@@ -516,7 +504,7 @@ class StoplightsWindow(arcade.Window):
         else:
             self._draw_ms_ema = (1.0 - alpha) * self._draw_ms_ema + alpha * draw_ms
         perf = self.game.get_perf_stats()
-        static_line_draws = len(self._intersection_path_lines) + len(self._lane_lines)
+        static_line_draws = len(self._lane_lines)
         self._perf_text.x = 10
         self._perf_text.y = self.height - 10
         self._perf_text.value = (
