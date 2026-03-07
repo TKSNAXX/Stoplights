@@ -4,6 +4,7 @@ Matches lane tile character: h-biased diamond, ROAD_GREY, pixel-perfect.
 Run once: python scripts/generate_intersection_sprite.py
 """
 from pathlib import Path
+from sim.constants import LANE_DOWNWARD_GREY, TILE_H, TILE_W
 
 try:
     from PIL import Image, ImageDraw
@@ -11,9 +12,7 @@ except ImportError:
     raise SystemExit("Pillow required: pip install Pillow")
 
 # Match main.py
-TILE_W = 12
-TILE_H = 6
-ROAD_GREY = (80, 80, 80)
+ROAD_GREY = LANE_DOWNWARD_GREY
 
 # Intersection spans 3x3 grid cells; diamond extends 1.5 cells from center
 HALF_W = int(1.5 * TILE_W)  # 18

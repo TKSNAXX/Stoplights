@@ -5,6 +5,7 @@ No runtime rotation—one sprite per lane cell.
 Run once: python scripts/generate_lane_sprites.py
 """
 from pathlib import Path
+from sim.constants import LANE_UPWARD_GREY, PLACE_LABEL_COLOR, TILE_H, TILE_W
 
 try:
     from PIL import Image, ImageDraw
@@ -12,14 +13,12 @@ except ImportError:
     raise SystemExit("Pillow required: pip install Pillow")
 
 # Match main.py isometric tile geometry
-TILE_W = 12  # half-width
-TILE_H = 6   # half-height
 CENTER_X = 16
 CENTER_Y = 10
 W, H = 32, 20  # canvas size
 YELLOW = (220, 220, 80)
-GREY = (95, 95, 95)
-WHITE = (220, 220, 220)
+GREY = LANE_UPWARD_GREY
+WHITE = PLACE_LABEL_COLOR
 STRIPE_HALF = 4  # 8 px band: 4 above and below center
 
 

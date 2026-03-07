@@ -1,20 +1,13 @@
 """
-Lightweight reusable UI controls (Slider, Switch).
+Lightweight reusable UI controls (Slider, Switch, Dialog).
 Screen space: x right, y up. Rect is (left, bottom, width, height).
 """
 from __future__ import annotations
 
-import arcade
+from typing import Callable
 
-try:
-    from arcade.draw.rect import draw_lbwh_rectangle_filled as _draw_rect
-    def _rect_filled(left: float, bottom: float, width: float, height: float, color) -> None:
-        _draw_rect(left, bottom, width, height, color)
-except ImportError:
-    def _rect_filled(left: float, bottom: float, width: float, height: float, color) -> None:
-        cx = left + width / 2
-        cy = bottom + height / 2
-        arcade.draw_rectangle_filled(cx, cy, width, height, color)
+import arcade
+from draw_compat import rect_filled, rect_outline
 
 
 class Slider:
@@ -56,14 +49,14 @@ class Slider:
         bar_height = min(height * 0.35, 8)
         bar_center_y = bottom + height / 2
         bar_bottom = bar_center_y - bar_height / 2
-        _rect_filled(left, bar_bottom, width, bar_height, self.bar_color)
+        rect_filled(left, bar_bottom, width, bar_height, self.bar_color)
         thumb_w = 16
         thumb_h = height - 4
         t = self.value / (self.num_steps - 1) if self.num_steps > 1 else 0
         thumb_left = left + thumb_w / 2 + t * (width - thumb_w) - thumb_w / 2
         if self.num_steps <= 1:
             thumb_left = left + (width - thumb_w) / 2
-        _rect_filled(thumb_left, bottom + 2, thumb_w, thumb_h, self.thumb_color)
+        rect_filled(thumb_left, bottom + 2, thumb_w, thumb_h, self.thumb_color)
 
     def on_press(self, x: float, y: float) -> bool:
         if not self.contains(x, y):
@@ -83,6 +76,248 @@ class Slider:
             return False
         self._dragging = False
         return True
+
+
+TITLE_BAR_HEIGHT = 24
+DIALOG_BG = (45, 45, 55)
+DIALOG_TITLE_BG = (60, 60, 75)
+DIALOG_BORDER = (100, 100, 120)
+X_BUTTON_SIZE = 18
+
+
+class Dialog:
+    """Base dialog: draggable, title bar, X close. Position (x, y) is top-left in screen coords."""
+
+    def __init__(self, x: float, y: float, width: float, height: float, title: str):
+        self.x = x
+        self.y = y  # top edge
+        self.width = width
+        self.height = height
+        self.title = title
+        self.visible = True
+        self.widgets: list = []
+        self._dragging = False
+        self._drag_start: tuple[float, float] | None = None
+        self._on_close: callable | None = None
+
+    def set_on_close(self, cb: callable) -> None:
+        self._on_close = cb
+
+    def _bottom(self) -> float:
+        return self.y - self.height
+
+    def contains(self, x: float, y: float) -> bool:
+        left = self.x
+        bottom = self._bottom()
+        return left <= x <= left + self.width and bottom <= y <= self.y
+
+    def _x_button_rect(self) -> tuple[float, float, float, float]:
+        """(left, bottom, width, height) for X button."""
+        left = self.x + self.width - X_BUTTON_SIZE - 4
+        bottom = self.y - TITLE_BAR_HEIGHT + (TITLE_BAR_HEIGHT - X_BUTTON_SIZE) / 2
+        return (left, bottom, X_BUTTON_SIZE, X_BUTTON_SIZE)
+
+    def _title_bar_contains(self, x: float, y: float) -> bool:
+        left = self.x
+        bottom = self.y - TITLE_BAR_HEIGHT
+        return left <= x <= left + self.width and bottom <= y <= self.y
+
+    def _x_button_contains(self, x: float, y: float) -> bool:
+        l, b, w, h = self._x_button_rect()
+        return l <= x <= l + w and b <= y <= b + h
+
+    def _layout_widgets(self) -> None:
+        """Override in subclasses to position widgets. Called before draw and when position changes."""
+        pass
+
+    def draw(self) -> None:
+        if not self.visible:
+            return
+        self._layout_widgets()
+        left = self.x
+        bottom = self._bottom()
+        rect_filled(left, bottom, self.width, self.height, DIALOG_BG)
+        rect_outline(left, bottom, self.width, self.height, DIALOG_BORDER, 1)
+        rect_filled(left, self.y - TITLE_BAR_HEIGHT, self.width, TITLE_BAR_HEIGHT, DIALOG_TITLE_BG)
+        title_text = arcade.Text(
+            self.title, left + 8, bottom + self.height - TITLE_BAR_HEIGHT / 2 - 4,
+            color=(220, 220, 220), font_size=12, anchor_x="left", anchor_y="center",
+        )
+        title_text.draw()
+        xl, xb, xw, xh = self._x_button_rect()
+        rect_filled(xl, xb, xw, xh, (120, 80, 80))
+        x_text = arcade.Text("X", xl + xw / 2, xb + xh / 2, color=(220, 220, 220), font_size=11, anchor_x="center", anchor_y="center")
+        x_text.draw()
+        for w in self.widgets:
+            w.draw()
+
+    def on_mouse_press(self, x: float, y: float) -> bool:
+        if not self.contains(x, y) or not self.visible:
+            return False
+        self._layout_widgets()
+        if self._x_button_contains(x, y):
+            self.visible = False
+            if self._on_close:
+                self._on_close(self)
+            return True
+        if self._title_bar_contains(x, y):
+            self._dragging = True
+            self._drag_start = (self.x - x, self.y - y)
+            return True
+        for w in self.widgets:
+            if hasattr(w, "on_press") and w.on_press(x, y):
+                return True
+        return True
+
+    def on_mouse_drag(self, x: float, y: float, dx: float, dy: float) -> bool:
+        if self._dragging and self._drag_start is not None:
+            self.x = x + self._drag_start[0]
+            self.y = y + self._drag_start[1]
+            return True
+        for w in self.widgets:
+            if hasattr(w, "on_drag") and w.on_drag(x):
+                return True
+        return False
+
+    def on_mouse_release(self, x: float, y: float) -> bool:
+        if self._dragging:
+            self._dragging = False
+            self._drag_start = None
+            return True
+        for w in self.widgets:
+            if hasattr(w, "on_release") and w.on_release():
+                return True
+        return False
+
+
+class DialogManager:
+    """Manages open dialogs: z-order, input routing, draw."""
+
+    def __init__(self):
+        self._dialogs: list[Dialog] = []
+
+    def open(self, dialog: Dialog) -> None:
+        if dialog in self._dialogs:
+            self._dialogs.remove(dialog)
+        self._dialogs.append(dialog)
+        dialog.visible = True
+
+    def close(self, dialog: Dialog) -> None:
+        if dialog in self._dialogs:
+            self._dialogs.remove(dialog)
+        dialog.visible = False
+
+    def close_top(self) -> bool:
+        if not self._dialogs:
+            return False
+        top = self._dialogs.pop()
+        top.visible = False
+        return True
+
+    def on_mouse_press(self, x: float, y: float) -> bool:
+        for i in range(len(self._dialogs) - 1, -1, -1):
+            d = self._dialogs[i]
+            if d.contains(x, y) and d.visible:
+                if i < len(self._dialogs) - 1:
+                    self._dialogs.pop(i)
+                    self._dialogs.append(d)
+                return d.on_mouse_press(x, y)
+        return False
+
+    def on_mouse_drag(self, x: float, y: float, dx: float, dy: float) -> bool:
+        if not self._dialogs:
+            return False
+        top = self._dialogs[-1]
+        return top.on_mouse_drag(x, y, dx, dy)
+
+    def on_mouse_release(self, x: float, y: float) -> bool:
+        if not self._dialogs:
+            return False
+        top = self._dialogs[-1]
+        return top.on_mouse_release(x, y)
+
+    def draw_all(self) -> None:
+        for d in self._dialogs:
+            if d.visible:
+                d.draw()
+
+
+# Spawn interval steps: 0.5, 1, 2, 4, 8 seconds
+PLACE_SPAWN_VALUES = (0.5, 1.0, 2.0, 4.0, 8.0)
+# Attract weight steps: 0.2, 0.5, 1.0, 2.0, 5.0
+PLACE_ATTRACT_VALUES = (0.2, 0.5, 1.0, 2.0, 5.0)
+
+
+class PlaceVarsDialog(Dialog):
+    """Dialog for editing place spawn rate and attract weight."""
+
+    def __init__(self, x: float, y: float, place: str, place_config, on_change: Callable[[], None] | None = None):
+        super().__init__(x, y, 220, 140, f"Place: {place}")
+        self.place = place
+        self._config = place_config
+        self._on_change = on_change
+        # Sliders will be positioned by _layout_widgets
+        spawn_step = self._step_for_spawn(place_config.spawn_interval)
+        attract_step = self._step_for_attract(place_config.attract_weight)
+        self._spawn_slider = Slider(0, 0, 160, 20, 5, spawn_step, (100, 100, 100), (180, 180, 180))
+        self._attract_slider = Slider(0, 0, 160, 20, 5, attract_step, (100, 100, 100), (180, 180, 180))
+        self.widgets = [self._spawn_slider, self._attract_slider]
+        self._spawn_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._attract_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+
+    def _step_for_spawn(self, val: float) -> int:
+        best = 0
+        for i, v in enumerate(PLACE_SPAWN_VALUES):
+            if abs(v - val) < abs(PLACE_SPAWN_VALUES[best] - val):
+                best = i
+        return best
+
+    def _step_for_attract(self, val: float) -> int:
+        best = 0
+        for i, v in enumerate(PLACE_ATTRACT_VALUES):
+            if abs(v - val) < abs(PLACE_ATTRACT_VALUES[best] - val):
+                best = i
+        return best
+
+    def _layout_widgets(self) -> None:
+        left = self.x + 12
+        content_top = self.y - 32
+        self._spawn_slider.rect = (left, content_top - 24, 160, 20)
+        self._attract_slider.rect = (left, content_top - 52, 160, 20)
+        self._spawn_label.x = left
+        self._spawn_label.y = content_top - 12
+        self._attract_label.x = left
+        self._attract_label.y = content_top - 40
+
+    def draw(self) -> None:
+        self._layout_widgets()
+        self._spawn_label.value = f"Spawn: {PLACE_SPAWN_VALUES[self._spawn_slider.value]:.1f}s"
+        self._attract_label.value = f"Attract: {PLACE_ATTRACT_VALUES[self._attract_slider.value]:.1f}x"
+        super().draw()
+        self._spawn_label.draw()
+        self._attract_label.draw()
+
+    def on_mouse_press(self, x: float, y: float) -> bool:
+        self._layout_widgets()
+        result = super().on_mouse_press(x, y)
+        self._sync_from_sliders()
+        return result
+
+    def on_mouse_drag(self, x: float, y: float, dx: float, dy: float) -> bool:
+        result = super().on_mouse_drag(x, y, dx, dy)
+        self._sync_from_sliders()
+        return result
+
+    def on_mouse_release(self, x: float, y: float) -> bool:
+        result = super().on_mouse_release(x, y)
+        self._sync_from_sliders()
+        return result
+
+    def _sync_from_sliders(self) -> None:
+        self._config.spawn_interval = PLACE_SPAWN_VALUES[self._spawn_slider.value]
+        self._config.attract_weight = PLACE_ATTRACT_VALUES[self._attract_slider.value]
+        if self._on_change:
+            self._on_change()
 
 
 class Switch:
@@ -123,7 +358,7 @@ class Switch:
     def draw(self) -> None:
         left, bottom, width, height = self.rect
         color = self.thumb_color if self.value else self.bar_color
-        _rect_filled(left, bottom, width, height, color)
+        rect_filled(left, bottom, width, height, color)
         cx = left + width / 2
         cy = bottom + height / 2
         if self.value:

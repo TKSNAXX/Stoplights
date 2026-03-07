@@ -4,17 +4,15 @@ Near-black background, thin isometric grid lines matching main.py projection.
 Run once: python scripts/generate_grid_sprite.py
 """
 from pathlib import Path
+from sim.constants import TILE_H, TILE_W
+from sim.world import GRID_H, GRID_W
 
 try:
     from PIL import Image, ImageDraw
 except ImportError:
     raise SystemExit("Pillow required: pip install Pillow")
 
-# Match main.py constants
-TILE_W = 12
-TILE_H = 6
-GRID_W = 31
-GRID_H = 33
+# Match main.py/world constants
 WIDTH, HEIGHT = 800, 600
 CENTER_X, CENTER_Y = WIDTH / 2, HEIGHT / 2
 CX_GRID = (GRID_W - 1) / 2

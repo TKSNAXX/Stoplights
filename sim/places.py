@@ -4,16 +4,17 @@ Four places: Housing (south), Office (north), Park (east), Shopping (west). Two-
 """
 from __future__ import annotations
 
-from sim.world import (
-    GRID_W,
-    GRID_H,
-    PLACE_SIZE,
-    HOUSING_PLACE_X_LO,
-    OFFICE_PLACE_X_LO,
-    PARK_PLACE_X_LO,
-    PARK_PLACE_Y_LO,
-    SHOPPING_PLACE_Y_LO,
-)
+import dataclasses
+
+from sim.map_data import MAP_DATA
+from sim.world import GRID_H
+
+@dataclasses.dataclass
+class PlaceConfig:
+    """Per-place spawn and attract configuration."""
+    spawn_interval: float = 2.0
+    attract_weight: float = 1.0
+
 
 # Place names: south = Housing, north = Office, east = Park, west = Shopping
 SOUTH = "Housing"
@@ -39,8 +40,8 @@ IN_LANE_INDICES = {0, 2, 4, 6}
 # Lanes that are "out" (leave intersection toward place); end = arrival.
 OUT_LANE_INDICES = {1, 3, 5, 7}
 
-# Straight-through at intersection (in_lane, out_lane): N-S arm, E-W arm, and cross (Park↔Shopping).
-STRAIGHT_TRANSITIONS = {(0, 1), (2, 3), (4, 5), (6, 7), (4, 7), (6, 5)}
+# Straight-through at intersection (in_lane, out_lane): N-S arm plus Park↔Shopping cross.
+STRAIGHT_TRANSITIONS = {(0, 1), (2, 3), (4, 7), (6, 5)}
 
 # U-turn at intersection: return to same arm (do not draw as valid path).
 U_TURN_TRANSITIONS = {(0, 3), (2, 1), (4, 5), (6, 7)}
@@ -61,20 +62,19 @@ LANE_DOWNWARD_INDICES = {2, 3, 4, 7}
 
 
 def place_bounds(place: str) -> list[tuple[int, int]]:
-    """Return list of (gx, gy) grid cells for the 5×5 place at the end of its road."""
-    if place == SOUTH:
-        # Housing: 5×5 at south, x band centered on N–S road
-        return [(x, y) for x in range(HOUSING_PLACE_X_LO, HOUSING_PLACE_X_LO + PLACE_SIZE) for y in range(PLACE_SIZE)]
-    if place == NORTH:
-        # Office: 5×5 at north
-        return [(x, y) for x in range(OFFICE_PLACE_X_LO, OFFICE_PLACE_X_LO + PLACE_SIZE) for y in range(GRID_H - PLACE_SIZE, GRID_H)]
-    if place == PARK:
-        # Park: 5×5 at east end of Park road
-        return [(x, y) for x in range(PARK_PLACE_X_LO, PARK_PLACE_X_LO + PLACE_SIZE) for y in range(PARK_PLACE_Y_LO, PARK_PLACE_Y_LO + PLACE_SIZE)]
-    if place == SHOPPING:
-        # Shopping: 5×5 at west end
-        return [(x, y) for x in range(PLACE_SIZE) for y in range(SHOPPING_PLACE_Y_LO, SHOPPING_PLACE_Y_LO + PLACE_SIZE)]
-    return []
+    """Return list of (gx, gy) grid cells for the named place rectangle."""
+    rect = MAP_DATA.get("place_rects", {}).get(place)
+    if not rect:
+        return []
+    x0 = int(rect.get("x", 0))
+    y0 = int(rect.get("y", 0))
+    w = int(rect.get("w", 0))
+    h = int(rect.get("h", 0))
+    if place == NORTH and y0 < 0:
+        y0 = GRID_H + y0
+    if w <= 0 or h <= 0:
+        return []
+    return [(x, y) for x in range(x0, x0 + w) for y in range(y0, y0 + h)]
 
 
 def spawn_lanes_for_place(place: str) -> list[int]:

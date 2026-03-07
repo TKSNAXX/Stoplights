@@ -6,6 +6,7 @@ Run once: python scripts/generate_car_sprites.py
 """
 import math
 from pathlib import Path
+from sim.constants import CAR_SIZE, CAR_TRIANGLE_BASE_HALF, TILE_H, TILE_W
 
 try:
     from PIL import Image, ImageDraw
@@ -13,17 +14,11 @@ except ImportError:
     raise SystemExit("Pillow required: pip install Pillow")
 
 # Match lane tile geometry (generate_lane_sprites.py)
-TILE_W = 12
-TILE_H = 6
 CENTER_X = 16
 CENTER_Y = 10
 W, H = 32, 20
 FLOOR_GREY = (80, 80, 80)
 WEDGE_COLOR = (200, 200, 200)
-
-# Match main.py car triangle
-CAR_SIZE = 10
-CAR_TRIANGLE_BASE_HALF = 2
 
 # Eight directions: N, NE, E, SE, S, SW, W, NW (order matches main.py direction index 0..7)
 DIRECTION_NAMES = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")

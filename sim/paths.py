@@ -7,7 +7,7 @@ from __future__ import annotations
 import math
 
 from sim.places import STRAIGHT_TRANSITIONS
-from sim.world import ALL_LANES, get_intersection_cells
+from sim.world import ALL_LANES, intersection_center
 
 # Sample step for path length integral and tangent epsilon
 _PATH_LENGTH_SAMPLES = 32
@@ -54,15 +54,6 @@ def _turn_arc_position(
     return (cx + r * math.cos(angle), cy + r * math.sin(angle))
 
 
-def _intersection_center() -> tuple[float, float]:
-    """Center of the 2×2 intersection in grid coordinates."""
-    cells = get_intersection_cells()
-    if not cells:
-        return (0.0, 0.0)
-    n = len(cells)
-    return (sum(c[0] for c in cells) / n, sum(c[1] for c in cells) / n)
-
-
 def is_straight_path(in_lane_index: int, out_lane_index: int) -> bool:
     """True if this (in, out) pair is straight-through at the intersection."""
     return (in_lane_index, out_lane_index) in STRAIGHT_TRANSITIONS
@@ -86,7 +77,7 @@ def path_position(in_lane_index: int, out_lane_index: int, t: float) -> tuple[fl
     key = (in_lane_index, out_lane_index)
     if key in _TURN_ARC_CENTER and key in _TURN_RADIUS:
         return _turn_arc_position(start, end, _TURN_ARC_CENTER[key], _TURN_RADIUS[key], t)
-    control = _intersection_center()
+    control = intersection_center()
     u = 1.0 - t
     gx = u * u * start[0] + 2 * u * t * control[0] + t * t * end[0]
     gy = u * u * start[1] + 2 * u * t * control[1] + t * t * end[1]

@@ -7,16 +7,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sim.paths import (
-    direction_index_8_from_tangent,
-    lane_segment_position,
-    lane_segment_tangent,
-)
-from sim.world import ALL_LANES, get_intersection_cells
+from sim.constants import POLICE_PRIORITY_SCALE, POLICE_SPEED
+from sim.movement import pose_for_lane_position
+from sim.world import ALL_LANES
 
 RED_ZERO_DURATION = 2.0
-POLICE_SPEED = 5.0  # cells per second (similar to normal car pace)
-POLICE_PRIORITY_SCALE = 0.3
 
 # Light cycle: white(0) -> blue(1) -> white(2) -> red(3)
 LIGHT_CYCLE = [(255, 255, 255), (60, 140, 220), (255, 255, 255), (220, 80, 80)]
@@ -48,30 +43,13 @@ class PoliceCar:
         lane = ALL_LANES[idx] if idx < len(ALL_LANES) else []
         return len(lane) if lane else 0
 
-    def _intersection_center(self) -> tuple[float, float]:
-        cells = get_intersection_cells()
-        if not cells:
-            return (0.0, 0.0)
-        n = len(cells)
-        return (sum(c[0] for c in cells) / n, sum(c[1] for c in cells) / n)
-
     def get_pose(self) -> tuple[float, float, int]:
         """Return (gx, gy, dir_index_8) for rendering and detection."""
         lane_idx = self._current_lane()
         lane = ALL_LANES[lane_idx] if lane_idx < len(ALL_LANES) else []
         if not lane:
             return (0.0, 0.0, 0)
-        n = len(lane)
-        pos = max(0.0, min(float(n - 1), self.lane_pos))
-        lo = int(pos)
-        hi = min(lo + 1, n - 1)
-        t = pos - lo
-        gx, gy = lane_segment_position(lane_idx, lo, hi, t)
-        dx, dy = lane_segment_tangent(lane_idx, lo, hi)
-        if self.direction < 0:
-            dx, dy = -dx, -dy
-        di = direction_index_8_from_tangent(dx, dy)
-        return (gx, gy, di)
+        return pose_for_lane_position(lane_idx, self.lane_pos, self.direction)
 
     def get_light_color(self) -> tuple[int, int, int]:
         """Current light color; white when returning (lights off)."""
