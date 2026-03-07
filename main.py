@@ -21,7 +21,7 @@ from sim.constants import (
 )
 from sim.game import GameState
 from sim.world import ALL_LANES, GRID_H, GRID_W, get_intersection_cells
-from ui import DialogManager, PlaceVarsDialog, Slider
+from ui import CarDeetsDialog, DialogManager, PlaceVarsDialog, Slider
 
 TICKS_PER_SECOND = 60
 TICK_DT = 1.0 / TICKS_PER_SECOND
@@ -323,6 +323,18 @@ class StoplightsWindow(arcade.Window):
                 return place
         return None
 
+    def _car_at_screen(self, sx: float, sy: float):
+        """Return car if (sx, sy) hits a car sprite, else None. Checks topmost first."""
+        if self._car_sprite_pool is None or not self.game.cars:
+            return None
+        num_cars = len(self.game.cars)
+        # Iterate reverse so topmost sprite wins
+        for i in range(num_cars - 1, -1, -1):
+            spr = self._car_sprite_pool._pool[i]
+            if spr.alpha > 0 and spr.left <= sx <= spr.right and spr.bottom <= sy <= spr.top:
+                return self.game.cars[i]
+        return None
+
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int):
         if button == arcade.MOUSE_BUTTON_LEFT:
             if self._dialog_manager.on_mouse_press(x, y):
@@ -339,6 +351,12 @@ class StoplightsWindow(arcade.Window):
                     self._place_dialogs[place] = dlg
                     dlg.set_on_close(lambda d: self._dialog_manager.close(d))
                     self._dialog_manager.open(dlg)
+                return
+            car = self._car_at_screen(x, y)
+            if car is not None:
+                dlg = CarDeetsDialog(x - 100, y - 45, car, self.game)
+                dlg.set_on_close(lambda d: self._dialog_manager.close(d))
+                self._dialog_manager.open(dlg)
                 return
             if self._traffic_slider.on_press(x, y):
                 self._apply_traffic_step(self._traffic_slider.value)

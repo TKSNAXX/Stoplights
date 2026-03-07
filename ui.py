@@ -320,6 +320,45 @@ class PlaceVarsDialog(Dialog):
             self._on_change()
 
 
+class CarDeetsDialog(Dialog):
+    """Read-only dialog showing car speed, origin, destination."""
+
+    def __init__(self, x: float, y: float, car, game) -> None:
+        super().__init__(x, y, 200, 90, "Car details")
+        self._car = car
+        self._game = game
+        self._origin_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._dest_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._speed_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+
+    def _layout_widgets(self) -> None:
+        pass  # No interactive widgets
+
+    def draw(self) -> None:
+        left = self.x + 12
+        content_top = self.y - 32
+        self._origin_label.x = left
+        self._origin_label.y = content_top - 12
+        self._dest_label.x = left
+        self._dest_label.y = content_top - 28
+        self._speed_label.x = left
+        self._speed_label.y = content_top - 44
+
+        if self._car in self._game.cars:
+            self._origin_label.value = f"Origin: {self._car.origin}"
+            self._dest_label.value = f"Destination: {self._car.destination}"
+            self._speed_label.value = f"Speed: {self._car.base_speed_multiplier:.2f}x"
+        else:
+            self._origin_label.value = "Car departed"
+            self._dest_label.value = ""
+            self._speed_label.value = ""
+
+        super().draw()
+        self._origin_label.draw()
+        self._dest_label.draw()
+        self._speed_label.draw()
+
+
 class Switch:
     """Boolean toggle. Rect (left, bottom, width, height). value is True/False."""
 
