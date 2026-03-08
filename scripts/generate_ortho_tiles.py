@@ -23,6 +23,9 @@ WHITE = (220, 220, 220)
 YELLOW_LO, YELLOW_HI = 2, 4
 WHITE_LO, WHITE_HI = 28, 30
 
+# Dashed yellow: half-tile (16px) dash, half-tile gap
+DASH_LEN = ORTHO_TILE_SIZE // 2
+
 
 def make_grass() -> Image.Image:
     return Image.new("RGBA", (ORTHO_TILE_SIZE, ORTHO_TILE_SIZE), (*GRASS, 255))
@@ -42,6 +45,26 @@ def _horiz_stripe(img: Image.Image, yellow_row: int, white_row: int) -> None:
     """Draw horizontal stripes at given row ranges."""
     for row in range(yellow_row, yellow_row + 2):
         for col in range(ORTHO_TILE_SIZE):
+            img.putpixel((col, row), (*YELLOW, 255))
+    for row in range(white_row, white_row + 2):
+        for col in range(ORTHO_TILE_SIZE):
+            img.putpixel((col, row), (*WHITE, 255))
+
+
+def _vert_stripe_dashed(img: Image.Image, yellow_col: int, white_col: int) -> None:
+    """Vertical stripes with dashed yellow (half-tile dash). White solid."""
+    for col in range(yellow_col, yellow_col + 2):
+        for row in range(0, DASH_LEN):
+            img.putpixel((col, row), (*YELLOW, 255))
+    for col in range(white_col, white_col + 2):
+        for row in range(ORTHO_TILE_SIZE):
+            img.putpixel((col, row), (*WHITE, 255))
+
+
+def _horiz_stripe_dashed(img: Image.Image, yellow_row: int, white_row: int) -> None:
+    """Horizontal stripes with dashed yellow (half-tile dash). White solid."""
+    for row in range(yellow_row, yellow_row + 2):
+        for col in range(0, DASH_LEN):
             img.putpixel((col, row), (*YELLOW, 255))
     for row in range(white_row, white_row + 2):
         for col in range(ORTHO_TILE_SIZE):
@@ -76,6 +99,34 @@ def make_road_w() -> Image.Image:
     return img
 
 
+def make_road_n_pass() -> Image.Image:
+    """N passing lane: dashed yellow on ortho bottom."""
+    img = Image.new("RGBA", (ORTHO_TILE_SIZE, ORTHO_TILE_SIZE), (*ROAD_GREY, 255))
+    _horiz_stripe_dashed(img, WHITE_LO, YELLOW_LO)
+    return img
+
+
+def make_road_s_pass() -> Image.Image:
+    """S passing lane: dashed yellow on ortho top."""
+    img = Image.new("RGBA", (ORTHO_TILE_SIZE, ORTHO_TILE_SIZE), (*ROAD_GREY, 255))
+    _horiz_stripe_dashed(img, YELLOW_LO, WHITE_LO)
+    return img
+
+
+def make_road_e_pass() -> Image.Image:
+    """E passing lane: dashed yellow on ortho left."""
+    img = Image.new("RGBA", (ORTHO_TILE_SIZE, ORTHO_TILE_SIZE), (*ROAD_GREY, 255))
+    _vert_stripe_dashed(img, YELLOW_LO, WHITE_LO)
+    return img
+
+
+def make_road_w_pass() -> Image.Image:
+    """W passing lane: dashed yellow on ortho right."""
+    img = Image.new("RGBA", (ORTHO_TILE_SIZE, ORTHO_TILE_SIZE), (*ROAD_GREY, 255))
+    _vert_stripe_dashed(img, WHITE_LO, YELLOW_LO)
+    return img
+
+
 def make_road_cross() -> Image.Image:
     return Image.new("RGBA", (ORTHO_TILE_SIZE, ORTHO_TILE_SIZE), (*ROAD_GREY, 255))
 
@@ -88,7 +139,11 @@ def main() -> None:
     make_road_s().save(ASSETS / "road_s.png")
     make_road_e().save(ASSETS / "road_e.png")
     make_road_w().save(ASSETS / "road_w.png")
-    print("Saved road_n.png, road_s.png, road_e.png, road_w.png")
+    make_road_n_pass().save(ASSETS / "road_n_pass.png")
+    make_road_s_pass().save(ASSETS / "road_s_pass.png")
+    make_road_e_pass().save(ASSETS / "road_e_pass.png")
+    make_road_w_pass().save(ASSETS / "road_w_pass.png")
+    print("Saved road_n/s/e/w.png, road_n/s/e/w_pass.png")
     make_road_cross().save(ASSETS / "road_cross.png")
     print("Saved road_cross.png")
     print("Done. Place ortho tiles in assets/ortho/ and restart.")

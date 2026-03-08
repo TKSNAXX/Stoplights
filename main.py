@@ -157,7 +157,7 @@ class StoplightsWindow(arcade.Window):
             elif lane_index in (5, 6):
                 road_type = "road_e"
             else:
-                road_type = "road_w"
+                road_type = "road_w_pass"  # westbound passing lane
             for gx, gy in lane:
                 lane_cell_to_road[(gx, gy)] = road_type
 
@@ -168,6 +168,7 @@ class StoplightsWindow(arcade.Window):
             "road_s": self._tile_set.get("road_s"),
             "road_e": self._tile_set.get("road_e"),
             "road_w": self._tile_set.get("road_w"),
+            "road_w_pass": self._tile_set.get("road_w_pass"),
         }
         road_cross_tex = self._tile_set.get("road_cross")
         for gy in range(GRID_H):
