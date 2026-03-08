@@ -151,13 +151,13 @@ class StoplightsWindow(arcade.Window):
         lane_cell_to_road: dict[tuple[int, int], str] = {}
         for lane_index, lane in enumerate(ALL_LANES):
             if lane_index in (0, 1):
-                road_type = "road_w"
-            elif lane_index in (2, 3):
-                road_type = "road_e"
-            elif lane_index in (5, 6):
                 road_type = "road_n"
-            else:
+            elif lane_index in (2, 3):
                 road_type = "road_s"
+            elif lane_index in (5, 6):
+                road_type = "road_e"
+            else:
+                road_type = "road_w"
             for gx, gy in lane:
                 lane_cell_to_road[(gx, gy)] = road_type
 

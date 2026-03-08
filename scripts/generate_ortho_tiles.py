@@ -49,30 +49,30 @@ def _horiz_stripe(img: Image.Image, yellow_row: int, white_row: int) -> None:
 
 
 def make_road_n() -> Image.Image:
-    """Vertical road, traffic flows N. Yellow left, white right."""
+    """N lanes: yellow on ortho bottom (inside after iso)."""
     img = Image.new("RGBA", (ORTHO_TILE_SIZE, ORTHO_TILE_SIZE), (*ROAD_GREY, 255))
-    _vert_stripe(img, YELLOW_LO, WHITE_LO)
+    _horiz_stripe(img, WHITE_LO, YELLOW_LO)  # yellow bottom, white top
     return img
 
 
 def make_road_s() -> Image.Image:
-    """Vertical road, traffic flows S. Reflection of N: yellow right, white left."""
+    """S lanes: yellow on ortho top (inside after iso)."""
     img = Image.new("RGBA", (ORTHO_TILE_SIZE, ORTHO_TILE_SIZE), (*ROAD_GREY, 255))
-    _vert_stripe(img, WHITE_LO, YELLOW_LO)
+    _horiz_stripe(img, YELLOW_LO, WHITE_LO)  # yellow top, white bottom
     return img
 
 
 def make_road_e() -> Image.Image:
-    """Horizontal road, traffic flows E. Yellow left, white right."""
+    """E lanes: yellow on ortho left (inside after iso)."""
     img = Image.new("RGBA", (ORTHO_TILE_SIZE, ORTHO_TILE_SIZE), (*ROAD_GREY, 255))
-    _horiz_stripe(img, YELLOW_LO, WHITE_LO)
+    _vert_stripe(img, YELLOW_LO, WHITE_LO)  # yellow left, white right
     return img
 
 
 def make_road_w() -> Image.Image:
-    """Horizontal road, traffic flows W. Reflection of E: yellow right, white left."""
+    """W lanes: yellow on ortho right (inside after iso)."""
     img = Image.new("RGBA", (ORTHO_TILE_SIZE, ORTHO_TILE_SIZE), (*ROAD_GREY, 255))
-    _horiz_stripe(img, WHITE_LO, YELLOW_LO)
+    _vert_stripe(img, WHITE_LO, YELLOW_LO)  # yellow right, white left
     return img
 
 
