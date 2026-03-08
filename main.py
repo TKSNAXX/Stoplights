@@ -9,12 +9,11 @@ import arcade
 
 from render.camera import grid_to_screen, screen_to_grid
 from render.debug import visibility_fan_vertices
-from render.sprites import CarSpritePool, load_car_textures, load_lane_textures
+from render.sprites import CarSpritePool, load_car_textures
+from render.tiles import TileSet
 from sim import places
 from sim.constants import (
     CAR_DEFAULT,
-    LANE_DOWNWARD_GREY,
-    LANE_UPWARD_GREY,
     PLACE_LABEL_COLOR,
     VIS_ZONE_LENGTH_CELLS,
     VIS_ZONE_WIDTH_CELLS,
@@ -81,7 +80,6 @@ class StoplightsWindow(arcade.Window):
         self._move_duration = MOVE_DURATION_BASE
 
         self._cached_center: tuple[float, float] | None = None
-        self._lane_lines: list[tuple[float, float, float, float, tuple[int, int, int]]] = []
         self._place_polygons: dict[str, list[tuple[float, float]]] = {}
         self._place_texts: dict[str, arcade.Text] = {}
         self._cardinal_texts: dict[str, arcade.Text] = {}
@@ -113,20 +111,26 @@ class StoplightsWindow(arcade.Window):
         self._dialog_manager = DialogManager()
         self._place_dialogs: dict[str, PlaceVarsDialog] = {}
 
+        self._cam_x = 0.0
+        self._cam_y = 0.0
+        self._pan_vx = 0.0
+        self._pan_vy = 0.0
+        self._key_left = self._key_right = self._key_up = self._key_down = False
+        self._cam_pan_speed = 300.0
+
         assets_dir = Path(__file__).resolve().parent / "assets"
-        grid_path = assets_dir / "grid_background.png"
-        inter_path = assets_dir / "intersection.png"
-        self._grid_texture = arcade.load_texture(str(grid_path)) if grid_path.exists() else None
-        self._intersection_texture = arcade.load_texture(str(inter_path)) if inter_path.exists() else None
-        self._lane_textures_by_cardinal = load_lane_textures(assets_dir)
-        self._lane_tile_list: arcade.SpriteList | None = None
-        self._intersection_sprite_list: arcade.SpriteList | None = None
+        self._tile_set = TileSet(assets_dir / "ortho")
+        self._tile_sprite_list: arcade.SpriteList | None = None
 
         self._car_textures_by_dir = load_car_textures(assets_dir)
         self._car_sprite_pool = CarSpritePool(self._car_textures_by_dir, scale=1.5) if self._car_textures_by_dir else None
+        self._car_draw_order: list[object] = []
 
         self._apply_speed_step(SPEED_DEFAULT_STEP)
         self._rebuild_static_draw_cache(self.width / 2, self.height / 2)
+
+    def _effective_center(self) -> tuple[float, float]:
+        return (self.width / 2 - self._cam_x, self.height / 2 - self._cam_y)
 
     def _to_screen(self, gx: float, gy: float, center_x: float, center_y: float) -> tuple[float, float]:
         return grid_to_screen(gx, gy, center_x, center_y, GRID_W, GRID_H)
@@ -141,47 +145,35 @@ class StoplightsWindow(arcade.Window):
 
     def _rebuild_static_draw_cache(self, center_x: float, center_y: float) -> None:
         self._cached_center = (center_x, center_y)
-        self._lane_lines.clear()
         self._place_polygons.clear()
 
-        inter_cells = get_intersection_cells()
-        if inter_cells and self._intersection_texture is not None:
-            min_gx = min(p[0] for p in inter_cells)
-            max_gx = max(p[0] for p in inter_cells)
-            min_gy = min(p[1] for p in inter_cells)
-            max_gy = max(p[1] for p in inter_cells)
-            cx_grid = (min_gx + max_gx + 1) / 2
-            cy_grid = (min_gy + max_gy + 1) / 2
-            sx, sy = self._to_screen(cx_grid, cy_grid, center_x, center_y)
-            spr = arcade.Sprite(self._intersection_texture, scale=1.0)
-            spr.center_x, spr.center_y = sx, sy
-            spr.scale_x, spr.scale_y = 72 / 44, 36 / 22
-            self._intersection_sprite_list = arcade.SpriteList()
-            self._intersection_sprite_list.append(spr)
-        else:
-            self._intersection_sprite_list = None
+        inter_cells = set(get_intersection_cells())
+        lane_cell_to_road: dict[tuple[int, int], str] = {}
+        for lane_index, lane in enumerate(ALL_LANES):
+            road_type = "road_ns" if lane_index in (0, 1, 2, 3) else "road_ew"
+            for gx, gy in lane:
+                lane_cell_to_road[(gx, gy)] = road_type
 
-        if self._lane_textures_by_cardinal:
-            self._lane_tile_list = arcade.SpriteList()
-            scale_x = ((2 * 12) / 32) * 1.5
-            scale_y = ((2 * 6) / 20) * 1.5
-            for lane_index, lane in enumerate(ALL_LANES):
-                cardinal = "N" if lane_index in (0, 1) else "S" if lane_index in (2, 3) else "E" if lane_index in (5, 6) else "W"
-                tex = self._lane_textures_by_cardinal[cardinal]
-                for gx, gy in lane:
+        self._tile_sprite_list = arcade.SpriteList()
+        grass_tex = self._tile_set.get("grass")
+        road_ns_tex = self._tile_set.get("road_ns")
+        road_ew_tex = self._tile_set.get("road_ew")
+        road_cross_tex = self._tile_set.get("road_cross")
+        for gy in range(GRID_H):
+            for gx in range(GRID_W):
+                cell = (gx, gy)
+                if cell in inter_cells and road_cross_tex is not None:
+                    tex = road_cross_tex
+                elif cell in lane_cell_to_road:
+                    rt = lane_cell_to_road[cell]
+                    tex = road_ns_tex if rt == "road_ns" else road_ew_tex
+                else:
+                    tex = grass_tex
+                if tex is not None:
                     sx, sy = self._to_screen(gx, gy, center_x, center_y)
                     spr = arcade.Sprite(tex, scale=1.0)
                     spr.center_x, spr.center_y = sx, sy
-                    spr.scale_x, spr.scale_y = scale_x, scale_y
-                    self._lane_tile_list.append(spr)
-        else:
-            self._lane_tile_list = None
-            for lane_index, lane in enumerate(ALL_LANES):
-                color = LANE_UPWARD_GREY if lane_index in places.LANE_UPWARD_INDICES else LANE_DOWNWARD_GREY
-                for i in range(len(lane) - 1):
-                    sx1, sy1 = self._to_screen(*lane[i], center_x, center_y)
-                    sx2, sy2 = self._to_screen(*lane[i + 1], center_x, center_y)
-                    self._lane_lines.append((sx1, sy1, sx2, sy2, color))
+                    self._tile_sprite_list.append(spr)
 
         for place in places.PLACES:
             cells = places.place_bounds(place)
@@ -208,11 +200,33 @@ class StoplightsWindow(arcade.Window):
             self._dialog_manager.close_top()
         elif key == arcade.key.V:
             self._show_visibility_fans = not self._show_visibility_fans
+        elif key == arcade.key.LEFT:
+            self._key_left = True
+        elif key == arcade.key.RIGHT:
+            self._key_right = True
+        elif key == arcade.key.UP:
+            self._key_up = True
+        elif key == arcade.key.DOWN:
+            self._key_down = True
+
+    def on_key_release(self, key: int, modifiers: int) -> None:
+        if key == arcade.key.LEFT:
+            self._key_left = False
+        elif key == arcade.key.RIGHT:
+            self._key_right = False
+        elif key == arcade.key.UP:
+            self._key_up = False
+        elif key == arcade.key.DOWN:
+            self._key_down = False
 
     def on_update(self, delta_time: float):
         if delta_time > 1e-9:
             fps_now = 1.0 / delta_time
             self._fps_ema = fps_now if self._fps_ema <= 0.0 else (0.9 * self._fps_ema + 0.1 * fps_now)
+        vx = self._cam_pan_speed if self._key_right else (-self._cam_pan_speed if self._key_left else 0.0)
+        vy = self._cam_pan_speed if self._key_down else (-self._cam_pan_speed if self._key_up else 0.0)
+        self._cam_x += vx * delta_time
+        self._cam_y += vy * delta_time
         self._tick_accumulator += delta_time
         substeps = 0
         while self._tick_accumulator >= TICK_DT and substeps < MAX_SUBSTEPS_PER_FRAME:
@@ -227,21 +241,12 @@ class StoplightsWindow(arcade.Window):
     def on_draw(self):
         draw_start = time.perf_counter()
         self.clear()
-        center_x = self.width / 2
-        center_y = self.height / 2
+        center_x, center_y = self._effective_center()
         if self._cached_center != (center_x, center_y):
             self._rebuild_static_draw_cache(center_x, center_y)
 
-        if self._grid_texture is not None:
-            arcade.draw_texture_rect(self._grid_texture, arcade.LRBT(0, self.width, 0, self.height))
-
-        if self._intersection_sprite_list is not None:
-            self._intersection_sprite_list.draw(pixelated=True)
-        if self._lane_tile_list is not None:
-            self._lane_tile_list.draw(pixelated=True)
-        else:
-            for sx1, sy1, sx2, sy2, color in self._lane_lines:
-                arcade.draw_line(sx1, sy1, sx2, sy2, color, 4)
+        if self._tile_sprite_list is not None:
+            self._tile_sprite_list.draw(pixelated=True)
 
         for place in places.PLACES:
             if place in self._place_polygons:
@@ -252,8 +257,7 @@ class StoplightsWindow(arcade.Window):
 
         if self._car_sprite_pool is not None:
             active_police = [p for p in self.game.police_list if p.state in ("deploying", "holding", "returning")]
-            self._car_sprite_pool.begin_frame(len(self.game.cars) + len(active_police))
-            idx = 0
+            car_data: list[tuple[float, object, int, float, float, tuple[int, int, int]]] = []
             for car in self.game.cars:
                 if car.pose_gx is None or car.pose_gy is None:
                     curr = car.current_cell()
@@ -263,13 +267,16 @@ class StoplightsWindow(arcade.Window):
                 else:
                     gx, gy = car.pose_gx, car.pose_gy
                 sx, sy = self._to_screen(gx, gy, center_x, center_y)
-                self._car_sprite_pool.set_sprite(idx, _car_direction_index(car), sx, sy, getattr(car, "color", CAR_DEFAULT))
-                idx += 1
+                car_data.append((gx + gy, car, _car_direction_index(car), sx, sy, getattr(car, "color", CAR_DEFAULT)))
             for police in active_police:
                 gx, gy, di = police.get_pose()
                 sx, sy = self._to_screen(gx, gy, center_x, center_y)
-                self._car_sprite_pool.set_sprite(idx, di, sx, sy, police.get_light_color())
-                idx += 1
+                car_data.append((gx + gy, police, di, sx, sy, police.get_light_color()))
+            car_data.sort(key=lambda t: t[0], reverse=True)
+            self._car_draw_order = [t[1] for t in car_data]
+            self._car_sprite_pool.begin_frame(len(car_data))
+            for idx, (_, _, di, sx, sy, color) in enumerate(car_data):
+                self._car_sprite_pool.set_sprite(idx, di, sx, sy, color)
             self._car_sprite_pool.sprite_list.draw(pixelated=True)
 
         if self._show_visibility_fans:
@@ -304,7 +311,7 @@ class StoplightsWindow(arcade.Window):
         self._perf_text.y = self.height - 10
         self._perf_text.value = (
             f"FPS~{self._fps_ema:5.1f} substeps:{self._last_substeps} draw:{self._draw_ms_ema:5.2f}ms "
-            f"cars:{perf['cars']} lines:{len(self._lane_lines)} tick:{float(perf['tick_ms_ema']):5.2f}ms "
+            f"cars:{perf['cars']} tiles:{len(self._tile_sprite_list or [])} tick:{float(perf['tick_ms_ema']):5.2f}ms "
             f"vis:{float(perf['visibility_ms_ema']):5.2f}ms checks:{perf['visibility_checks']} "
             f"pair:{float(perf['pair_ms_ema']):5.2f}ms checks:{perf['pair_checks']}"
         )
@@ -314,8 +321,7 @@ class StoplightsWindow(arcade.Window):
 
     def _place_at_screen(self, sx: float, sy: float) -> str | None:
         """Return place name if (sx, sy) screen coords hit a place, else None."""
-        center_x = self.width / 2
-        center_y = self.height / 2
+        center_x, center_y = self._effective_center()
         gx, gy = screen_to_grid(sx, sy, center_x, center_y, GRID_W, GRID_H)
         cell = (int(round(gx)), int(round(gy)))
         for place in places.PLACES:
@@ -325,14 +331,14 @@ class StoplightsWindow(arcade.Window):
 
     def _car_at_screen(self, sx: float, sy: float):
         """Return car if (sx, sy) hits a car sprite, else None. Checks topmost first."""
-        if self._car_sprite_pool is None or not self.game.cars:
+        if self._car_sprite_pool is None or not self._car_draw_order:
             return None
-        num_cars = len(self.game.cars)
-        # Iterate reverse so topmost sprite wins
-        for i in range(num_cars - 1, -1, -1):
+        n = len(self._car_draw_order)
+        for i in range(n - 1, -1, -1):
             spr = self._car_sprite_pool._pool[i]
             if spr.alpha > 0 and spr.left <= sx <= spr.right and spr.bottom <= sy <= spr.top:
-                return self.game.cars[i]
+                entity = self._car_draw_order[i]
+                return entity if entity in self.game.cars else None
         return None
 
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int):

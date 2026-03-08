@@ -9,14 +9,6 @@ import arcade
 CAR_DIRECTION_NAMES = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
 
 
-def load_lane_textures(assets_dir: Path) -> dict[str, arcade.Texture] | None:
-    try:
-        textures = {c: arcade.load_texture(str(assets_dir / f"lane_{c}.png")) for c in ("N", "S", "E", "W")}
-        return textures if all(textures.values()) else None
-    except Exception:
-        return None
-
-
 def load_car_textures(assets_dir: Path) -> list[arcade.Texture] | None:
     try:
         textures = [arcade.load_texture(str(assets_dir / f"car_{direction}.png")) for direction in CAR_DIRECTION_NAMES]

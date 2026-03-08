@@ -13,10 +13,10 @@ try:
 except ImportError:
     raise SystemExit("Pillow required: pip install Pillow")
 
-# Match lane tile geometry (generate_lane_sprites.py)
-CENTER_X = 16
-CENTER_Y = 10
-W, H = 32, 20
+# Match tile geometry (64x32 iso diamond per cell)
+CENTER_X = 32
+CENTER_Y = 16
+W, H = 64, 32
 FLOOR_GREY = (80, 80, 80)
 WEDGE_COLOR = (200, 200, 200)
 
