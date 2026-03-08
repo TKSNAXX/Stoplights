@@ -15,6 +15,8 @@ from sim import places
 from sim.constants import (
     CAR_DEFAULT,
     PLACE_LABEL_COLOR,
+    TILE_H,
+    TILE_W,
     VIS_ZONE_LENGTH_CELLS,
     VIS_ZONE_WIDTH_CELLS,
 )
@@ -50,6 +52,11 @@ SPEED_STEPS = 9
 SPEED_DEFAULT_STEP = 4
 MOVE_DURATION_BASE = 0.2
 
+ZOOM_STEPS = 5
+ZOOM_LEVEL_FIT = 0
+ZOOM_LEVEL_MAX = 4
+EDGE_PAN_MARGIN = 48
+
 
 def spawn_interval_for_step(step: int) -> float:
     step = max(0, min(TRAFFIC_STEPS - 1, step))
@@ -79,7 +86,7 @@ class StoplightsWindow(arcade.Window):
         self._sim_time = 0.0
         self._move_duration = MOVE_DURATION_BASE
 
-        self._cached_center: tuple[float, float] | None = None
+        self._cached_center: tuple[float, float, float] | None = None
         self._place_polygons: dict[str, list[tuple[float, float]]] = {}
         self._place_texts: dict[str, arcade.Text] = {}
         self._cardinal_texts: dict[str, arcade.Text] = {}
@@ -113,10 +120,14 @@ class StoplightsWindow(arcade.Window):
 
         self._cam_x = 0.0
         self._cam_y = 0.0
-        self._pan_vx = 0.0
-        self._pan_vy = 0.0
         self._key_left = self._key_right = self._key_up = self._key_down = False
         self._cam_pan_speed = 300.0
+
+        self._zoom_level = ZOOM_LEVEL_FIT
+        self._zoom_scale = 1.0
+        self._mouse_x = 0.0
+        self._mouse_y = 0.0
+        self._mouse_in_window = False
 
         assets_dir = Path(__file__).resolve().parent / "assets"
         self._tile_set = TileSet(assets_dir / "ortho")
@@ -127,13 +138,41 @@ class StoplightsWindow(arcade.Window):
         self._car_draw_order: list[object] = []
 
         self._apply_speed_step(SPEED_DEFAULT_STEP)
+        self._update_zoom_scale()
+        if self._car_sprite_pool is not None:
+            self._car_sprite_pool.set_zoom_scale(self._zoom_scale)
         self._rebuild_static_draw_cache(self.width / 2, self.height / 2)
+
+    def _update_zoom_scale(self) -> None:
+        """Compute zoom scale from current zoom level and window size."""
+        map_w = (GRID_W + GRID_H) * TILE_W
+        map_h = (GRID_W + GRID_H) * TILE_H
+        scale_min = min(self.width / map_w, self.height / map_h)
+        scale_max = self.height / (4 * 2 * TILE_H)
+        level = max(0, min(ZOOM_LEVEL_MAX, self._zoom_level))
+        if scale_max <= scale_min or level == 0:
+            self._zoom_scale = scale_min
+        else:
+            self._zoom_scale = scale_min * (scale_max / scale_min) ** (level / ZOOM_LEVEL_MAX)
 
     def _effective_center(self) -> tuple[float, float]:
         return (self.width / 2 - self._cam_x, self.height / 2 - self._cam_y)
 
+    def _clamp_camera_bounds(self) -> None:
+        """Clamp _cam_x, _cam_y so the map cannot be panned to infinity."""
+        z = self._zoom_scale
+        map_w = (GRID_W + GRID_H - 2) * TILE_W * z
+        map_h = (GRID_W + GRID_H - 2) * TILE_H * z
+        max_cam_x = max(0, map_w / 2 - self.width / 2)
+        max_cam_y = max(0, map_h / 2 - self.height / 2)
+        self._cam_x = max(-max_cam_x, min(max_cam_x, self._cam_x))
+        self._cam_y = max(-max_cam_y, min(max_cam_y, self._cam_y))
+
     def _to_screen(self, gx: float, gy: float, center_x: float, center_y: float) -> tuple[float, float]:
-        return grid_to_screen(gx, gy, center_x, center_y, GRID_W, GRID_H)
+        return grid_to_screen(gx, gy, center_x, center_y, GRID_W, GRID_H, self._zoom_scale)
+
+    def _screen_to_grid(self, sx: float, sy: float, center_x: float, center_y: float) -> tuple[float, float]:
+        return screen_to_grid(sx, sy, center_x, center_y, GRID_W, GRID_H, self._zoom_scale)
 
     def _apply_traffic_step(self, step: int) -> None:
         self.game.spawn_interval = spawn_interval_for_step(max(0, min(TRAFFIC_STEPS - 1, step)))
@@ -144,7 +183,7 @@ class StoplightsWindow(arcade.Window):
         self.game.movement_every_n_ticks = 1
 
     def _rebuild_static_draw_cache(self, center_x: float, center_y: float) -> None:
-        self._cached_center = (center_x, center_y)
+        self._cached_center = (center_x, center_y, self._zoom_scale)
         self._place_polygons.clear()
 
         inter_cells = set(get_intersection_cells())
@@ -183,7 +222,7 @@ class StoplightsWindow(arcade.Window):
                     tex = grass_tex
                 if tex is not None:
                     sx, sy = self._to_screen(gx, gy, center_x, center_y)
-                    spr = arcade.Sprite(tex, scale=1.0)
+                    spr = arcade.Sprite(tex, scale=self._zoom_scale)
                     spr.center_x, spr.center_y = sx, sy
                     self._tile_sprite_list.append(spr)
 
@@ -231,14 +270,48 @@ class StoplightsWindow(arcade.Window):
         elif key == arcade.key.DOWN:
             self._key_down = False
 
+    def on_mouse_scroll(self, x: int, y: int, scroll_x: int, scroll_y: int) -> None:
+        if scroll_y > 0:
+            self._zoom_level = min(ZOOM_LEVEL_MAX, self._zoom_level + 1)
+        elif scroll_y < 0:
+            self._zoom_level = max(ZOOM_LEVEL_FIT, self._zoom_level - 1)
+        self._update_zoom_scale()
+        if self._car_sprite_pool is not None:
+            self._car_sprite_pool.set_zoom_scale(self._zoom_scale)
+
+    def on_mouse_motion(self, x: float, y: float, dx: float, dy: float) -> None:
+        self._mouse_x = x
+        self._mouse_y = y
+        self._mouse_in_window = True
+
+    def on_mouse_leave(self, x: float, y: float) -> None:
+        self._mouse_in_window = False
+
+    def on_resize(self, width: int, height: int) -> None:
+        super().on_resize(width, height)
+        self._update_zoom_scale()
+        if self._car_sprite_pool is not None:
+            self._car_sprite_pool.set_zoom_scale(self._zoom_scale)
+
     def on_update(self, delta_time: float):
         if delta_time > 1e-9:
             fps_now = 1.0 / delta_time
             self._fps_ema = fps_now if self._fps_ema <= 0.0 else (0.9 * self._fps_ema + 0.1 * fps_now)
         vx = self._cam_pan_speed if self._key_right else (-self._cam_pan_speed if self._key_left else 0.0)
-        vy = self._cam_pan_speed if self._key_down else (-self._cam_pan_speed if self._key_up else 0.0)
+        vy = self._cam_pan_speed if self._key_up else (-self._cam_pan_speed if self._key_down else 0.0)
+        # Edge pan (only when mouse is in window; pan toward cursor when near edge)
+        if self._mouse_in_window:
+            if self._mouse_x < EDGE_PAN_MARGIN:
+                vx -= self._cam_pan_speed
+            elif self._mouse_x > self.width - EDGE_PAN_MARGIN:
+                vx += self._cam_pan_speed
+            if self._mouse_y < EDGE_PAN_MARGIN:
+                vy -= self._cam_pan_speed
+            elif self._mouse_y > self.height - EDGE_PAN_MARGIN:
+                vy += self._cam_pan_speed
         self._cam_x += vx * delta_time
         self._cam_y += vy * delta_time
+        self._clamp_camera_bounds()
         self._tick_accumulator += delta_time
         substeps = 0
         while self._tick_accumulator >= TICK_DT and substeps < MAX_SUBSTEPS_PER_FRAME:
@@ -254,7 +327,7 @@ class StoplightsWindow(arcade.Window):
         draw_start = time.perf_counter()
         self.clear()
         center_x, center_y = self._effective_center()
-        if self._cached_center != (center_x, center_y):
+        if self._cached_center != (center_x, center_y, self._zoom_scale):
             self._rebuild_static_draw_cache(center_x, center_y)
 
         if self._tile_sprite_list is not None:
@@ -334,7 +407,7 @@ class StoplightsWindow(arcade.Window):
     def _place_at_screen(self, sx: float, sy: float) -> str | None:
         """Return place name if (sx, sy) screen coords hit a place, else None."""
         center_x, center_y = self._effective_center()
-        gx, gy = screen_to_grid(sx, sy, center_x, center_y, GRID_W, GRID_H)
+        gx, gy = self._screen_to_grid(sx, sy, center_x, center_y)
         cell = (int(round(gx)), int(round(gy)))
         for place in places.PLACES:
             if cell in places.place_bounds(place):
