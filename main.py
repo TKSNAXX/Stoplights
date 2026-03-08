@@ -123,7 +123,7 @@ class StoplightsWindow(arcade.Window):
         self._tile_sprite_list: arcade.SpriteList | None = None
 
         self._car_textures_by_dir = load_car_textures(assets_dir)
-        self._car_sprite_pool = CarSpritePool(self._car_textures_by_dir, scale=1.5) if self._car_textures_by_dir else None
+        self._car_sprite_pool = CarSpritePool(self._car_textures_by_dir, scale=2.0) if self._car_textures_by_dir else None
         self._car_draw_order: list[object] = []
 
         self._apply_speed_step(SPEED_DEFAULT_STEP)
@@ -150,14 +150,25 @@ class StoplightsWindow(arcade.Window):
         inter_cells = set(get_intersection_cells())
         lane_cell_to_road: dict[tuple[int, int], str] = {}
         for lane_index, lane in enumerate(ALL_LANES):
-            road_type = "road_ns" if lane_index in (0, 1, 2, 3) else "road_ew"
+            if lane_index in (0, 1):
+                road_type = "road_w"
+            elif lane_index in (2, 3):
+                road_type = "road_e"
+            elif lane_index in (5, 6):
+                road_type = "road_n"
+            else:
+                road_type = "road_s"
             for gx, gy in lane:
                 lane_cell_to_road[(gx, gy)] = road_type
 
         self._tile_sprite_list = arcade.SpriteList()
         grass_tex = self._tile_set.get("grass")
-        road_ns_tex = self._tile_set.get("road_ns")
-        road_ew_tex = self._tile_set.get("road_ew")
+        road_tex: dict[str, arcade.Texture | None] = {
+            "road_n": self._tile_set.get("road_n"),
+            "road_s": self._tile_set.get("road_s"),
+            "road_e": self._tile_set.get("road_e"),
+            "road_w": self._tile_set.get("road_w"),
+        }
         road_cross_tex = self._tile_set.get("road_cross")
         for gy in range(GRID_H):
             for gx in range(GRID_W):
@@ -166,7 +177,7 @@ class StoplightsWindow(arcade.Window):
                     tex = road_cross_tex
                 elif cell in lane_cell_to_road:
                     rt = lane_cell_to_road[cell]
-                    tex = road_ns_tex if rt == "road_ns" else road_ew_tex
+                    tex = road_tex.get(rt)
                 else:
                     tex = grass_tex
                 if tex is not None:
