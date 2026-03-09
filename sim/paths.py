@@ -13,23 +13,69 @@ from sim.world import ALL_LANES, intersection_center
 _PATH_LENGTH_SAMPLES = 32
 _TANGENT_EPS = 1e-4
 
-# Arc center (grid) for each turn: chosen so (center - start) perpendicular to lane direction.
-_TURN_ARC_CENTER: dict[tuple[int, int], tuple[float, float]] = {
-    (0, 5): (20, 16),   # S→E right
-    (0, 7): (17, 16),   # S→W vert left
-    (2, 7): (17, 19),   # N→W right
-    (2, 5): (20, 19),   # N→E vert left
-    (4, 1): (20, 19),   # E→N right
-    (4, 3): (20, 16),   # E→S horiz left
-    (6, 3): (17, 16),   # W→S right
-    (6, 1): (17, 19),   # W→N horiz left
-}
 
-# Radius: 1 for right turns, 2 for left turns.
-_TURN_RADIUS: dict[tuple[int, int], float] = {
-    (0, 5): 1.0, (2, 7): 1.0, (4, 1): 1.0, (6, 3): 1.0,
-    (0, 7): 2.0, (2, 5): 2.0, (4, 3): 2.0, (6, 1): 2.0,
-}
+def _inbound_tangent(lane_index: int) -> tuple[float, float]:
+    """Unit tangent at the end of the lane (direction into the intersection)."""
+    lane = ALL_LANES[lane_index] if 0 <= lane_index < len(ALL_LANES) else []
+    if not lane or len(lane) < 2:
+        return (0.0, 0.0)
+    dx = float(lane[-1][0] - lane[-2][0])
+    dy = float(lane[-1][1] - lane[-2][1])
+    length = math.hypot(dx, dy)
+    if length < 1e-9:
+        return (0.0, 0.0)
+    return (dx / length, dy / length)
+
+
+def _outbound_tangent(lane_index: int) -> tuple[float, float]:
+    """Unit tangent at the start of the lane (direction out of the intersection)."""
+    lane = ALL_LANES[lane_index] if 0 <= lane_index < len(ALL_LANES) else []
+    if not lane or len(lane) < 2:
+        return (0.0, 0.0)
+    dx = float(lane[1][0] - lane[0][0])
+    dy = float(lane[1][1] - lane[0][1])
+    length = math.hypot(dx, dy)
+    if length < 1e-9:
+        return (0.0, 0.0)
+    return (dx / length, dy / length)
+
+
+def _turn_arc_center_and_radius(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    tin: tuple[float, float],
+    tout: tuple[float, float],
+) -> tuple[tuple[float, float], float] | None:
+    """
+    Compute arc center and radius for a 90-degree turn.
+    Center satisfies (C-S) perp Tin and (C-E) perp Tout.
+    Returns (center, radius) or None if degenerate.
+    """
+    sx, sy = start
+    ex, ey = end
+    dix, diy = tin
+    dox, doy = tout
+    det = dix * doy - diy * dox
+    if abs(det) < 1e-9:
+        return None
+    rhs = ex * dox + ey * doy - sx * dox - sy * doy
+    t = rhs / det
+    cx = sx - t * diy
+    cy = sy + t * dix
+    r = math.hypot(cx - sx, cy - sy)
+    if r < 1e-6:
+        return None
+    return ((cx, cy), r)
+
+
+def _arc_reaches_end(
+    end: tuple[float, float],
+    center: tuple[float, float],
+    r: float,
+    tol: float = 1e-3,
+) -> bool:
+    """True when end lies on the same circle radius as start."""
+    return abs(math.hypot(end[0] - center[0], end[1] - center[1]) - r) <= tol
 
 
 def _turn_arc_position(
@@ -54,6 +100,29 @@ def _turn_arc_position(
     return (cx + r * math.cos(angle), cy + r * math.sin(angle))
 
 
+def _turn_cubic_position(
+    start: tuple[float, float],
+    end: tuple[float, float],
+    tin: tuple[float, float],
+    tout: tuple[float, float],
+    t: float,
+) -> tuple[float, float]:
+    """
+    Cubic Bezier fallback for turns.
+    Guarantees exact endpoints while preserving inbound/outbound tangents.
+    """
+    sx, sy = start
+    ex, ey = end
+    chord = math.hypot(ex - sx, ey - sy)
+    handle = max(0.5, 0.5 * chord)
+    p1 = (sx + tin[0] * handle, sy + tin[1] * handle)
+    p2 = (ex - tout[0] * handle, ey - tout[1] * handle)
+    u = 1.0 - t
+    gx = u * u * u * sx + 3.0 * u * u * t * p1[0] + 3.0 * u * t * t * p2[0] + t * t * t * ex
+    gy = u * u * u * sy + 3.0 * u * u * t * p1[1] + 3.0 * u * t * t * p2[1] + t * t * t * ey
+    return (gx, gy)
+
+
 def is_straight_path(in_lane_index: int, out_lane_index: int) -> bool:
     """True if this (in, out) pair is straight-through at the intersection."""
     return (in_lane_index, out_lane_index) in STRAIGHT_TRANSITIONS
@@ -63,7 +132,7 @@ def path_position(in_lane_index: int, out_lane_index: int, t: float) -> tuple[fl
     """
     Position (gx, gy) along the intersection path at parameter t in [0, 1].
     Straight: line from last cell of in_lane to first cell of out_lane.
-    Turn: quarter-circular arc tangent to inbound lane at start; Bezier fallback for other pairs.
+    Turn: circular arc when valid; cubic-tangent fallback for wide/invalid arc fits.
     """
     t = max(0.0, min(1.0, t))
     if in_lane_index < 0 or in_lane_index >= len(ALL_LANES) or not ALL_LANES[in_lane_index]:
@@ -74,14 +143,15 @@ def path_position(in_lane_index: int, out_lane_index: int, t: float) -> tuple[fl
     end = (float(ALL_LANES[out_lane_index][0][0]), float(ALL_LANES[out_lane_index][0][1]))
     if is_straight_path(in_lane_index, out_lane_index):
         return (start[0] + t * (end[0] - start[0]), start[1] + t * (end[1] - start[1]))
-    key = (in_lane_index, out_lane_index)
-    if key in _TURN_ARC_CENTER and key in _TURN_RADIUS:
-        return _turn_arc_position(start, end, _TURN_ARC_CENTER[key], _TURN_RADIUS[key], t)
-    control = intersection_center()
-    u = 1.0 - t
-    gx = u * u * start[0] + 2 * u * t * control[0] + t * t * end[0]
-    gy = u * u * start[1] + 2 * u * t * control[1] + t * t * end[1]
-    return (gx, gy)
+    tin = _inbound_tangent(in_lane_index)
+    tout = _outbound_tangent(out_lane_index)
+    arc_result = _turn_arc_center_and_radius(start, end, tin, tout)
+    if arc_result is not None:
+        center, radius = arc_result
+        if _arc_reaches_end(end, center, radius):
+            return _turn_arc_position(start, end, center, radius, t)
+    # Fallback guarantees no snap at lane handoff and keeps turn tangents.
+    return _turn_cubic_position(start, end, tin, tout, t)
 
 
 def path_length(in_lane_index: int, out_lane_index: int) -> float:

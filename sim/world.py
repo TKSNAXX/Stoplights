@@ -20,6 +20,16 @@ def get_intersection_cells() -> list[tuple[int, int]]:
     return list(INTERSECTION_CELLS)
 
 
+def intersection_bounds() -> tuple[int, int, int, int]:
+    """Return (x_lo, x_hi, y_lo, y_hi) from intersection cells. x_hi/y_hi are exclusive."""
+    cells = get_intersection_cells()
+    if not cells:
+        return (0, 0, 0, 0)
+    xs = [c[0] for c in cells]
+    ys = [c[1] for c in cells]
+    return (min(xs), max(xs) + 1, min(ys), max(ys) + 1)
+
+
 def intersection_center() -> tuple[float, float]:
     """Center of the intersection in grid coordinates."""
     cells = get_intersection_cells()
