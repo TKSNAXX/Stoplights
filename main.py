@@ -79,7 +79,7 @@ def _car_direction_index(car) -> int:
 
 class StoplightsWindow(arcade.Window):
     def __init__(self):
-        super().__init__(800, 600, "Stoplights")
+        super().__init__(800, 600, "Stoplights", resizable=True)
         arcade.set_background_color(arcade.color.BLACK)
         self.game = GameState()
         self._tick_accumulator = 0.0
