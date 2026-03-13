@@ -7,7 +7,7 @@ Run: python scripts/generate_ortho_tiles.py
 from pathlib import Path
 
 try:
-    from PIL import Image
+    from PIL import Image, ImageDraw
 except ImportError:
     raise SystemExit("Pillow required: pip install Pillow")
 
@@ -136,6 +136,60 @@ def make_road_cross() -> Image.Image:
     return Image.new("RGBA", (ORTHO_TILE_SIZE, ORTHO_TILE_SIZE), (*ROAD_GREY, 255))
 
 
+# Corner tile: 128x128 for 4x4 bypass intersection
+CORNER_SIZE = ORTHO_TILE_SIZE * 4
+
+# Arc center = NW corner = lower-left in ortho (0, 127)
+# Arc starts on bottom, proceeds upward and leftward 90° to left edge
+# Four 2px bands (outer to inner): wh, yel, yel, wh at radii from coords 35, 61, 67, 93
+CORNER_ARC_CX = 0
+CORNER_ARC_CY = CORNER_SIZE - 1
+CORNER_BANDS = [
+    (WHITE, 93, 95),   # outer white, px 93-94
+    (YELLOW, 67, 69),  # yellow, 67-68
+    (YELLOW, 61, 63),  # yellow, 61-62
+    (WHITE, 35, 37),   # inner white, 35-36
+]
+
+
+def _draw_arc_bands(
+    img: Image.Image,
+    draw: ImageDraw.ImageDraw,
+    cx: int,
+    cy: int,
+    start_angle: float,
+    end_angle: float,
+    bands: list[tuple[tuple[int, int, int], int, int]],
+    fill_color: tuple[int, int, int],
+) -> None:
+    """Draw concentric arc bands outside-in. Each band is (color, r_inner, r_outer). Rest is fill_color."""
+    for color, r_inner, r_outer in bands:
+        bbox = (cx - r_outer, cy - r_outer, cx + r_outer, cy + r_outer)
+        draw.pieslice(bbox, start_angle, end_angle, fill=(*color, 255))
+        if r_inner > 0:
+            inner_bbox = (cx - r_inner, cy - r_inner, cx + r_inner, cy + r_inner)
+            draw.pieslice(inner_bbox, start_angle, end_angle, fill=(*fill_color, 255))
+
+
+def make_corner() -> Image.Image:
+    """
+    Bypass corner: wh/2yel/wh stripes in 90° arc on road grey.
+    Center at NW (lower-left). Arc from bottom upward and leftward.
+    Parametric bands for reuse.
+    """
+    img = Image.new("RGBA", (CORNER_SIZE, CORNER_SIZE), (*ROAD_GREY, 255))
+    draw = ImageDraw.Draw(img)
+    # PIL: 0°=right, 90°=down, 270°=up. Arc from bottom (0°) to left (270°), 90° wedge = 270° to 360°
+    _draw_arc_bands(
+        img, draw,
+        CORNER_ARC_CX, CORNER_ARC_CY,
+        270, 360,
+        CORNER_BANDS,
+        ROAD_GREY,
+    )
+    return img
+
+
 def main() -> None:
     ASSETS.mkdir(parents=True, exist_ok=True)
     make_grass().save(ASSETS / "grass.png")
@@ -151,7 +205,8 @@ def main() -> None:
     make_road_w_pass().save(ASSETS / "road_w_pass.png")
     print("Saved road_n/s/e/w.png, road_n/s/e/w_pass.png")
     make_road_cross().save(ASSETS / "road_cross.png")
-    print("Saved road_cross.png")
+    make_corner().save(ASSETS / "corner.png")
+    print("Saved road_cross.png, corner.png")
     print("Done. Place ortho tiles in assets/ortho/ and restart.")
 
 

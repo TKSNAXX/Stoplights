@@ -20,6 +20,30 @@ from sim.constants import ORTHO_TILE_SIZE
 ORTHO_TO_ISO_AFFINE = (0.5, 1.0, -16, -0.5, 1.0, 16)
 
 
+def ortho_to_iso_large(src: Image.Image, cells: int = 4) -> Image.Image:
+    """
+    Transform ortho square (cells*32) into iso diamond (cells*64 x cells*32).
+    For 128x128 ortho -> 256x128 iso. Keeps scale relative to 32x32 tiles.
+    """
+    if Image is None:
+        raise RuntimeError("Pillow required for ortho_to_iso_large: pip install Pillow")
+    half = (ORTHO_TILE_SIZE * cells) // 2
+    src = src.convert("RGBA")
+    expected = (ORTHO_TILE_SIZE * cells, ORTHO_TILE_SIZE * cells)
+    if src.size != expected:
+        src = src.resize(expected, resample=NEAREST)
+    out_w = ORTHO_TILE_SIZE * 2 * cells
+    out_h = ORTHO_TILE_SIZE * cells
+    affine = (0.5, 1.0, -half, -0.5, 1.0, half)
+    return src.transform(
+        (out_w, out_h),
+        AFFINE,
+        affine,
+        resample=NEAREST,
+        fillcolor=(0, 0, 0, 0),
+    )
+
+
 def ortho_to_iso(src: Image.Image) -> Image.Image:
     """
     Transform a 32x32 ortho square into a 64x32 iso diamond.
@@ -61,7 +85,11 @@ class TileSet:
             name = path.stem
             try:
                 img = Image.open(path)
-                iso_img = ortho_to_iso(img)
+                size = img.size
+                if size == (128, 128):
+                    iso_img = ortho_to_iso_large(img, cells=4)
+                else:
+                    iso_img = ortho_to_iso(img)
                 tex = arcade.Texture(iso_img, name=name)
                 self._textures[name] = tex
             except Exception as e:

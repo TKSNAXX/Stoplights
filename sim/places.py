@@ -20,6 +20,16 @@ LANE_TYPE_NORMAL = "normal"
 LANE_TYPE_PASSING = "passing"
 LANE_TYPES = (LANE_TYPE_NORMAL, LANE_TYPE_PASSING)
 
+INTERSECTION_TYPE_X = "x"
+INTERSECTION_TYPE_CORNER = "corner"
+INTERSECTION_TYPES = (INTERSECTION_TYPE_X, INTERSECTION_TYPE_CORNER)
+
+
+@dataclasses.dataclass
+class IntersectionConfig:
+    """Per-intersection type: x (cross) or corner."""
+    intersection_type: str = INTERSECTION_TYPE_X
+
 
 @dataclasses.dataclass
 class LaneConfig:

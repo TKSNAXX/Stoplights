@@ -21,8 +21,16 @@ from sim.constants import (
     VIS_ZONE_WIDTH_CELLS,
 )
 from sim.game import GameState
-from sim.world import ALL_LANES, GRID_H, GRID_W, get_intersection_cells
-from ui import CarDeetsDialog, DialogManager, LaneVarsDialog, PlaceVarsDialog, Slider
+from sim.world import (
+    ALL_LANES,
+    GRID_H,
+    GRID_W,
+    get_bypass_intersection_cells,
+    get_intersection_at_cell,
+    get_intersection_cells,
+    get_main_intersection_cells,
+)
+from ui import CarDeetsDialog, DialogManager, IntersectionVarsDialog, LaneVarsDialog, PlaceVarsDialog, Slider
 
 TICKS_PER_SECOND = 60
 TICK_DT = 1.0 / TICKS_PER_SECOND
@@ -117,6 +125,7 @@ class StoplightsWindow(arcade.Window):
         self._dialog_manager = DialogManager()
         self._place_dialogs: dict[str, PlaceVarsDialog] = {}
         self._lane_dialogs: dict[int, LaneVarsDialog] = {}
+        self._intersection_dialogs: dict[str, IntersectionVarsDialog] = {}
 
         self._cam_x = 0.0
         self._cam_y = 0.0
@@ -191,7 +200,6 @@ class StoplightsWindow(arcade.Window):
         self._cached_center = (center_x, center_y, self._zoom_scale)
         self._tile_cells.clear()
 
-        inter_cells = set(get_intersection_cells())
         lane_cell_to_road: dict[tuple[int, int], str] = {}
         base_by_lane: dict[int, str] = {
             0: "road_n", 1: "road_n",
@@ -227,10 +235,21 @@ class StoplightsWindow(arcade.Window):
             "road_w_pass": self._tile_set.get("road_w_pass"),
         }
         road_cross_tex = self._tile_set.get("road_cross")
+        corner_tex = self._tile_set.get("corner")
+        main_inter_cells = set(get_main_intersection_cells())
+        bypass_inter_cells = set(get_bypass_intersection_cells())
+        bypass_use_corner = (
+            self.game.intersection_configs.get("bypass")
+            and self.game.intersection_configs["bypass"].intersection_type == places.INTERSECTION_TYPE_CORNER
+        )
         for gy in range(GRID_H):
             for gx in range(GRID_W):
                 cell = (gx, gy)
-                if cell in inter_cells and road_cross_tex is not None:
+                if cell in main_inter_cells and road_cross_tex is not None:
+                    tex = road_cross_tex
+                elif cell in bypass_inter_cells:
+                    if bypass_use_corner and corner_tex is not None:
+                        continue
                     tex = road_cross_tex
                 elif cell in lane_cell_to_road:
                     rt = lane_cell_to_road[cell]
@@ -245,6 +264,16 @@ class StoplightsWindow(arcade.Window):
                     spr.center_x, spr.center_y = sx, sy
                     self._tile_sprite_list.append(spr)
                     self._tile_cells.append((gx, gy))
+
+        if bypass_use_corner and corner_tex is not None and bypass_inter_cells:
+            bypass_cells = list(bypass_inter_cells)
+            cx = sum(c[0] for c in bypass_cells) / len(bypass_cells)
+            cy = sum(c[1] for c in bypass_cells) / len(bypass_cells)
+            sx, sy = self._to_screen(cx, cy, center_x, center_y)
+            spr = arcade.Sprite(corner_tex, scale=self._zoom_scale)
+            spr.center_x, spr.center_y = sx, sy
+            self._tile_sprite_list.append(spr)
+            self._tile_cells.append((cx, cy))
 
         self._update_text_positions(center_x, center_y)
 
@@ -464,17 +493,23 @@ class StoplightsWindow(arcade.Window):
         return None
 
     def _lane_at_screen(self, sx: float, sy: float) -> int | None:
-        """Return lane index (0-7) if (sx, sy) hits a lane cell, else None. Skips intersection cells."""
+        """Return lane index (0-11) if (sx, sy) hits a lane cell, else None. Skips intersection cells."""
         center_x, center_y = self._effective_center()
         gx, gy = self._screen_to_grid(sx, sy, center_x, center_y)
         cell = (int(round(gx)), int(round(gy)))
-        inter_cells = set(get_intersection_cells())
-        if cell in inter_cells:
+        if get_intersection_at_cell(cell) is not None:
             return None
         for i, lane in enumerate(ALL_LANES):
             if cell in lane:
                 return i
         return None
+
+    def _intersection_at_screen(self, sx: float, sy: float) -> str | None:
+        """Return 'main' or 'bypass' if (sx, sy) hits an intersection cell, else None."""
+        center_x, center_y = self._effective_center()
+        gx, gy = self._screen_to_grid(sx, sy, center_x, center_y)
+        cell = (int(round(gx)), int(round(gy)))
+        return get_intersection_at_cell(cell)
 
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int):
         if button == arcade.MOUSE_BUTTON_LEFT:
@@ -510,6 +545,20 @@ class StoplightsWindow(arcade.Window):
                         on_change=self._invalidate_draw_cache,
                     )
                     self._lane_dialogs[lane_idx] = dlg
+                    dlg.set_on_close(lambda d: self._dialog_manager.close(d))
+                    self._dialog_manager.open(dlg)
+                return
+            inter_key = self._intersection_at_screen(x, y)
+            if inter_key is not None:
+                if inter_key in self._intersection_dialogs:
+                    self._dialog_manager.open(self._intersection_dialogs[inter_key])
+                else:
+                    dlg = IntersectionVarsDialog(
+                        x - 110, y - 50, inter_key,
+                        self.game.intersection_configs[inter_key],
+                        on_change=self._invalidate_draw_cache,
+                    )
+                    self._intersection_dialogs[inter_key] = dlg
                     dlg.set_on_close(lambda d: self._dialog_manager.close(d))
                     self._dialog_manager.open(dlg)
                 return

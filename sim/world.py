@@ -18,6 +18,18 @@ _HP_INTERSECTION = MAP_DATA.get("hp_intersection", {})
 _HP_CELLS = [tuple(cell) for cell in _HP_INTERSECTION.get("cells", [])]
 _HP_SLOT_CELLS = [tuple(cell) for cell in _HP_INTERSECTION.get("slots", [])]
 
+_MAIN_CELLS_SET = frozenset(INTERSECTION_CELLS)
+_BYPASS_CELLS_SET = frozenset(_HP_CELLS)
+
+
+def get_intersection_at_cell(cell: tuple[int, int]) -> str | None:
+    """Return 'main' if cell in main intersection, 'bypass' if in HP junction, else None."""
+    if cell in _MAIN_CELLS_SET:
+        return "main"
+    if cell in _BYPASS_CELLS_SET:
+        return "bypass"
+    return None
+
 
 def get_intersection_cells() -> list[tuple[int, int]]:
     """Return list of (gx, gy) that are part of any intersection."""
@@ -28,6 +40,16 @@ def get_intersection_cells() -> list[tuple[int, int]]:
             seen.add(cell)
             out.append(cell)
     return out
+
+
+def get_main_intersection_cells() -> list[tuple[int, int]]:
+    """Return cells belonging to the main intersection only."""
+    return list(INTERSECTION_CELLS)
+
+
+def get_bypass_intersection_cells() -> list[tuple[int, int]]:
+    """Return cells belonging to the bypass (HP) intersection only."""
+    return list(_HP_CELLS)
 
 
 def intersection_bounds() -> tuple[int, int, int, int]:

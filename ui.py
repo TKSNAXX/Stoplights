@@ -250,6 +250,69 @@ PLACE_ATTRACT_VALUES = (0.2, 0.5, 1.0, 2.0, 5.0)
 LANE_SPEED_VALUES = (0.5, 0.75, 1.0, 1.25, 1.5)
 # Lane type: normal, passing (more types in future)
 LANE_TYPE_VALUES = ("normal", "passing")
+# Intersection type: x (cross), corner
+INTERSECTION_TYPE_VALUES = ("x", "corner")
+
+
+class IntersectionVarsDialog(Dialog):
+    """Dialog for editing intersection type (x vs corner)."""
+
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        intersection_key: str,
+        intersection_config,
+        on_change: Callable[[], None] | None = None,
+    ):
+        super().__init__(x, y, 220, 100, f"Intersection: {intersection_key}")
+        self.intersection_key = intersection_key
+        self._config = intersection_config
+        self._on_change = on_change
+        type_step = INTERSECTION_TYPE_VALUES.index(
+            getattr(intersection_config, "intersection_type", "x")
+        )
+        self._type_slider = Slider(
+            0, 0, 160, 20,
+            len(INTERSECTION_TYPE_VALUES), type_step,
+            (100, 100, 100), (180, 180, 180),
+        )
+        self.widgets = [self._type_slider]
+        self._type_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+
+    def _layout_widgets(self) -> None:
+        left = self.x + 12
+        content_top = self.y - 32
+        self._type_slider.rect = (left, content_top - 24, 160, 20)
+        self._type_label.x = left
+        self._type_label.y = content_top - 12
+
+    def draw(self) -> None:
+        self._layout_widgets()
+        self._type_label.value = f"Type: {INTERSECTION_TYPE_VALUES[self._type_slider.value]}"
+        super().draw()
+        self._type_label.draw()
+
+    def on_mouse_press(self, x: float, y: float) -> bool:
+        self._layout_widgets()
+        result = super().on_mouse_press(x, y)
+        self._sync_from_sliders()
+        return result
+
+    def on_mouse_drag(self, x: float, y: float, dx: float, dy: float) -> bool:
+        result = super().on_mouse_drag(x, y, dx, dy)
+        self._sync_from_sliders()
+        return result
+
+    def on_mouse_release(self, x: float, y: float) -> bool:
+        result = super().on_mouse_release(x, y)
+        self._sync_from_sliders()
+        return result
+
+    def _sync_from_sliders(self) -> None:
+        self._config.intersection_type = INTERSECTION_TYPE_VALUES[self._type_slider.value]
+        if self._on_change:
+            self._on_change()
 
 
 class PlaceVarsDialog(Dialog):
