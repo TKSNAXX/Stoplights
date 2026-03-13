@@ -246,6 +246,10 @@ class DialogManager:
 PLACE_SPAWN_VALUES = (0.5, 1.0, 2.0, 4.0, 8.0)
 # Attract weight steps: 0.2, 0.5, 1.0, 2.0, 5.0
 PLACE_ATTRACT_VALUES = (0.2, 0.5, 1.0, 2.0, 5.0)
+# Lane speed limit steps: 0.5, 0.75, 1.0, 1.25, 1.5
+LANE_SPEED_VALUES = (0.5, 0.75, 1.0, 1.25, 1.5)
+# Lane type: normal, passing (more types in future)
+LANE_TYPE_VALUES = ("normal", "passing")
 
 
 class PlaceVarsDialog(Dialog):
@@ -316,6 +320,76 @@ class PlaceVarsDialog(Dialog):
     def _sync_from_sliders(self) -> None:
         self._config.spawn_interval = PLACE_SPAWN_VALUES[self._spawn_slider.value]
         self._config.attract_weight = PLACE_ATTRACT_VALUES[self._attract_slider.value]
+        if self._on_change:
+            self._on_change()
+
+
+class LaneVarsDialog(Dialog):
+    """Dialog for editing lane speed limit and type (not yet wired to car movement)."""
+
+    def __init__(self, x: float, y: float, lane_index: int, lane_config, on_change: Callable[[], None] | None = None):
+        super().__init__(x, y, 220, 130, f"Lane {lane_index}")
+        self.lane_index = lane_index
+        self._config = lane_config
+        self._on_change = on_change
+        speed_step = self._step_for_speed(lane_config.speed_limit)
+        type_step = self._step_for_type(lane_config.lane_type)
+        self._speed_slider = Slider(0, 0, 160, 20, len(LANE_SPEED_VALUES), speed_step, (100, 100, 100), (180, 180, 180))
+        self._type_slider = Slider(0, 0, 160, 20, len(LANE_TYPE_VALUES), type_step, (100, 100, 100), (180, 180, 180))
+        self.widgets = [self._speed_slider, self._type_slider]
+        self._speed_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._type_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+
+    def _step_for_speed(self, val: float) -> int:
+        best = 0
+        for i, v in enumerate(LANE_SPEED_VALUES):
+            if abs(v - val) < abs(LANE_SPEED_VALUES[best] - val):
+                best = i
+        return best
+
+    def _step_for_type(self, val: str) -> int:
+        try:
+            return LANE_TYPE_VALUES.index(val)
+        except ValueError:
+            return 0
+
+    def _layout_widgets(self) -> None:
+        left = self.x + 12
+        content_top = self.y - 32
+        self._speed_slider.rect = (left, content_top - 24, 160, 20)
+        self._type_slider.rect = (left, content_top - 52, 160, 20)
+        self._speed_label.x = left
+        self._speed_label.y = content_top - 12
+        self._type_label.x = left
+        self._type_label.y = content_top - 40
+
+    def draw(self) -> None:
+        self._layout_widgets()
+        self._speed_label.value = f"Speed limit: {LANE_SPEED_VALUES[self._speed_slider.value]:.2f}x"
+        self._type_label.value = f"Type: {LANE_TYPE_VALUES[self._type_slider.value]}"
+        super().draw()
+        self._speed_label.draw()
+        self._type_label.draw()
+
+    def on_mouse_press(self, x: float, y: float) -> bool:
+        self._layout_widgets()
+        result = super().on_mouse_press(x, y)
+        self._sync_from_sliders()
+        return result
+
+    def on_mouse_drag(self, x: float, y: float, dx: float, dy: float) -> bool:
+        result = super().on_mouse_drag(x, y, dx, dy)
+        self._sync_from_sliders()
+        return result
+
+    def on_mouse_release(self, x: float, y: float) -> bool:
+        result = super().on_mouse_release(x, y)
+        self._sync_from_sliders()
+        return result
+
+    def _sync_from_sliders(self) -> None:
+        self._config.speed_limit = LANE_SPEED_VALUES[self._speed_slider.value]
+        self._config.lane_type = LANE_TYPE_VALUES[self._type_slider.value]
         if self._on_change:
             self._on_change()
 

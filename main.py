@@ -22,7 +22,7 @@ from sim.constants import (
 )
 from sim.game import GameState
 from sim.world import ALL_LANES, GRID_H, GRID_W, get_intersection_cells
-from ui import CarDeetsDialog, DialogManager, PlaceVarsDialog, Slider
+from ui import CarDeetsDialog, DialogManager, LaneVarsDialog, PlaceVarsDialog, Slider
 
 TICKS_PER_SECOND = 60
 TICK_DT = 1.0 / TICKS_PER_SECOND
@@ -117,6 +117,7 @@ class StoplightsWindow(arcade.Window):
 
         self._dialog_manager = DialogManager()
         self._place_dialogs: dict[str, PlaceVarsDialog] = {}
+        self._lane_dialogs: dict[int, LaneVarsDialog] = {}
 
         self._cam_x = 0.0
         self._cam_y = 0.0
@@ -142,6 +143,10 @@ class StoplightsWindow(arcade.Window):
         if self._car_sprite_pool is not None:
             self._car_sprite_pool.set_zoom_scale(self._zoom_scale)
         self._rebuild_static_draw_cache(self.width / 2, self.height / 2)
+
+    def _invalidate_draw_cache(self) -> None:
+        """Force tile cache rebuild on next draw (e.g. when lane config changes)."""
+        self._cached_center = None
 
     def _update_zoom_scale(self) -> None:
         """Compute zoom scale from current zoom level and window size."""
@@ -188,15 +193,17 @@ class StoplightsWindow(arcade.Window):
 
         inter_cells = set(get_intersection_cells())
         lane_cell_to_road: dict[tuple[int, int], str] = {}
+        base_by_lane: dict[int, str] = {
+            0: "road_n", 1: "road_n",
+            2: "road_s", 3: "road_s",
+            4: "road_w", 7: "road_w",
+            5: "road_e", 6: "road_e",
+        }
         for lane_index, lane in enumerate(ALL_LANES):
-            if lane_index in (0, 1):
-                road_type = "road_n"
-            elif lane_index in (2, 3):
-                road_type = "road_s"
-            elif lane_index in (5, 6):
-                road_type = "road_e"
-            else:
-                road_type = "road_w_pass"  # westbound passing lane
+            base = base_by_lane.get(lane_index, "road_n")
+            cfg = self.game.lane_configs.get(lane_index)
+            suffix = "_pass" if cfg and cfg.lane_type == places.LANE_TYPE_PASSING else ""
+            road_type = base + suffix if self._tile_set.get(base + suffix) else base
             for gx, gy in lane:
                 lane_cell_to_road[(gx, gy)] = road_type
 
@@ -207,6 +214,9 @@ class StoplightsWindow(arcade.Window):
             "road_s": self._tile_set.get("road_s"),
             "road_e": self._tile_set.get("road_e"),
             "road_w": self._tile_set.get("road_w"),
+            "road_n_pass": self._tile_set.get("road_n_pass"),
+            "road_s_pass": self._tile_set.get("road_s_pass"),
+            "road_e_pass": self._tile_set.get("road_e_pass"),
             "road_w_pass": self._tile_set.get("road_w_pass"),
         }
         road_cross_tex = self._tile_set.get("road_cross")
@@ -426,6 +436,19 @@ class StoplightsWindow(arcade.Window):
                 return entity if entity in self.game.cars else None
         return None
 
+    def _lane_at_screen(self, sx: float, sy: float) -> int | None:
+        """Return lane index (0-7) if (sx, sy) hits a lane cell, else None. Skips intersection cells."""
+        center_x, center_y = self._effective_center()
+        gx, gy = self._screen_to_grid(sx, sy, center_x, center_y)
+        cell = (int(round(gx)), int(round(gy)))
+        inter_cells = set(get_intersection_cells())
+        if cell in inter_cells:
+            return None
+        for i, lane in enumerate(ALL_LANES):
+            if cell in lane:
+                return i
+        return None
+
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int):
         if button == arcade.MOUSE_BUTTON_LEFT:
             if self._dialog_manager.on_mouse_press(x, y):
@@ -448,6 +471,20 @@ class StoplightsWindow(arcade.Window):
                 dlg = CarDeetsDialog(x - 100, y - 45, car, self.game)
                 dlg.set_on_close(lambda d: self._dialog_manager.close(d))
                 self._dialog_manager.open(dlg)
+                return
+            lane_idx = self._lane_at_screen(x, y)
+            if lane_idx is not None:
+                if lane_idx in self._lane_dialogs:
+                    self._dialog_manager.open(self._lane_dialogs[lane_idx])
+                else:
+                    dlg = LaneVarsDialog(
+                        x - 110, y - 70, lane_idx,
+                        self.game.lane_configs[lane_idx],
+                        on_change=self._invalidate_draw_cache,
+                    )
+                    self._lane_dialogs[lane_idx] = dlg
+                    dlg.set_on_close(lambda d: self._dialog_manager.close(d))
+                    self._dialog_manager.open(dlg)
                 return
             if self._traffic_slider.on_press(x, y):
                 self._apply_traffic_step(self._traffic_slider.value)

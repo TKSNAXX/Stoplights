@@ -16,6 +16,18 @@ class PlaceConfig:
     attract_weight: float = 1.0
 
 
+LANE_TYPE_NORMAL = "normal"
+LANE_TYPE_PASSING = "passing"
+LANE_TYPES = (LANE_TYPE_NORMAL, LANE_TYPE_PASSING)
+
+
+@dataclasses.dataclass
+class LaneConfig:
+    """Per-lane configuration. speed_limit not yet wired to car movement. lane_type selects sprite (normal vs passing)."""
+    speed_limit: float = 1.0
+    lane_type: str = LANE_TYPE_NORMAL
+
+
 # Place names: south = Housing, north = Office, east = Park, west = Shopping
 SOUTH = "Housing"
 NORTH = "Office"
