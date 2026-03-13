@@ -132,6 +132,7 @@ class StoplightsWindow(arcade.Window):
         assets_dir = Path(__file__).resolve().parent / "assets"
         self._tile_set = TileSet(assets_dir / "ortho")
         self._tile_sprite_list: arcade.SpriteList | None = None
+        self._tile_cells: list[tuple[int, int]] = []
 
         self._car_textures_by_dir = load_car_textures(assets_dir)
         self._car_sprite_pool = CarSpritePool(self._car_textures_by_dir, scale=2.0) if self._car_textures_by_dir else None
@@ -188,6 +189,7 @@ class StoplightsWindow(arcade.Window):
 
     def _rebuild_static_draw_cache(self, center_x: float, center_y: float) -> None:
         self._cached_center = (center_x, center_y, self._zoom_scale)
+        self._tile_cells.clear()
 
         inter_cells = set(get_intersection_cells())
         lane_cell_to_road: dict[tuple[int, int], str] = {}
@@ -242,7 +244,12 @@ class StoplightsWindow(arcade.Window):
                     spr = arcade.Sprite(tex, scale=self._zoom_scale)
                     spr.center_x, spr.center_y = sx, sy
                     self._tile_sprite_list.append(spr)
+                    self._tile_cells.append((gx, gy))
 
+        self._update_text_positions(center_x, center_y)
+
+    def _update_text_positions(self, center_x: float, center_y: float) -> None:
+        """Update place and cardinal text screen positions."""
         for place in places.PLACES:
             cells = places.place_bounds(place)
             if not cells:
@@ -260,6 +267,16 @@ class StoplightsWindow(arcade.Window):
         self._cardinal_texts["S"].x, self._cardinal_texts["S"].y = self._to_screen(cx_grid, 0, center_x, center_y)
         self._cardinal_texts["E"].x, self._cardinal_texts["E"].y = self._to_screen(GRID_W - 1, cy_grid, center_x, center_y)
         self._cardinal_texts["W"].x, self._cardinal_texts["W"].y = self._to_screen(0, cy_grid, center_x, center_y)
+
+    def _update_tile_positions(self, center_x: float, center_y: float) -> None:
+        """Update sprite screen positions without rebuilding. Requires _tile_cells and _tile_sprite_list."""
+        if self._tile_sprite_list is None or not self._tile_cells:
+            return
+        to_screen = self._to_screen
+        for i, (gx, gy) in enumerate(self._tile_cells):
+            sx, sy = to_screen(gx, gy, center_x, center_y)
+            spr = self._tile_sprite_list[i]
+            spr.center_x, spr.center_y = sx, sy
 
     def on_key_press(self, key: int, modifiers: int) -> None:
         if key == arcade.key.ESCAPE:
@@ -342,8 +359,14 @@ class StoplightsWindow(arcade.Window):
         draw_start = time.perf_counter()
         self.clear()
         center_x, center_y = self._effective_center()
-        if self._cached_center != (center_x, center_y, self._zoom_scale):
+        cached = self._cached_center
+        needs_rebuild = cached is None or cached[2] != self._zoom_scale
+        if needs_rebuild:
             self._rebuild_static_draw_cache(center_x, center_y)
+        elif (center_x, center_y) != (cached[0], cached[1]):
+            self._update_tile_positions(center_x, center_y)
+            self._update_text_positions(center_x, center_y)
+            self._cached_center = (center_x, center_y, self._zoom_scale)
 
         if self._tile_sprite_list is not None:
             self._tile_sprite_list.draw(pixelated=True)
