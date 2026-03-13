@@ -87,7 +87,6 @@ class StoplightsWindow(arcade.Window):
         self._move_duration = MOVE_DURATION_BASE
 
         self._cached_center: tuple[float, float, float] | None = None
-        self._place_polygons: dict[str, list[tuple[float, float]]] = {}
         self._place_texts: dict[str, arcade.Text] = {}
         self._cardinal_texts: dict[str, arcade.Text] = {}
 
@@ -189,7 +188,6 @@ class StoplightsWindow(arcade.Window):
 
     def _rebuild_static_draw_cache(self, center_x: float, center_y: float) -> None:
         self._cached_center = (center_x, center_y, self._zoom_scale)
-        self._place_polygons.clear()
 
         inter_cells = set(get_intersection_cells())
         lane_cell_to_road: dict[tuple[int, int], str] = {}
@@ -209,8 +207,13 @@ class StoplightsWindow(arcade.Window):
             for gx, gy in lane:
                 lane_cell_to_road[(gx, gy)] = road_type
 
+        place_cells: set[tuple[int, int]] = set()
+        for place in places.PLACES:
+            place_cells.update(places.place_bounds(place))
+
         self._tile_sprite_list = arcade.SpriteList()
         grass_tex = self._tile_set.get("grass")
+        place_zone_tex = self._tile_set.get("place_zone")
         road_tex: dict[str, arcade.Texture | None] = {
             "road_n": self._tile_set.get("road_n"),
             "road_s": self._tile_set.get("road_s"),
@@ -230,6 +233,8 @@ class StoplightsWindow(arcade.Window):
                 elif cell in lane_cell_to_road:
                     rt = lane_cell_to_road[cell]
                     tex = road_tex.get(rt)
+                elif cell in place_cells and place_zone_tex is not None:
+                    tex = place_zone_tex
                 else:
                     tex = grass_tex
                 if tex is not None:
@@ -246,8 +251,6 @@ class StoplightsWindow(arcade.Window):
             max_gx = max(p[0] for p in cells)
             min_gy = min(p[1] for p in cells)
             max_gy = max(p[1] for p in cells)
-            corners = [(min_gx, min_gy), (max_gx + 1, min_gy), (max_gx + 1, max_gy + 1), (min_gx, max_gy + 1)]
-            self._place_polygons[place] = [self._to_screen(gx, gy, center_x, center_y) for gx, gy in corners]
             sx, sy = self._to_screen((min_gx + max_gx + 1) / 2, (min_gy + max_gy + 1) / 2, center_x, center_y)
             self._place_texts[place].x, self._place_texts[place].y = sx, sy
 
@@ -346,8 +349,7 @@ class StoplightsWindow(arcade.Window):
             self._tile_sprite_list.draw(pixelated=True)
 
         for place in places.PLACES:
-            if place in self._place_polygons:
-                arcade.draw_polygon_outline(self._place_polygons[place], arcade.color.BLUE, BUILDING_OUTLINE_WIDTH)
+            if places.place_bounds(place):
                 self._place_texts[place].draw()
         for txt in self._cardinal_texts.values():
             txt.draw()

@@ -117,34 +117,49 @@ def build_lanes_from_positions(
     return (lanes, grid_w, grid_h)
 
 
-def build_housing_park_route() -> tuple[list[list[tuple[int, int]]], dict]:
+def build_housing_park_route(place_rects: dict[str, dict]) -> tuple[list[list[tuple[int, int]]], dict]:
     """
-    Build Housing–Park direct route: 4 lanes + 4x4 junction.
-    Uses _centered_tracks; RHT: inbound on right (south for E, west for N), outbound on left.
-    Junction positioned easterly to align with Park (x=31–35).
+    Build Housing–Park direct route from place positions.
+    Junction and lane tracks derived from Housing and Park rects; RHT alignment.
     Returns (hp_lanes, hp_intersection).
     """
-    hp_x_lo, hp_x_hi = 29, 33  # 4 cells: 29–32, aligned easterly with Park
-    hp_y_lo, hp_y_hi = 1, 5    # 4 cells: 1, 2, 3, 4 (centered near Housing east y=2)
+    def rect(place: str) -> tuple[int, int, int, int]:
+        r = place_rects.get(place, {})
+        return (
+            int(r.get("x", 0)), int(r.get("y", 0)),
+            int(r.get("w", 0)), int(r.get("h", 0)),
+        )
+
+    hx, hy, hw, hh = rect("Housing")
+    px, py, pw, ph = rect("Park")
+
+    h_east = hx + hw
+    h_east_center_y = hy + hh // 2
+    p_south = py - 1
+    p_south_center_x = px + pw // 2
+
+    hp_x_lo = p_south_center_x - 2
+    hp_x_hi = hp_x_lo + 4
+    hp_y_lo = h_east_center_y - 2
+    hp_y_hi = hp_y_lo + 4
+
     hp_cells = [(x, y) for x in range(hp_x_lo, hp_x_hi) for y in range(hp_y_lo, hp_y_hi)]
     cx = (hp_x_lo + hp_x_hi - 1) / 2
-    cy = (hp_y_lo + hp_y_hi - 1) / 2
-    hp_slots = [
-        (int(cx), hp_y_lo),
-        (int(cx), hp_y_hi - 1),
-    ]
+    hp_slots = [(int(cx), hp_y_lo), (int(cx), hp_y_hi - 1)]
     hp_intersection = {"cells": hp_cells, "slots": hp_slots}
 
-    hp_ns_x_lo, hp_ns_x_hi = _centered_tracks(hp_x_lo, hp_x_hi)   # 30, 31
-    hp_ew_y_lo, hp_ew_y_hi = _centered_tracks(hp_y_lo, hp_y_hi)   # 2, 3
+    hp_ns_x_lo, hp_ns_x_hi = _centered_tracks(hp_x_lo, hp_x_hi)
+    hp_ew_y_lo, hp_ew_y_hi = _centered_tracks(hp_y_lo, hp_y_hi)
 
-    # E–W arm (Housing): RHT = eastbound on right (south/lower y), westbound on left
-    lane8 = [(x, hp_ew_y_lo) for x in range(22, hp_x_lo)]   # inbound E at y=2
-    lane11 = [(x, hp_ew_y_hi) for x in range(hp_x_lo - 1, 21, -1)]  # outbound W at y=3
+    # E–W arm (Housing): RHT = eastbound on right (south/lower y)
+    lane8 = [(x, hp_ew_y_lo) for x in range(h_east, hp_x_lo)]
+    lane11 = [(x, hp_ew_y_hi) for x in range(hp_x_lo - 1, h_east - 1, -1)]
 
-    # N–S arm (Park): RHT = northbound on right (east/higher x), southbound on left
-    lane9 = [(hp_ns_x_hi, y) for y in range(hp_y_hi, 21)]   # outbound N at x=31
-    lane10 = [(hp_ns_x_lo, y) for y in range(20, hp_y_hi - 1, -1)]  # inbound S at x=30
+    # N–S arm (Park): RHT = northbound on right (east/higher x)
+    # Extend to p_south (row just south of Park) so road connects to Park edge
+    park_approach_y = p_south
+    lane9 = [(hp_ns_x_hi, y) for y in range(hp_y_hi, park_approach_y + 1)]
+    lane10 = [(hp_ns_x_lo, y) for y in range(park_approach_y, hp_y_hi - 1, -1)]
 
     hp_lanes = [lane8, lane9, lane10, lane11]
     return (hp_lanes, hp_intersection)
@@ -180,7 +195,7 @@ def _default_map() -> dict:
     }
 
     lanes, grid_w, grid_h = build_lanes_from_positions(intersection, place_rects)
-    hp_lanes, hp_intersection = build_housing_park_route()
+    hp_lanes, hp_intersection = build_housing_park_route(place_rects)
     lanes = lanes + hp_lanes
 
     # Extend grid to include HP route
@@ -221,7 +236,7 @@ def load_map_data() -> dict:
     merged["place_rects"] = {**default["place_rects"], **loaded.get("place_rects", {})}
     if "lanes" not in loaded:
         lanes, grid_w, grid_h = build_lanes_from_positions(merged["intersection"], merged["place_rects"])
-        hp_lanes, hp_intersection = build_housing_park_route()
+        hp_lanes, hp_intersection = build_housing_park_route(merged["place_rects"])
         merged["lanes"] = lanes + hp_lanes
         merged["hp_intersection"] = hp_intersection
         for lane in hp_lanes:

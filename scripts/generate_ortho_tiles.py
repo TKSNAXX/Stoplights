@@ -15,6 +15,7 @@ from sim.constants import ORTHO_TILE_SIZE
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets" / "ortho"
 GRASS = (60, 120, 40)
+PLACE_ZONE = (90, 140, 50)
 ROAD_GREY = (90, 90, 90)
 YELLOW = (220, 220, 80)
 WHITE = (220, 220, 220)
@@ -29,6 +30,10 @@ DASH_LEN = ORTHO_TILE_SIZE // 2
 
 def make_grass() -> Image.Image:
     return Image.new("RGBA", (ORTHO_TILE_SIZE, ORTHO_TILE_SIZE), (*GRASS, 255))
+
+
+def make_place_zone() -> Image.Image:
+    return Image.new("RGBA", (ORTHO_TILE_SIZE, ORTHO_TILE_SIZE), (*PLACE_ZONE, 255))
 
 
 def _vert_stripe(img: Image.Image, yellow_col: int, white_col: int) -> None:
@@ -134,7 +139,8 @@ def make_road_cross() -> Image.Image:
 def main() -> None:
     ASSETS.mkdir(parents=True, exist_ok=True)
     make_grass().save(ASSETS / "grass.png")
-    print("Saved grass.png")
+    make_place_zone().save(ASSETS / "place_zone.png")
+    print("Saved grass.png, place_zone.png")
     make_road_n().save(ASSETS / "road_n.png")
     make_road_s().save(ASSETS / "road_s.png")
     make_road_e().save(ASSETS / "road_e.png")
