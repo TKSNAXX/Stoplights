@@ -33,7 +33,7 @@ class GameState:
         self.spawn_interval: float = SPAWN_INTERVAL  # fallback; per-place overridden by place_configs
         self.spawn_enabled: dict[str, bool] = {p: True for p in SPAWN_PLACES}
         self.place_configs: dict[str, places.PlaceConfig] = {p: places.PlaceConfig() for p in SPAWN_PLACES}
-        self.lane_configs: dict[int, places.LaneConfig] = {i: places.LaneConfig() for i in range(8)}
+        self.lane_configs: dict[int, places.LaneConfig] = {i: places.LaneConfig() for i in range(12)}
         for i in (4, 7):
             self.lane_configs[i].lane_type = places.LANE_TYPE_PASSING
         self.spawn_timers: dict[str, float] = {p: random.uniform(0, self.spawn_interval) for p in SPAWN_PLACES}

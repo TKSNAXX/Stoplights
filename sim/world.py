@@ -14,10 +14,20 @@ ALL_LANES: list[list[tuple[int, int]]] = [
 ]
 INTERSECTION_CELLS = [tuple(cell) for cell in MAP_DATA["intersection"]["cells"]]
 _INTER_SLOT_CELLS = [tuple(cell) for cell in MAP_DATA["intersection"]["slots"]]
+_HP_INTERSECTION = MAP_DATA.get("hp_intersection", {})
+_HP_CELLS = [tuple(cell) for cell in _HP_INTERSECTION.get("cells", [])]
+_HP_SLOT_CELLS = [tuple(cell) for cell in _HP_INTERSECTION.get("slots", [])]
+
 
 def get_intersection_cells() -> list[tuple[int, int]]:
-    """Return list of (gx, gy) that are part of the intersection."""
-    return list(INTERSECTION_CELLS)
+    """Return list of (gx, gy) that are part of any intersection."""
+    seen: set[tuple[int, int]] = set()
+    out: list[tuple[int, int]] = []
+    for cell in INTERSECTION_CELLS + _HP_CELLS:
+        if cell not in seen:
+            seen.add(cell)
+            out.append(cell)
+    return out
 
 
 def intersection_bounds() -> tuple[int, int, int, int]:
@@ -40,7 +50,11 @@ def intersection_center() -> tuple[float, float]:
 
 
 def intersection_cell_for_transition(in_lane_index: int, out_lane_index: int) -> tuple[int, int]:
-    """Return one of the four intersection cells for this (in, out) lane pair. Different inbound lanes use different cells so up to 4 cars can be in the intersection."""
+    """Return intersection cell for this (in, out) lane pair."""
+    if in_lane_index == 8 and _HP_SLOT_CELLS:
+        return _HP_SLOT_CELLS[0]
+    if in_lane_index == 10 and len(_HP_SLOT_CELLS) > 1:
+        return _HP_SLOT_CELLS[1]
     idx = in_lane_index // 2
     if idx < 0 or idx >= len(_INTER_SLOT_CELLS):
         idx = 0

@@ -198,6 +198,8 @@ class StoplightsWindow(arcade.Window):
             2: "road_s", 3: "road_s",
             4: "road_w", 7: "road_w",
             5: "road_e", 6: "road_e",
+            8: "road_e", 11: "road_w",
+            9: "road_n", 10: "road_s",
         }
         for lane_index, lane in enumerate(ALL_LANES):
             base = base_by_lane.get(lane_index, "road_n")

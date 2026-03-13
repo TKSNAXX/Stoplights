@@ -7,7 +7,7 @@ from __future__ import annotations
 import math
 
 from sim.places import STRAIGHT_TRANSITIONS
-from sim.world import ALL_LANES, intersection_center
+from sim.world import ALL_LANES
 
 # Sample step for path length integral and tangent epsilon
 _PATH_LENGTH_SAMPLES = 32

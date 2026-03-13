@@ -44,13 +44,19 @@ LANES_BY_PLACE: dict[str, list[int]] = {
     SHOPPING: [6],
 }
 
+# Housing-Park direct route: lanes 8-11, own junction.
+ROUTE_HOUSING_PARK = frozenset({(SOUTH, PARK), (PARK, SOUTH)})
+HP_IN_LANE_INDICES = {8, 10}
+HP_OUT_LANE_INDICES = {9, 11}
+HP_OUT_LANE_FOR_IN: dict[int, int] = {8: 9, 10: 11}
+
 # At intersection: route by destination (place → out-lane index).
 OUT_LANE_BY_PLACE: dict[str, int] = {NORTH: 1, SOUTH: 3, PARK: 5, SHOPPING: 7}
 
 # Lanes that are "in" (approach intersection); end of these = transition. Others = arrival, remove car.
-IN_LANE_INDICES = {0, 2, 4, 6}
+IN_LANE_INDICES = {0, 2, 4, 6, 8, 10}
 # Lanes that are "out" (leave intersection toward place); end = arrival.
-OUT_LANE_INDICES = {1, 3, 5, 7}
+OUT_LANE_INDICES = {1, 3, 5, 7, 9, 11}
 
 # Straight-through at intersection (in_lane, out_lane): N-S arm plus Park↔Shopping cross.
 STRAIGHT_TRANSITIONS = {(0, 1), (2, 3), (4, 7), (6, 5)}
@@ -89,6 +95,8 @@ def place_bounds(place: str) -> list[tuple[int, int]]:
     return [(x, y) for x in range(x0, x0 + w) for y in range(y0, y0 + h)]
 
 
-def spawn_lanes_for_place(place: str) -> list[int]:
+def spawn_lanes_for_place(place: str, destination: str | None = None) -> list[int]:
     """Lane indices where a car spawning at this place should start (position 0)."""
+    if destination is not None and (place, destination) in ROUTE_HOUSING_PARK:
+        return [8] if place == SOUTH else [10]
     return list(LANES_BY_PLACE.get(place, []))

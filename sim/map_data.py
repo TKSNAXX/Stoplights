@@ -117,6 +117,39 @@ def build_lanes_from_positions(
     return (lanes, grid_w, grid_h)
 
 
+def build_housing_park_route() -> tuple[list[list[tuple[int, int]]], dict]:
+    """
+    Build Housing–Park direct route: 4 lanes + 4x4 junction.
+    Uses _centered_tracks; RHT: inbound on right (south for E, west for N), outbound on left.
+    Junction positioned easterly to align with Park (x=31–35).
+    Returns (hp_lanes, hp_intersection).
+    """
+    hp_x_lo, hp_x_hi = 29, 33  # 4 cells: 29–32, aligned easterly with Park
+    hp_y_lo, hp_y_hi = 1, 5    # 4 cells: 1, 2, 3, 4 (centered near Housing east y=2)
+    hp_cells = [(x, y) for x in range(hp_x_lo, hp_x_hi) for y in range(hp_y_lo, hp_y_hi)]
+    cx = (hp_x_lo + hp_x_hi - 1) / 2
+    cy = (hp_y_lo + hp_y_hi - 1) / 2
+    hp_slots = [
+        (int(cx), hp_y_lo),
+        (int(cx), hp_y_hi - 1),
+    ]
+    hp_intersection = {"cells": hp_cells, "slots": hp_slots}
+
+    hp_ns_x_lo, hp_ns_x_hi = _centered_tracks(hp_x_lo, hp_x_hi)   # 30, 31
+    hp_ew_y_lo, hp_ew_y_hi = _centered_tracks(hp_y_lo, hp_y_hi)   # 2, 3
+
+    # E–W arm (Housing): RHT = eastbound on right (south/lower y), westbound on left
+    lane8 = [(x, hp_ew_y_lo) for x in range(22, hp_x_lo)]   # inbound E at y=2
+    lane11 = [(x, hp_ew_y_hi) for x in range(hp_x_lo - 1, 21, -1)]  # outbound W at y=3
+
+    # N–S arm (Park): RHT = northbound on right (east/higher x), southbound on left
+    lane9 = [(hp_ns_x_hi, y) for y in range(hp_y_hi, 21)]   # outbound N at x=31
+    lane10 = [(hp_ns_x_lo, y) for y in range(20, hp_y_hi - 1, -1)]  # inbound S at x=30
+
+    hp_lanes = [lane8, lane9, lane10, lane11]
+    return (hp_lanes, hp_intersection)
+
+
 def _default_map() -> dict:
     # Intersection and place positions are the source of truth; lanes are derived.
     place_size = 5
@@ -147,10 +180,22 @@ def _default_map() -> dict:
     }
 
     lanes, grid_w, grid_h = build_lanes_from_positions(intersection, place_rects)
+    hp_lanes, hp_intersection = build_housing_park_route()
+    lanes = lanes + hp_lanes
+
+    # Extend grid to include HP route
+    for lane in hp_lanes:
+        for cx, cy in lane:
+            grid_w = max(grid_w, cx + 1)
+            grid_h = max(grid_h, cy + 1)
+    for cell in hp_intersection["cells"]:
+        grid_w = max(grid_w, cell[0] + 1)
+        grid_h = max(grid_h, cell[1] + 1)
 
     return {
         "grid": {"width": grid_w, "height": grid_h},
         "intersection": intersection,
+        "hp_intersection": hp_intersection,
         "lanes": lanes,
         "place_rects": place_rects,
     }
@@ -172,10 +217,20 @@ def load_map_data() -> dict:
     merged.update(loaded)
     merged["grid"] = {**default["grid"], **loaded.get("grid", {})}
     merged["intersection"] = {**default["intersection"], **loaded.get("intersection", {})}
+    merged["hp_intersection"] = merged.get("hp_intersection") or default.get("hp_intersection", {})
     merged["place_rects"] = {**default["place_rects"], **loaded.get("place_rects", {})}
     if "lanes" not in loaded:
         lanes, grid_w, grid_h = build_lanes_from_positions(merged["intersection"], merged["place_rects"])
-        merged["lanes"] = lanes
+        hp_lanes, hp_intersection = build_housing_park_route()
+        merged["lanes"] = lanes + hp_lanes
+        merged["hp_intersection"] = hp_intersection
+        for lane in hp_lanes:
+            for cx, cy in lane:
+                grid_w = max(grid_w, cx + 1)
+                grid_h = max(grid_h, cy + 1)
+        for cell in hp_intersection.get("cells", []):
+            grid_w = max(grid_w, cell[0] + 1)
+            grid_h = max(grid_h, cell[1] + 1)
         merged["grid"] = {"width": grid_w, "height": grid_h, **loaded.get("grid", {})}
     return merged
 

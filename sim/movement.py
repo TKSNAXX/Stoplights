@@ -69,7 +69,10 @@ def start_lane_segment(car: cars.Car, start_time: float, speed: float, start_pos
 
 
 def start_path_segment(car: cars.Car, start_time: float, speed: float) -> bool:
-    out_lane_idx = places.OUT_LANE_BY_PLACE.get(car.destination)
+    if car.lane_index in places.HP_IN_LANE_INDICES:
+        out_lane_idx = places.HP_OUT_LANE_FOR_IN.get(car.lane_index)
+    else:
+        out_lane_idx = places.OUT_LANE_BY_PLACE.get(car.destination)
     if out_lane_idx is None:
         return False
     car.intersection_cell = intersection_cell_for_transition(car.lane_index, out_lane_idx)

@@ -83,7 +83,7 @@ def spawn_car(origin: str, destination: str | None = None, attract_weights: dict
             destination = random.choices(others, weights=weights, k=1)[0]
         else:
             destination = random.choice(others)
-    lanes = spawn_lanes_for_place(origin)
+    lanes = spawn_lanes_for_place(origin, destination)
     lane_index = lanes[0] if lanes else 0
     color = random.choice(_CAR_COLOR_PALETTE)
     base_speed_multiplier = random.uniform(0.6, 1.2)
