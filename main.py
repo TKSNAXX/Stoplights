@@ -21,7 +21,7 @@ from sim.constants import (
     VIS_ZONE_WIDTH_CELLS,
 )
 from sim.game import GameState
-from sim import world
+from sim import persistence, world
 from ui import CarDeetsDialog, DialogManager, IntersectionVarsDialog, LaneVarsDialog, PlaceVarsDialog, Slider
 
 TICKS_PER_SECOND = 60
@@ -82,6 +82,8 @@ class StoplightsWindow(arcade.Window):
         super().__init__(800, 600, "Stoplights", resizable=True)
         arcade.set_background_color(arcade.color.BLACK)
         self.game = GameState()
+        persistence.load_config(self.game)
+        self.game.rebuild_world_from_config()
         self._tick_accumulator = 0.0
         self._sim_time = 0.0
         self._move_duration = MOVE_DURATION_BASE
@@ -148,6 +150,11 @@ class StoplightsWindow(arcade.Window):
     def _invalidate_draw_cache(self) -> None:
         """Force tile cache rebuild on next draw (e.g. when lane config changes)."""
         self._cached_center = None
+
+    def _on_config_change(self) -> None:
+        """Invalidate draw cache and schedule debounced config save."""
+        self._invalidate_draw_cache()
+        persistence.request_debounced_save()
 
     def _update_zoom_scale(self) -> None:
         """Compute zoom scale from current zoom level and window size."""
@@ -379,7 +386,12 @@ class StoplightsWindow(arcade.Window):
         if self._car_sprite_pool is not None:
             self._car_sprite_pool.set_zoom_scale(self._zoom_scale)
 
+    def on_close(self) -> None:
+        persistence.save_config(self.game)
+        super().on_close()
+
     def on_update(self, delta_time: float):
+        persistence.tick_debounced_save(self.game, delta_time)
         if delta_time > 1e-9:
             fps_now = 1.0 / delta_time
             self._fps_ema = fps_now if self._fps_ema <= 0.0 else (0.9 * self._fps_ema + 0.1 * fps_now)
@@ -548,6 +560,7 @@ class StoplightsWindow(arcade.Window):
                     dlg = PlaceVarsDialog(
                         x - 110, y - 70, place,
                         self.game.place_configs[place],
+                        on_change=self._on_config_change,
                     )
                     self._place_dialogs[place] = dlg
                     dlg.set_on_close(lambda d: self._dialog_manager.close(d))
@@ -567,7 +580,7 @@ class StoplightsWindow(arcade.Window):
                     dlg = LaneVarsDialog(
                         x - 110, y - 70, lane_idx,
                         self.game.lane_configs[lane_idx],
-                        on_change=self._invalidate_draw_cache,
+                        on_change=self._on_config_change,
                     )
                     self._lane_dialogs[lane_idx] = dlg
                     dlg.set_on_close(lambda d: self._dialog_manager.close(d))
@@ -581,10 +594,10 @@ class StoplightsWindow(arcade.Window):
                     dlg = IntersectionVarsDialog(
                         x - 110, y - 50, inter_key,
                         self.game.intersection_configs[inter_key],
-                        on_change=self._invalidate_draw_cache,
                         on_commit=lambda: (
                             self.game.rebuild_world_from_config(),
                             self._invalidate_draw_cache(),
+                            persistence.save_config(self.game),
                         ),
                     )
                     self._intersection_dialogs[inter_key] = dlg

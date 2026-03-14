@@ -298,7 +298,7 @@ class CommitButton:
 
 
 class IntersectionVarsDialog(Dialog):
-    """Dialog for editing intersection type (x vs corner) and size. Commit applies size."""
+    """Dialog for editing intersection type (x vs corner) and size. Commit applies both."""
 
     def __init__(
         self,
@@ -341,7 +341,8 @@ class IntersectionVarsDialog(Dialog):
         self._size_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
 
     def _do_commit(self) -> None:
-        """Apply size from slider to config and call on_commit."""
+        """Apply type and size from sliders to config and call on_commit."""
+        self._config.intersection_type = INTERSECTION_TYPE_VALUES[self._type_slider.value]
         self._config.size_cells = INTERSECTION_SIZE_VALUES[self._size_slider.value]
         if self._on_commit:
             self._on_commit()
@@ -382,10 +383,8 @@ class IntersectionVarsDialog(Dialog):
         return result
 
     def _sync_from_sliders(self) -> None:
-        self._config.intersection_type = INTERSECTION_TYPE_VALUES[self._type_slider.value]
-        # size_cells only applied on Commit; slider value shown for preview
-        if self._on_change:
-            self._on_change()
+        """No-op: type and size applied only on Commit."""
+        pass
 
 
 class PlaceVarsDialog(Dialog):
