@@ -249,8 +249,9 @@ class StoplightsWindow(arcade.Window):
                     tex = road_cross_tex
                 elif cell in bypass_inter_cells:
                     if bypass_use_corner and corner_tex is not None:
-                        continue
-                    tex = road_cross_tex
+                        tex = grass_tex  # grass underneath corner transparency
+                    else:
+                        tex = road_cross_tex
                 elif cell in lane_cell_to_road:
                     rt = lane_cell_to_road[cell]
                     tex = road_tex.get(rt)

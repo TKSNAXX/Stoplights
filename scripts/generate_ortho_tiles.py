@@ -139,17 +139,32 @@ def make_road_cross() -> Image.Image:
 # Corner tile: 128x128 for 4x4 bypass intersection
 CORNER_SIZE = ORTHO_TILE_SIZE * 4
 
+# Lane alignment: arc bands sit ~2px outside where they meet straight lanes.
+# Apply this offset to all corner band radii (use for future corners too).
+CORNER_LANE_ALIGN_OFFSET = -2
+
 # Arc center = NW corner = lower-left in ortho (0, 127)
 # Arc starts on bottom, proceeds upward and leftward 90° to left edge
-# Four 2px bands (outer to inner): wh, yel, yel, wh at radii from coords 35, 61, 67, 93
+# Six 2px bands (outer to inner): grey, wh, yel, yel, wh, grey. Offset applied.
+# Grey stripes adjacent outside each white for road edge; trim = transparent outside wedge.
 CORNER_ARC_CX = 0
 CORNER_ARC_CY = CORNER_SIZE - 1
-CORNER_BANDS = [
-    (WHITE, 93, 95),   # outer white, px 93-94
-    (YELLOW, 67, 69),  # yellow, 67-68
-    (YELLOW, 61, 63),  # yellow, 61-62
-    (WHITE, 35, 37),   # inner white, 35-36
+CORNER_BANDS_SPEC = [
+    (ROAD_GREY, 95, 97),  # outer grey, 2px outside outer white
+    (WHITE, 93, 95),      # outer white
+    (YELLOW, 67, 69),     # yellow
+    (YELLOW, 61, 63),     # yellow
+    (WHITE, 35, 37),      # inner white
+    (ROAD_GREY, 33, 35),  # inner grey, 2px outside inner white (toward center)
 ]
+
+
+def _arc_bands_with_offset(
+    bands: list[tuple[tuple[int, int, int], int, int]],
+    offset: int = CORNER_LANE_ALIGN_OFFSET,
+) -> list[tuple[tuple[int, int, int], int, int]]:
+    """Apply lane alignment offset to band (r_inner, r_outer). Use for all corner arcs."""
+    return [(color, r_in + offset, r_out + offset) for color, r_in, r_out in bands]
 
 
 def _draw_arc_bands(
@@ -173,20 +188,29 @@ def _draw_arc_bands(
 
 def make_corner() -> Image.Image:
     """
-    Bypass corner: wh/2yel/wh stripes in 90° arc on road grey.
+    Bypass corner: wh/2yel/wh stripes in 90° arc, grey borders, transparent outside wedge.
     Center at NW (lower-left). Arc from bottom upward and leftward.
     Parametric bands for reuse.
     """
-    img = Image.new("RGBA", (CORNER_SIZE, CORNER_SIZE), (*ROAD_GREY, 255))
+    img = Image.new("RGBA", (CORNER_SIZE, CORNER_SIZE), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    # PIL: 0°=right, 90°=down, 270°=up. Arc from bottom (0°) to left (270°), 90° wedge = 270° to 360°
+    start_angle, end_angle = 270, 360
+    bands = _arc_bands_with_offset(CORNER_BANDS_SPEC)
+    outer_r = max(r_out for _, _, r_out in bands)
+    inner_r = min(r_in for _, r_in, _ in bands)
+    # Road grey base wedge (inner and outer trimmed for transparency)
+    bbox_base = (CORNER_ARC_CX - outer_r, CORNER_ARC_CY - outer_r, CORNER_ARC_CX + outer_r, CORNER_ARC_CY + outer_r)
+    draw.pieslice(bbox_base, start_angle, end_angle, fill=(*ROAD_GREY, 255))
     _draw_arc_bands(
         img, draw,
         CORNER_ARC_CX, CORNER_ARC_CY,
-        270, 360,
-        CORNER_BANDS,
+        start_angle, end_angle,
+        bands,
         ROAD_GREY,
     )
+    # Clear inner segment to transparent (center inside innermost band)
+    bbox_inner = (CORNER_ARC_CX - inner_r, CORNER_ARC_CY - inner_r, CORNER_ARC_CX + inner_r, CORNER_ARC_CY + inner_r)
+    draw.pieslice(bbox_inner, start_angle, end_angle, fill=(0, 0, 0, 0))
     return img
 
 
