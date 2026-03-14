@@ -355,6 +355,8 @@ class StoplightsWindow(arcade.Window):
             self._key_down = False
 
     def on_mouse_scroll(self, x: int, y: int, scroll_x: int, scroll_y: int) -> None:
+        if self._dialog_manager.contains_point(x, y):
+            return
         if scroll_y > 0:
             self._zoom_level = min(ZOOM_LEVEL_MAX, self._zoom_level + 1)
         elif scroll_y < 0:
@@ -383,8 +385,8 @@ class StoplightsWindow(arcade.Window):
             self._fps_ema = fps_now if self._fps_ema <= 0.0 else (0.9 * self._fps_ema + 0.1 * fps_now)
         vx = self._cam_pan_speed if self._key_right else (-self._cam_pan_speed if self._key_left else 0.0)
         vy = self._cam_pan_speed if self._key_up else (-self._cam_pan_speed if self._key_down else 0.0)
-        # Edge pan (only when mouse is in window; pan toward cursor when near edge)
-        if self._mouse_in_window:
+        # Edge pan (only when mouse is in window and not over a dialog; pan toward cursor when near edge)
+        if self._mouse_in_window and not self._dialog_manager.contains_point(self._mouse_x, self._mouse_y):
             if self._mouse_x < EDGE_PAN_MARGIN:
                 vx -= self._cam_pan_speed
             elif self._mouse_x > self.width - EDGE_PAN_MARGIN:

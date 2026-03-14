@@ -214,6 +214,13 @@ class DialogManager:
         top.visible = False
         return True
 
+    def contains_point(self, x: float, y: float) -> bool:
+        """True if (x, y) is over any visible dialog."""
+        for d in self._dialogs:
+            if d.visible and d.contains(x, y):
+                return True
+        return False
+
     def on_mouse_press(self, x: float, y: float) -> bool:
         for i in range(len(self._dialogs) - 1, -1, -1):
             d = self._dialogs[i]
