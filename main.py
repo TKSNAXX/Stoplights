@@ -238,6 +238,10 @@ class StoplightsWindow(arcade.Window):
         corner_tex = self._tile_set.get("corner")
         main_inter_cells = set(get_main_intersection_cells())
         bypass_inter_cells = set(get_bypass_intersection_cells())
+        main_use_corner = (
+            self.game.intersection_configs.get("main")
+            and self.game.intersection_configs["main"].intersection_type == places.INTERSECTION_TYPE_CORNER
+        )
         bypass_use_corner = (
             self.game.intersection_configs.get("bypass")
             and self.game.intersection_configs["bypass"].intersection_type == places.INTERSECTION_TYPE_CORNER
@@ -245,13 +249,8 @@ class StoplightsWindow(arcade.Window):
         for gy in range(GRID_H):
             for gx in range(GRID_W):
                 cell = (gx, gy)
-                if cell in main_inter_cells and road_cross_tex is not None:
-                    tex = road_cross_tex
-                elif cell in bypass_inter_cells:
-                    if bypass_use_corner and corner_tex is not None:
-                        tex = grass_tex  # grass underneath corner transparency
-                    else:
-                        tex = road_cross_tex
+                if cell in main_inter_cells or cell in bypass_inter_cells:
+                    tex = grass_tex  # always grass under intersections; overlay drawn below
                 elif cell in lane_cell_to_road:
                     rt = lane_cell_to_road[cell]
                     tex = road_tex.get(rt)
@@ -265,6 +264,34 @@ class StoplightsWindow(arcade.Window):
                     spr.center_x, spr.center_y = sx, sy
                     self._tile_sprite_list.append(spr)
                     self._tile_cells.append((gx, gy))
+
+        if not main_use_corner and road_cross_tex is not None and main_inter_cells:
+            for cell in main_inter_cells:
+                gx, gy = cell
+                sx, sy = self._to_screen(gx, gy, center_x, center_y)
+                spr = arcade.Sprite(road_cross_tex, scale=self._zoom_scale)
+                spr.center_x, spr.center_y = sx, sy
+                self._tile_sprite_list.append(spr)
+                self._tile_cells.append((gx, gy))
+
+        if not bypass_use_corner and road_cross_tex is not None and bypass_inter_cells:
+            for cell in bypass_inter_cells:
+                gx, gy = cell
+                sx, sy = self._to_screen(gx, gy, center_x, center_y)
+                spr = arcade.Sprite(road_cross_tex, scale=self._zoom_scale)
+                spr.center_x, spr.center_y = sx, sy
+                self._tile_sprite_list.append(spr)
+                self._tile_cells.append((gx, gy))
+
+        if main_use_corner and corner_tex is not None and main_inter_cells:
+            main_cells = list(main_inter_cells)
+            cx = sum(c[0] for c in main_cells) / len(main_cells)
+            cy = sum(c[1] for c in main_cells) / len(main_cells)
+            sx, sy = self._to_screen(cx, cy, center_x, center_y)
+            spr = arcade.Sprite(corner_tex, scale=self._zoom_scale)
+            spr.center_x, spr.center_y = sx, sy
+            self._tile_sprite_list.append(spr)
+            self._tile_cells.append((cx, cy))
 
         if bypass_use_corner and corner_tex is not None and bypass_inter_cells:
             bypass_cells = list(bypass_inter_cells)
