@@ -5,7 +5,6 @@ No cars or simulation state—only configuration.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,12 +20,8 @@ _save_timer: float = 0.0
 
 
 def get_save_path() -> Path:
-    """Platform-appropriate user config dir. Creates parent dirs if needed."""
-    if sys.platform == "win32":
-        base = Path.home() / "AppData" / "Roaming" / "Stoplights"
-    else:
-        base = Path.home() / ".config" / "stoplights"
-    base.mkdir(parents=True, exist_ok=True)
+    """Config file in project main dir (Stoplights/)."""
+    base = Path(__file__).resolve().parent.parent
     return base / SAVE_FILENAME
 
 
