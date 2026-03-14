@@ -1,6 +1,7 @@
 """
 Runtime corner sprite generation. Shared algo for scripts and render.
-Corner size scales with cell count (cells * 32 ortho pixels).
+Corner size = cells * 32 ortho pixels. Band radii offset (not scaled):
++32px distance to inner corner per 2-cell step; bands remain 2px wide.
 """
 from __future__ import annotations
 
@@ -16,7 +17,8 @@ ROAD_GREY = (90, 90, 90)
 YELLOW = (220, 220, 80)
 WHITE = (220, 220, 220)
 
-# Base band radii for 4-cell corner (128x128). Scale by cells/4 for other sizes.
+# Base band radii for 4-cell corner (128x128). Offset by (cells-4)*16 for others.
+# Band width stays 2px; distance to inner corner +32px per 2-cell step.
 # Arc center at NW corner (0, size-1). Arc 270->360°.
 _CORNER_BANDS_BASE = [
     (ROAD_GREY, 95, 97),
@@ -32,7 +34,8 @@ _CORNER_ALIGN_OFFSET_BASE = -2
 def make_corner(cells: int = 4):
     """
     Generate corner ortho image for given cell count. Size = cells * 32.
-    Arc bands scale proportionally from 4-cell reference.
+    Arc bands offset from 4-cell base: +32px to inner corner per 2-cell step.
+    Band widths remain constant 2px.
     """
     if Image is None or ImageDraw is None:
         raise RuntimeError("Pillow required for corner generation: pip install Pillow")
@@ -42,13 +45,20 @@ def make_corner(cells: int = 4):
         cells = (cells // 2) * 2
 
     size = cells * ORTHO_TILE_SIZE
-    scale = cells / 4.0
+    radius_offset = (cells - 4) * 16
+    align = _CORNER_ALIGN_OFFSET_BASE
+    max_r = size - 1
 
-    def scale_r(r: int) -> int:
-        return max(0, int(round(r * scale)))
+    def clamp(r: int) -> int:
+        return max(0, min(r, max_r))
 
-    offset = int(round(_CORNER_ALIGN_OFFSET_BASE * scale))
-    bands = [(color, scale_r(r_in) + offset, scale_r(r_out) + offset) for color, r_in, r_out in _CORNER_BANDS_BASE]
+    bands = []
+    for color, r_in, r_out in _CORNER_BANDS_BASE:
+        ri = clamp(r_in + radius_offset + align)
+        ro = clamp(r_out + radius_offset + align)
+        if ro <= ri:
+            ro = ri + 2
+        bands.append((color, ri, ro))
 
     arc_cx = 0
     arc_cy = size - 1
