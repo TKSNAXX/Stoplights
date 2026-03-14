@@ -556,11 +556,22 @@ class StoplightsWindow(arcade.Window):
         return None
 
     def _intersection_at_screen(self, sx: float, sy: float) -> str | None:
-        """Return 'main' or 'bypass' if (sx, sy) hits an intersection cell, else None."""
+        """Return 'main', 'bypass', or extra intersection key if (sx, sy) hits an intersection cell, else None."""
         center_x, center_y = self._effective_center()
         gx, gy = self._screen_to_grid(sx, sy, center_x, center_y)
         cell = (int(round(gx)), int(round(gy)))
-        return world.get_intersection_at_cell(cell)
+        result = world.get_intersection_at_cell(cell)
+        if result is not None:
+            return result
+        # Check extra intersections
+        for key in self.game.intersection_configs:
+            if key in ("main", "bypass"):
+                continue
+            cfg = self.game.intersection_configs[key]
+            x_lo, x_hi, y_lo, y_hi = bounds_from_center(cfg.center_x, cfg.center_y, cfg.size_cells)
+            if x_lo <= cell[0] < x_hi and y_lo <= cell[1] < y_hi:
+                return key
+        return None
 
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int):
         if button == arcade.MOUSE_BUTTON_LEFT:
@@ -604,11 +615,18 @@ class StoplightsWindow(arcade.Window):
                         x - 120, y - 130, place,
                         self.game.place_configs[place],
                         self.game.place_geometry,
+                        game=self.game,
                         on_change=self._on_config_change,
                         on_commit=lambda: (
                             self.game.rebuild_world_from_config(),
                             self._invalidate_draw_cache(),
-                            persistence.save_config(self.game),
+                            persistence.request_debounced_save(),
+                        ),
+                        on_remove=lambda: (
+                            self._on_config_change(),
+                            self._place_dialogs.pop(place, None),
+                            self._dialog_manager.close(dlg),
+                            persistence.request_debounced_save(),
                         ),
                     )
                     self._place_dialogs[place] = dlg
@@ -643,10 +661,17 @@ class StoplightsWindow(arcade.Window):
                     dlg = IntersectionVarsDialog(
                         x - 110, y - 50, inter_key,
                         self.game.intersection_configs[inter_key],
+                        game=self.game,
                         on_commit=lambda: (
                             self.game.rebuild_world_from_config(),
                             self._invalidate_draw_cache(),
-                            persistence.save_config(self.game),
+                            persistence.request_debounced_save(),
+                        ),
+                        on_remove=lambda: (
+                            self._on_config_change(),
+                            self._intersection_dialogs.pop(inter_key, None),
+                            self._dialog_manager.close(dlg),
+                            persistence.request_debounced_save(),
                         ),
                     )
                     self._intersection_dialogs[inter_key] = dlg

@@ -80,13 +80,66 @@ class GameState:
         """Snapshot of lightweight sim performance counters."""
         return dict(self._perf_stats)
 
+    def ensure_default_state(self) -> None:
+        """
+        Ensure a valid default game state. Call when config may be weird or corrupted.
+        Restores core places and intersections if missing; prunes stale refs.
+        """
+        default_place_rects = MAP_DATA.get("place_rects", {})
+        default_geometry = geometry_from_place_rects(default_place_rects)
+        # Ensure core places exist in place_geometry
+        for p in SPAWN_PLACES:
+            if p not in self.place_geometry:
+                self.place_geometry[p] = default_geometry.get(p, places.PlaceGeometry(center_x=36, center_y=48, width=5, length=5))
+        # Ensure core place_configs exist
+        for p in SPAWN_PLACES:
+            if p not in self.place_configs:
+                self.place_configs[p] = places.PlaceConfig()
+        # Ensure main and bypass intersections exist
+        if "main" not in self.intersection_configs:
+            self.intersection_configs["main"] = places.IntersectionConfig(intersection_type=places.INTERSECTION_TYPE_X)
+        if "bypass" not in self.intersection_configs:
+            self.intersection_configs["bypass"] = places.IntersectionConfig(
+                intersection_type=places.INTERSECTION_TYPE_CORNER,
+                center_x=places.BYPASS_DEFAULT_CENTER[0],
+                center_y=places.BYPASS_DEFAULT_CENTER[1],
+            )
+        # Prune place_configs and spawn_timers for deleted places
+        for key in list(self.place_configs):
+            if key not in self.place_geometry and key not in SPAWN_PLACES:
+                del self.place_configs[key]
+        for key in list(self.spawn_timers):
+            if key not in self.place_configs:
+                del self.spawn_timers[key]
+        for p in SPAWN_PLACES:
+            if p not in self.spawn_timers:
+                self.spawn_timers[p] = random.uniform(0, self.spawn_interval)
+
+    def reset_to_defaults(self) -> None:
+        """
+        Reset to the default map state. Clears cars, extra places, extra intersections.
+        Use when things get weird or for a clean slate.
+        """
+        self.cars.clear()
+        default_rects = MAP_DATA.get("place_rects", {})
+        self.place_geometry = geometry_from_place_rects(default_rects)
+        self.place_configs = {p: places.PlaceConfig() for p in SPAWN_PLACES}
+        self.intersection_configs = {
+            "main": places.IntersectionConfig(intersection_type=places.INTERSECTION_TYPE_X),
+            "bypass": places.IntersectionConfig(
+                intersection_type=places.INTERSECTION_TYPE_CORNER,
+                center_x=places.BYPASS_DEFAULT_CENTER[0],
+                center_y=places.BYPASS_DEFAULT_CENTER[1],
+            ),
+        }
+        self.spawn_timers = {p: 0.0 for p in SPAWN_PLACES}
+        self._impasse_timers.clear()
+        self.rebuild_world_from_config()
+
     def rebuild_world_from_config(self) -> None:
         """Rebuild world geometry from place_geometry and intersection configs. Call on Commit."""
-        if self.place_geometry:
-            place_rects = place_rects_from_geometry(self.place_geometry)
-        else:
-            place_rects = MAP_DATA.get("place_rects", {})
-            self.place_geometry = geometry_from_place_rects(place_rects)
+        self.ensure_default_state()
+        place_rects = place_rects_from_geometry(self.place_geometry)
         main_cfg = self.intersection_configs.get("main")
         bypass_cfg = self.intersection_configs.get("bypass")
         main_size = main_cfg.size_cells if main_cfg else places.INTERSECTION_SIZE_DEFAULT

@@ -477,8 +477,42 @@ class CommitButton:
         return False
 
 
+class RemoveButton:
+    """Destructive Remove button. Rect (left, bottom, width, height)."""
+
+    def __init__(self, left: float, bottom: float, width: float, height: float, on_click: Callable[[], None] | None = None):
+        self.rect = (left, bottom, width, height)
+        self._on_click = on_click
+        self._text = arcade.Text("Remove", 0, 0, color=(220, 220, 220), font_size=11, anchor_x="center", anchor_y="center")
+
+    def contains(self, x: float, y: float) -> bool:
+        left, bottom, width, height = self.rect
+        return left <= x <= left + width and bottom <= y <= bottom + height
+
+    def draw(self) -> None:
+        left, bottom, width, height = self.rect
+        rect_filled(left, bottom, width, height, (120, 80, 80))
+        rect_outline(left, bottom, width, height, (140, 100, 100), 1)
+        self._text.x = left + width / 2
+        self._text.y = bottom + height / 2
+        self._text.draw()
+
+    def on_press(self, x: float, y: float) -> bool:
+        if not self.contains(x, y):
+            return False
+        if self._on_click:
+            self._on_click()
+        return True
+
+    def on_drag(self, x: float) -> bool:
+        return False
+
+    def on_release(self) -> bool:
+        return False
+
+
 class IntersectionVarsDialog(Dialog):
-    """Dialog for editing intersection type, center, and size. Commit applies all."""
+    """Dialog for editing intersection type, center, and size. Commit applies all. Remove for extra intersections only."""
 
     def __init__(
         self,
@@ -486,14 +520,19 @@ class IntersectionVarsDialog(Dialog):
         y: float,
         intersection_key: str,
         intersection_config,
+        game=None,
         on_change: Callable[[], None] | None = None,
         on_commit: Callable[[], None] | None = None,
+        on_remove: Callable[[], None] | None = None,
     ):
         super().__init__(x, y, 220, 200, f"Intersection: {intersection_key}")
         self.intersection_key = intersection_key
         self._config = intersection_config
+        self._game = game
         self._on_change = on_change
         self._on_commit = on_commit
+        self._on_remove = on_remove
+        self._can_remove = intersection_key not in ("main", "bypass") and game is not None
 
         type_step = INTERSECTION_TYPE_VALUES.index(
             getattr(intersection_config, "intersection_type", "x")
@@ -511,8 +550,11 @@ class IntersectionVarsDialog(Dialog):
         self._cy_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, cy, -100, 200, 1)
         self._size_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, size_val, 2, 12, 2)
         self._commit_btn = CommitButton(0, 0, 70, 22, on_click=self._do_commit)
+        self._remove_btn = RemoveButton(0, 0, 70, 22, on_click=self._do_remove)
 
         self.widgets = [self._type_slider, self._cx_box, self._cy_box, self._size_box, self._commit_btn]
+        if self._can_remove:
+            self.widgets.append(self._remove_btn)
         self._type_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._cx_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._cy_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
@@ -529,6 +571,14 @@ class IntersectionVarsDialog(Dialog):
         if self._on_commit:
             self._on_commit()
 
+    def _do_remove(self) -> None:
+        """Remove this intersection from game and call on_remove."""
+        if self._game is not None and self.intersection_key in self._game.intersection_configs:
+            del self._game.intersection_configs[self.intersection_key]
+            self._game.rebuild_world_from_config()
+        if self._on_remove:
+            self._on_remove()
+
     def _layout_widgets(self) -> None:
         left = self.x + 12
         content_top = self.y - 32
@@ -538,6 +588,8 @@ class IntersectionVarsDialog(Dialog):
         self._cy_box.rect = (left + 70, content_top - 74, box_w, NUMBER_BOX_HEIGHT)
         self._size_box.rect = (left + 70, content_top - 100, box_w, NUMBER_BOX_HEIGHT)
         self._commit_btn.rect = (left, content_top - 132, 70, 22)
+        if self._can_remove:
+            self._remove_btn.rect = (left + 76, content_top - 132, 70, 22)
         self._type_label.x = left
         self._type_label.y = content_top - 12
         self._cx_label.x = left
@@ -759,7 +811,7 @@ def _next_place_name(place_geometry: dict) -> str:
 
 
 class PlaceVarsDialog(Dialog):
-    """Dialog for editing place spawn, attract, and geometry. Geometry requires Commit."""
+    """Dialog for editing place spawn, attract, and geometry. Geometry requires Commit. Remove for extra places only."""
 
     def __init__(
         self,
@@ -768,15 +820,21 @@ class PlaceVarsDialog(Dialog):
         place: str,
         place_config,
         place_geometry: dict,
+        game=None,
         on_change: Callable[[], None] | None = None,
         on_commit: Callable[[], None] | None = None,
+        on_remove: Callable[[], None] | None = None,
     ):
         super().__init__(x, y, 240, 260, f"Place: {place}")
         self.place = place
         self._config = place_config
         self._place_geometry = place_geometry
+        self._game = game
         self._on_change = on_change
         self._on_commit = on_commit
+        self._on_remove = on_remove
+        from sim import places as sim_places
+        self._can_remove = place not in sim_places.PLACES and game is not None
 
         spawn_step = self._step_for_spawn(place_config.spawn_interval)
         attract_step = self._step_for_attract(place_config.attract_weight)
@@ -793,12 +851,15 @@ class PlaceVarsDialog(Dialog):
         self._w_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, w, 1, 16, 1)
         self._l_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, l, 1, 16, 1)
         self._commit_btn = CommitButton(0, 0, 70, 22, on_click=self._do_commit)
+        self._remove_btn = RemoveButton(0, 0, 70, 22, on_click=self._do_remove)
 
         self.widgets = [
             self._spawn_slider, self._attract_slider,
             self._cx_box, self._cy_box, self._w_box, self._l_box,
             self._commit_btn,
         ]
+        if self._can_remove:
+            self.widgets.append(self._remove_btn)
         self._spawn_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._attract_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._cx_label = arcade.Text("Center X:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
@@ -819,6 +880,17 @@ class PlaceVarsDialog(Dialog):
         )
         if self._on_commit:
             self._on_commit()
+
+    def _do_remove(self) -> None:
+        """Remove this place from game and call on_remove."""
+        if self._game is not None:
+            if self.place in self._game.place_geometry:
+                del self._game.place_geometry[self.place]
+            if self.place in self._game.place_configs:
+                del self._game.place_configs[self.place]
+            self._game.rebuild_world_from_config()
+        if self._on_remove:
+            self._on_remove()
 
     def _step_for_spawn(self, val: float) -> int:
         best = 0
@@ -845,6 +917,8 @@ class PlaceVarsDialog(Dialog):
         self._w_box.rect = (left + 70, content_top - 130, box_w, NUMBER_BOX_HEIGHT)
         self._l_box.rect = (left + 70, content_top - 156, box_w, NUMBER_BOX_HEIGHT)
         self._commit_btn.rect = (left, content_top - 188, 70, 22)
+        if self._can_remove:
+            self._remove_btn.rect = (left + 76, content_top - 188, 70, 22)
         self._spawn_label.x = left
         self._spawn_label.y = content_top - 12
         self._attract_label.x = left
