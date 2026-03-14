@@ -9,7 +9,7 @@ import time
 
 from sim import cars, cop, places
 from sim.constants import POLICE_PRIORITY_SCALE, VIS_ZONE_LENGTH_CELLS, VIS_ZONE_WIDTH_CELLS
-from sim.map_data import MAP_DATA
+from sim.map_data import MAP_DATA, geometry_from_place_rects, place_rects_from_geometry
 from sim import world
 from sim.impasse import apply_impasse
 from sim.movement import advance_car
@@ -38,8 +38,13 @@ class GameState:
         self.lane_configs: dict[int, places.LaneConfig] = {i: places.LaneConfig() for i in range(12)}
         self.intersection_configs: dict[str, places.IntersectionConfig] = {
             "main": places.IntersectionConfig(intersection_type=places.INTERSECTION_TYPE_X),
-            "bypass": places.IntersectionConfig(intersection_type=places.INTERSECTION_TYPE_CORNER),
+            "bypass": places.IntersectionConfig(
+                intersection_type=places.INTERSECTION_TYPE_CORNER,
+                center_x=places.BYPASS_DEFAULT_CENTER[0],
+                center_y=places.BYPASS_DEFAULT_CENTER[1],
+            ),
         }
+        self.place_geometry: dict[str, places.PlaceGeometry] = {}
         for i in (4, 7):
             self.lane_configs[i].lane_type = places.LANE_TYPE_PASSING
         self.spawn_timers: dict[str, float] = {p: random.uniform(0, self.spawn_interval) for p in SPAWN_PLACES}
@@ -76,13 +81,21 @@ class GameState:
         return dict(self._perf_stats)
 
     def rebuild_world_from_config(self) -> None:
-        """Rebuild world geometry from intersection size configs. Call on Commit."""
-        place_rects = MAP_DATA.get("place_rects", {})
+        """Rebuild world geometry from place_geometry and intersection configs. Call on Commit."""
+        if self.place_geometry:
+            place_rects = place_rects_from_geometry(self.place_geometry)
+        else:
+            place_rects = MAP_DATA.get("place_rects", {})
+            self.place_geometry = geometry_from_place_rects(place_rects)
         main_cfg = self.intersection_configs.get("main")
         bypass_cfg = self.intersection_configs.get("bypass")
         main_size = main_cfg.size_cells if main_cfg else places.INTERSECTION_SIZE_DEFAULT
         bypass_size = bypass_cfg.size_cells if bypass_cfg else places.INTERSECTION_SIZE_DEFAULT
-        world.rebuild_world(place_rects, main_size, bypass_size)
+        main_center = (main_cfg.center_x, main_cfg.center_y) if main_cfg else (18.0, 24.0)
+        bypass_center = (bypass_cfg.center_x, bypass_cfg.center_y) if bypass_cfg else (33.0, 2.0)
+        world.rebuild_world(
+            place_rects, main_center, main_size, bypass_center, bypass_size
+        )
 
     def _apply_police_influence(
         self,

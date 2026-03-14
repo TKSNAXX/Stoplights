@@ -80,6 +80,21 @@ def load_config(game: "GameState") -> None:
                 game.intersection_configs[key].intersection_type = cfg["intersection_type"]
             if "size_cells" in cfg and isinstance(cfg["size_cells"], (int, float)):
                 game.intersection_configs[key].size_cells = _clamp_size(int(cfg["size_cells"]))
+            if "center_x" in cfg and isinstance(cfg["center_x"], (int, float)):
+                game.intersection_configs[key].center_x = int(cfg["center_x"])
+            if "center_y" in cfg and isinstance(cfg["center_y"], (int, float)):
+                game.intersection_configs[key].center_y = int(cfg["center_y"])
+
+    pg = data.get("place_geometry", {})
+    for key, g in pg.items():
+        if key not in places.PLACES:
+            continue
+        if isinstance(g, dict):
+            cx = int(g.get("center_x", 0))
+            cy = int(g.get("center_y", 0))
+            w = max(places.PLACE_SIZE_MIN, min(places.PLACE_SIZE_MAX, int(g.get("width", 5))))
+            l = max(places.PLACE_SIZE_MIN, min(places.PLACE_SIZE_MAX, int(g.get("length", 5))))
+            game.place_geometry[key] = places.PlaceGeometry(center_x=cx, center_y=cy, width=w, length=l)
 
 
 def save_config(game: "GameState") -> None:
@@ -95,8 +110,17 @@ def save_config(game: "GameState") -> None:
             for k, v in game.lane_configs.items()
         },
         "intersection_configs": {
-            k: {"intersection_type": v.intersection_type, "size_cells": v.size_cells}
+            k: {
+                "intersection_type": v.intersection_type,
+                "size_cells": v.size_cells,
+                "center_x": v.center_x,
+                "center_y": v.center_y,
+            }
             for k, v in game.intersection_configs.items()
+        },
+        "place_geometry": {
+            k: {"center_x": g.center_x, "center_y": g.center_y, "width": g.width, "length": g.length}
+            for k, g in game.place_geometry.items()
         },
     }
     try:

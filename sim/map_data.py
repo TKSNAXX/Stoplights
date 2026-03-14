@@ -5,6 +5,45 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sim.places import PlaceGeometry
+
+
+def geometry_from_place_rects(place_rects: dict[str, dict]) -> dict[str, "PlaceGeometry"]:
+    """Convert {x, y, w, h} place_rects to center-based PlaceGeometry."""
+    from sim import places
+    result: dict[str, places.PlaceGeometry] = {}
+    for name, r in place_rects.items():
+        x = int(r.get("x", 0))
+        y = int(r.get("y", 0))
+        w = int(r.get("w", 0))
+        h = int(r.get("h", 0))
+        if w <= 0 or h <= 0:
+            continue
+        cx = x + w // 2
+        cy = y + h // 2
+        result[name] = places.PlaceGeometry(center_x=cx, center_y=cy, width=w, length=h)
+    return result
+
+
+def place_rects_from_geometry(place_geometry: dict[str, "PlaceGeometry"]) -> dict[str, dict]:
+    """
+    Convert center-based place geometry to {x, y, w, h} place_rects for build_lanes.
+    Bounds: [cx - w//2, cx + w//2), [cy - l//2, cy + l//2).
+    """
+    from sim import places
+    result: dict[str, dict] = {}
+    for name, g in place_geometry.items():
+        w = max(places.PLACE_SIZE_MIN, min(places.PLACE_SIZE_MAX, g.width))
+        l = max(places.PLACE_SIZE_MIN, min(places.PLACE_SIZE_MAX, g.length))
+        half_w = w // 2
+        half_l = l // 2
+        x = g.center_x - half_w
+        y = g.center_y - half_l
+        result[name] = {"x": x, "y": y, "w": w, "h": l}
+    return result
 
 
 def _centered_tracks(lo: int, hi: int) -> tuple[int, int]:
@@ -172,12 +211,12 @@ def get_bypass_intersection_center(place_rects: dict[str, dict]) -> tuple[float,
 
 def build_housing_park_route(
     place_rects: dict[str, dict],
+    bypass_center: tuple[float, float],
     size: int = 4,
 ) -> tuple[list[list[tuple[int, int]]], dict]:
     """
-    Build Housing–Park direct route from place positions.
-    Junction and lane tracks derived from Housing and Park rects; RHT alignment.
-    size: intersection cell count (even, 2–12). Center stays fixed.
+    Build Housing–Park direct route from place positions and explicit bypass center.
+    Junction at bypass_center; lane tracks connect to Housing and Park rects. RHT alignment.
     Returns (hp_lanes, hp_intersection).
     """
     def rect(place: str) -> tuple[int, int, int, int]:
@@ -191,11 +230,9 @@ def build_housing_park_route(
     px, py, pw, ph = rect("Park")
 
     h_east = hx + hw
-    h_east_center_y = hy + hh // 2
     p_south = py - 1
-    p_south_center_x = px + pw // 2
 
-    center_x, center_y = p_south_center_x, h_east_center_y
+    center_x, center_y = bypass_center
     hp_x_lo, hp_x_hi, hp_y_lo, hp_y_hi = bounds_from_center(center_x, center_y, size)
 
     hp_cells = [(x, y) for x in range(hp_x_lo, hp_x_hi) for y in range(hp_y_lo, hp_y_hi)]
@@ -237,7 +274,8 @@ def _default_map() -> dict:
     }
 
     lanes, grid_w, grid_h = build_lanes_from_positions(intersection, place_rects)
-    hp_lanes, hp_intersection = build_housing_park_route(place_rects)
+    bypass_center = get_bypass_intersection_center(place_rects)
+    hp_lanes, hp_intersection = build_housing_park_route(place_rects, bypass_center)
     lanes = lanes + hp_lanes
 
     # Extend grid to include HP route
@@ -278,7 +316,8 @@ def load_map_data() -> dict:
     merged["place_rects"] = {**default["place_rects"], **loaded.get("place_rects", {})}
     if "lanes" not in loaded:
         lanes, grid_w, grid_h = build_lanes_from_positions(merged["intersection"], merged["place_rects"])
-        hp_lanes, hp_intersection = build_housing_park_route(merged["place_rects"])
+        bypass_center = get_bypass_intersection_center(merged["place_rects"])
+        hp_lanes, hp_intersection = build_housing_park_route(merged["place_rects"], bypass_center)
         merged["lanes"] = lanes + hp_lanes
         merged["hp_intersection"] = hp_intersection
         for lane in hp_lanes:

@@ -1,7 +1,6 @@
 """
 Stoplights entry point and window orchestration.
 """
-import math
 import time
 from pathlib import Path
 
@@ -22,7 +21,7 @@ from sim.constants import (
 )
 from sim.game import GameState
 from sim import persistence, world
-from ui import CarDeetsDialog, DialogManager, IntersectionVarsDialog, LaneVarsDialog, PlaceVarsDialog, Slider
+from ui import CarDeetsDialog, DialogManager, IntersectionVarsDialog, LaneVarsDialog, NumberBox, PlaceVarsDialog
 
 TICKS_PER_SECOND = 60
 TICK_DT = 1.0 / TICKS_PER_SECOND
@@ -38,37 +37,12 @@ VIS_ZONE_COLOR_WHITE = (220, 220, 220)
 VIS_ZONE_COLOR_CYAN = (60, 220, 220)
 VIS_ZONE_LINE_WIDTH = 1
 
-SLIDER_LEFT = 20
-SLIDER_BOTTOM = 20
-SLIDER_WIDTH = 200
-SLIDER_HEIGHT = 24
-SLIDER_COLOR = (100, 100, 100)
-SLIDER_THUMB_COLOR = (180, 180, 180)
-SLIDER_LABEL_FONT_SIZE = 14
-TRAFFIC_STEPS = 10
-TRAFFIC_DEFAULT_STEP = 2
-SPEED_SLIDER_BOTTOM = SLIDER_BOTTOM + SLIDER_HEIGHT + 12
-SPEED_STEPS = 9
-SPEED_DEFAULT_STEP = 4
 MOVE_DURATION_BASE = 0.2
 
 ZOOM_STEPS = 5
 ZOOM_LEVEL_FIT = 0
 ZOOM_LEVEL_MAX = 4
 EDGE_PAN_MARGIN = 48
-
-
-def spawn_interval_for_step(step: int) -> float:
-    step = max(0, min(TRAFFIC_STEPS - 1, step))
-    k = (math.log10(5.0) - math.log10(2.0)) / -2
-    return 2.0 * (10.0 ** ((step - TRAFFIC_DEFAULT_STEP) * k))
-
-
-def speed_multiplier_for_step(step: int) -> float:
-    step = max(0, min(SPEED_STEPS - 1, step))
-    if step <= SPEED_DEFAULT_STEP:
-        return 0.125 + (1.0 - 0.125) * step / SPEED_DEFAULT_STEP if SPEED_DEFAULT_STEP else 0.125
-    return 1.0 + (2.0 - 1.0) * (step - SPEED_DEFAULT_STEP) / (SPEED_STEPS - 1 - SPEED_DEFAULT_STEP)
 
 
 def _car_direction_index(car) -> int:
@@ -91,15 +65,6 @@ class StoplightsWindow(arcade.Window):
         self._cached_center: tuple[float, float, float] | None = None
         self._place_texts: dict[str, arcade.Text] = {}
         self._cardinal_texts: dict[str, arcade.Text] = {}
-
-        self._traffic_slider = Slider(
-            SLIDER_LEFT, SLIDER_BOTTOM, SLIDER_WIDTH, SLIDER_HEIGHT, TRAFFIC_STEPS, TRAFFIC_DEFAULT_STEP, SLIDER_COLOR, SLIDER_THUMB_COLOR
-        )
-        self._speed_slider = Slider(
-            SLIDER_LEFT, SPEED_SLIDER_BOTTOM, SLIDER_WIDTH, SLIDER_HEIGHT, SPEED_STEPS, SPEED_DEFAULT_STEP, SLIDER_COLOR, SLIDER_THUMB_COLOR
-        )
-        self._traffic_label = arcade.Text("", SLIDER_LEFT, SLIDER_BOTTOM + SLIDER_HEIGHT + 4, color=PLACE_LABEL_COLOR, font_size=SLIDER_LABEL_FONT_SIZE)
-        self._speed_label = arcade.Text("", SLIDER_LEFT, SPEED_SLIDER_BOTTOM + SLIDER_HEIGHT + 4, color=PLACE_LABEL_COLOR, font_size=SLIDER_LABEL_FONT_SIZE)
 
         for place in places.PLACES:
             self._place_texts[place] = arcade.Text(place, 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE, anchor_x="center", anchor_y="center")
@@ -141,7 +106,6 @@ class StoplightsWindow(arcade.Window):
         self._car_sprite_pool = CarSpritePool(self._car_textures_by_dir, scale=2.0) if self._car_textures_by_dir else None
         self._car_draw_order: list[object] = []
 
-        self._apply_speed_step(SPEED_DEFAULT_STEP)
         self._update_zoom_scale()
         if self._car_sprite_pool is not None:
             self._car_sprite_pool.set_zoom_scale(self._zoom_scale)
@@ -186,14 +150,6 @@ class StoplightsWindow(arcade.Window):
 
     def _screen_to_grid(self, sx: float, sy: float, center_x: float, center_y: float) -> tuple[float, float]:
         return screen_to_grid(sx, sy, center_x, center_y, world.get_grid_w(), world.get_grid_h(), self._zoom_scale)
-
-    def _apply_traffic_step(self, step: int) -> None:
-        self.game.spawn_interval = spawn_interval_for_step(max(0, min(TRAFFIC_STEPS - 1, step)))
-
-    def _apply_speed_step(self, step: int) -> None:
-        step = max(0, min(SPEED_STEPS - 1, step))
-        self._move_duration = MOVE_DURATION_BASE / speed_multiplier_for_step(step)
-        self.game.movement_every_n_ticks = 1
 
     def _rebuild_static_draw_cache(self, center_x: float, center_y: float) -> None:
         self._cached_center = (center_x, center_y, self._zoom_scale)
@@ -338,6 +294,12 @@ class StoplightsWindow(arcade.Window):
             spr.center_x, spr.center_y = sx, sy
 
     def on_key_press(self, key: int, modifiers: int) -> None:
+        fw = self._dialog_manager.get_focused_widget()
+        if fw is not None and hasattr(fw, "on_key_press"):
+            if fw.on_key_press(key):
+                if key in (arcade.key.RETURN, arcade.key.TAB):
+                    self._dialog_manager.set_focused_widget(None)
+                return
         if key == arcade.key.ESCAPE:
             self._dialog_manager.close_top()
         elif key == arcade.key.V:
@@ -484,14 +446,6 @@ class StoplightsWindow(arcade.Window):
                 screen_pts = [self._to_screen(vx, vy, center_x, center_y) for vx, vy in verts]
                 arcade.draw_polygon_outline(screen_pts, fan_color, VIS_ZONE_LINE_WIDTH)
 
-        self._traffic_slider.draw()
-        self._speed_slider.draw()
-        self._traffic_label.value = f"Traffic: {self._traffic_slider.value + 1}/{TRAFFIC_STEPS}"
-        self._traffic_label.draw()
-        mult = speed_multiplier_for_step(self._speed_slider.value)
-        self._speed_label.value = f"Speed: {mult:.1f}x" if mult >= 1.0 else f"Speed: 1/{int(1 / mult)}x" if (1 / mult) == int(1 / mult) else f"Speed: {mult:.2f}x"
-        self._speed_label.draw()
-
         draw_ms = (time.perf_counter() - draw_start) * 1000.0
         self._draw_ms_ema = draw_ms if self._draw_ms_ema <= 0.0 else (0.9 * self._draw_ms_ema + 0.1 * draw_ms)
         perf = self.game.get_perf_stats()
@@ -550,6 +504,8 @@ class StoplightsWindow(arcade.Window):
 
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int):
         if button == arcade.MOUSE_BUTTON_LEFT:
+            if not self._dialog_manager.contains_point(x, y):
+                self._dialog_manager.set_focused_widget(None)
             if self._dialog_manager.on_mouse_press(x, y):
                 return
             place = self._place_at_screen(x, y)
@@ -558,9 +514,15 @@ class StoplightsWindow(arcade.Window):
                     self._dialog_manager.open(self._place_dialogs[place])
                 else:
                     dlg = PlaceVarsDialog(
-                        x - 110, y - 70, place,
+                        x - 120, y - 130, place,
                         self.game.place_configs[place],
+                        self.game.place_geometry,
                         on_change=self._on_config_change,
+                        on_commit=lambda: (
+                            self.game.rebuild_world_from_config(),
+                            self._invalidate_draw_cache(),
+                            persistence.save_config(self.game),
+                        ),
                     )
                     self._place_dialogs[place] = dlg
                     dlg.set_on_close(lambda d: self._dialog_manager.close(d))
@@ -604,25 +566,14 @@ class StoplightsWindow(arcade.Window):
                     dlg.set_on_close(lambda d: self._dialog_manager.close(d))
                     self._dialog_manager.open(dlg)
                 return
-            if self._traffic_slider.on_press(x, y):
-                self._apply_traffic_step(self._traffic_slider.value)
-            elif self._speed_slider.on_press(x, y):
-                self._apply_speed_step(self._speed_slider.value)
 
     def on_mouse_drag(self, x: float, y: float, dx: float, dy: float, buttons: int, modifiers: int):
         if buttons & arcade.MOUSE_BUTTON_LEFT:
-            if self._dialog_manager.on_mouse_drag(x, y, dx, dy):
-                return
-            if self._traffic_slider.on_drag(x):
-                self._apply_traffic_step(self._traffic_slider.value)
-            elif self._speed_slider.on_drag(x):
-                self._apply_speed_step(self._speed_slider.value)
+            self._dialog_manager.on_mouse_drag(x, y, dx, dy)
 
     def on_mouse_release(self, x: float, y: float, button: int, modifiers: int):
         if button == arcade.MOUSE_BUTTON_LEFT:
             self._dialog_manager.on_mouse_release(x, y)
-            self._traffic_slider.on_release()
-            self._speed_slider.on_release()
 
 
 def main():

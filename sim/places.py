@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import dataclasses
 
-from sim.map_data import MAP_DATA
 from sim import world
 
 @dataclasses.dataclass
@@ -14,6 +13,19 @@ class PlaceConfig:
     """Per-place spawn and attract configuration."""
     spawn_interval: float = 2.0
     attract_weight: float = 1.0
+
+
+@dataclasses.dataclass
+class PlaceGeometry:
+    """Center-based place rectangle. Bounds: [cx - w//2, cx + w//2), [cy - l//2, cy + l//2)."""
+    center_x: int = 0
+    center_y: int = 0
+    width: int = 5
+    length: int = 5
+
+
+PLACE_SIZE_MIN = 1
+PLACE_SIZE_MAX = 16
 
 
 LANE_TYPE_NORMAL = "normal"
@@ -31,11 +43,17 @@ INTERSECTION_SIZE_DEFAULT = 4
 INTERSECTION_SIZE_VALUES = (2, 4, 6, 8, 10, 12)
 
 
+# Default bypass center (corner of Housing east + Park south from default map)
+BYPASS_DEFAULT_CENTER = (33, 2)
+
+
 @dataclasses.dataclass
 class IntersectionConfig:
-    """Per-intersection type: x (cross) or corner; size in cells (even, 2–12)."""
+    """Per-intersection type, center, and size. Intersections are a general map entity with movable centers."""
     intersection_type: str = INTERSECTION_TYPE_X
     size_cells: int = INTERSECTION_SIZE_DEFAULT
+    center_x: int = 18
+    center_y: int = 24
 
 
 @dataclasses.dataclass
@@ -98,7 +116,7 @@ LANE_DOWNWARD_INDICES = {2, 3, 4, 7}
 
 def place_bounds(place: str) -> list[tuple[int, int]]:
     """Return list of (gx, gy) grid cells for the named place rectangle."""
-    rect = MAP_DATA.get("place_rects", {}).get(place)
+    rect = world.get_place_rects().get(place)
     if not rect:
         return []
     x0 = int(rect.get("x", 0))

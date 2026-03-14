@@ -7,8 +7,8 @@ from __future__ import annotations
 from sim.map_data import (
     build_housing_park_route,
     build_lanes_from_positions,
+    DEFAULT_MAIN_CENTER,
     get_bypass_intersection_center,
-    get_main_intersection_center,
     intersection_dict_from_bounds,
     load_map_data,
     bounds_from_center,
@@ -23,6 +23,7 @@ class _WorldState:
         self.all_lanes: list[list[tuple[int, int]]] = []
         self.grid_w: int = 32
         self.grid_h: int = 36
+        self._place_rects: dict[str, dict] = {}
         self._main_cells: list[tuple[int, int]] = []
         self._main_slots: list[tuple[int, int]] = []
         self._hp_cells: list[tuple[int, int]] = []
@@ -36,12 +37,14 @@ _state = _WorldState()
 
 def rebuild_world(
     place_rects: dict[str, dict],
+    main_center: tuple[float, float],
     main_size: int,
+    bypass_center: tuple[float, float],
     bypass_size: int,
 ) -> None:
     """
     Rebuild lanes and intersection geometry from centers and sizes.
-    Centers stay fixed; bounds recompute from size.
+    Places and intersections own their positions; lanes are derived.
     """
     main_size = max(2, min(12, main_size))
     bypass_size = max(2, min(12, bypass_size))
@@ -50,14 +53,14 @@ def rebuild_world(
     if bypass_size % 2 != 0:
         bypass_size = (bypass_size // 2) * 2
 
-    main_cx, main_cy = get_main_intersection_center()
-    bypass_cx, bypass_cy = get_bypass_intersection_center(place_rects)
+    main_cx, main_cy = main_center
+    bypass_cx, bypass_cy = bypass_center
 
     x_lo, x_hi, y_lo, y_hi = bounds_from_center(main_cx, main_cy, main_size)
     main_intersection = intersection_dict_from_bounds(x_lo, x_hi, y_lo, y_hi)
 
     lanes, grid_w, grid_h = build_lanes_from_positions(main_intersection, place_rects)
-    hp_lanes, hp_intersection = build_housing_park_route(place_rects, size=bypass_size)
+    hp_lanes, hp_intersection = build_housing_park_route(place_rects, bypass_center, size=bypass_size)
     lanes = lanes + hp_lanes
 
     for lane in hp_lanes:
@@ -70,6 +73,7 @@ def rebuild_world(
 
     _state.all_lanes.clear()
     _state.all_lanes.extend([[tuple(c) for c in lane] for lane in lanes])
+    _state._place_rects = dict(place_rects)
     _state.grid_w = grid_w
     _state.grid_h = grid_h
     _state._main_cells = [tuple(c) for c in main_intersection["cells"]]
@@ -99,6 +103,9 @@ def _init_from_map_data() -> None:
     inter = MAP_DATA.get("intersection", {})
     hp_inter = MAP_DATA.get("hp_intersection", {})
 
+    main_cx, main_cy = float(DEFAULT_MAIN_CENTER[0]), float(DEFAULT_MAIN_CENTER[1])
+    bypass_cx, bypass_cy = get_bypass_intersection_center(place_rects)
+
     x_lo = inter.get("x_lo")
     if x_lo is not None:
         main_size = inter.get("x_hi", x_lo + 4) - x_lo
@@ -115,7 +122,7 @@ def _init_from_map_data() -> None:
         xs = [c[0] for c in hp_cells]
         bypass_size = max(xs) - min(xs) + 1
 
-    rebuild_world(place_rects, main_size, bypass_size)
+    rebuild_world(place_rects, (main_cx, main_cy), main_size, (bypass_cx, bypass_cy), bypass_size)
 
 
 def _refresh_refs() -> None:
@@ -184,6 +191,11 @@ def intersection_center() -> tuple[float, float]:
 
 def get_grid_w() -> int:
     return _state.grid_w
+
+
+def get_place_rects() -> dict[str, dict]:
+    """Return current place rects (x,y,w,h) from last rebuild."""
+    return dict(_state._place_rects)
 
 
 def get_grid_h() -> int:

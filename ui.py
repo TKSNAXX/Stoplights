@@ -10,6 +10,154 @@ import arcade
 from draw_compat import rect_filled, rect_outline
 
 
+NUMBER_BOX_HEIGHT = 22
+NUMBER_BOX_ARROW_SIZE = 14
+
+
+class NumberBox:
+    """
+    Integer input: [ text box ] [▲] [▼]. Typing or arrow buttons.
+    Rect (left, bottom, width, height). step for arrow increment.
+    """
+
+    def __init__(
+        self,
+        left: float,
+        bottom: float,
+        width: float,
+        height: float,
+        value: int,
+        min_val: int,
+        max_val: int,
+        step: int = 1,
+        on_change: Callable[[int], None] | None = None,
+        on_unfocus: Callable[[], None] | None = None,
+    ):
+        self.rect = (left, bottom, width, height)
+        self.value = max(min_val, min(max_val, value))
+        self.min_val = min_val
+        self.max_val = max_val
+        self.step = step
+        self._on_change = on_change
+        self._on_unfocus = on_unfocus
+        self._focused = False
+        self._text_buffer = str(self.value)
+        self._text = arcade.Text(
+            "", 0, 0, color=(220, 220, 220), font_size=11, anchor_x="left", anchor_y="center"
+        )
+
+    def contains(self, x: float, y: float) -> bool:
+        left, bottom, width, height = self.rect
+        return left <= x <= left + width and bottom <= y <= bottom + height
+
+    def _box_rect(self) -> tuple[float, float, float, float]:
+        """Text box portion: (left, bottom, width, height)."""
+        left, bottom, width, height = self.rect
+        arrow_w = NUMBER_BOX_ARROW_SIZE * 2
+        return (left, bottom, width - arrow_w, height)
+
+    def _up_arrow_rect(self) -> tuple[float, float, float, float]:
+        left, bottom, width, height = self.rect
+        box_w = width - NUMBER_BOX_ARROW_SIZE * 2
+        return (left + box_w, bottom + height / 2, NUMBER_BOX_ARROW_SIZE, height / 2)
+
+    def _down_arrow_rect(self) -> tuple[float, float, float, float]:
+        left, bottom, width, height = self.rect
+        box_w = width - NUMBER_BOX_ARROW_SIZE * 2
+        return (left + box_w + NUMBER_BOX_ARROW_SIZE, bottom + height / 2, NUMBER_BOX_ARROW_SIZE, height / 2)
+
+    def set_focus(self, focused: bool) -> None:
+        if self._focused != focused:
+            self._focused = focused
+            if not focused:
+                self._commit_text()
+                if self._on_unfocus:
+                    self._on_unfocus()
+
+    def _commit_text(self) -> None:
+        try:
+            v = int(self._text_buffer)
+            v = max(self.min_val, min(self.max_val, v))
+            if v != self.value:
+                self.value = v
+                self._text_buffer = str(self.value)
+                if self._on_change:
+                    self._on_change(self.value)
+        except ValueError:
+            self._text_buffer = str(self.value)
+
+    def _apply_step(self, delta: int) -> None:
+        v = self.value + delta * self.step
+        v = max(self.min_val, min(self.max_val, v))
+        if v != self.value:
+            self.value = v
+            self._text_buffer = str(self.value)
+            if self._on_change:
+                self._on_change(self.value)
+
+    def on_press(self, x: float, y: float) -> bool:
+        if not self.contains(x, y):
+            return False
+        self.set_focus(True)
+        l, b, w, h = self._up_arrow_rect()
+        if l <= x <= l + w and b <= y <= b + h:
+            self._apply_step(1)
+            return True
+        l, b, w, h = self._down_arrow_rect()
+        if l <= x <= l + w and b <= y <= b + h:
+            self._apply_step(-1)
+            return True
+        return True
+
+    def on_key_press(self, key: int) -> bool:
+        if not self._focused:
+            return False
+        # arcade.key constants
+        if key == arcade.key.UP:
+            self._apply_step(1)
+            return True
+        if key == arcade.key.DOWN:
+            self._apply_step(-1)
+            return True
+        if key == arcade.key.RETURN or key == arcade.key.TAB:
+            self.set_focus(False)
+            return True
+        if key == arcade.key.BACKSPACE:
+            if self._text_buffer:
+                self._text_buffer = self._text_buffer[:-1]
+            return True
+        # Digit or minus
+        if 48 <= key <= 57:  # 0-9
+            self._text_buffer += chr(key)
+            return True
+        if key == 45 and not self._text_buffer:  # minus for negative
+            self._text_buffer = "-"
+            return True
+        return False
+
+    def draw(self) -> None:
+        left, bottom, width, height = self.rect
+        box_w = width - NUMBER_BOX_ARROW_SIZE * 2
+        rect_filled(left, bottom, box_w, height, (50, 50, 60))
+        rect_outline(left, bottom, box_w, height, DIALOG_BORDER if self._focused else (80, 80, 90), 1)
+        self._text.value = self._text_buffer if self._focused else str(self.value)
+        self._text.x = left + 6
+        self._text.y = bottom + height / 2
+        self._text.draw()
+        # Up arrow
+        ul, ub, uw, uh = self._up_arrow_rect()
+        rect_filled(ul, ub, uw, uh, (100, 100, 110))
+        rect_outline(ul, ub, uw, uh, DIALOG_BORDER, 1)
+        arrow_up = arcade.Text("▲", ul + uw / 2, ub + uh / 2, color=(180, 180, 180), font_size=10, anchor_x="center", anchor_y="center")
+        arrow_up.draw()
+        # Down arrow
+        dl, db, dw, dh = self._down_arrow_rect()
+        rect_filled(dl, db, dw, dh, (100, 100, 110))
+        rect_outline(dl, db, dw, dh, DIALOG_BORDER, 1)
+        arrow_dn = arcade.Text("▼", dl + dw / 2, db + dh / 2, color=(180, 180, 180), font_size=10, anchor_x="center", anchor_y="center")
+        arrow_dn.draw()
+
+
 class Slider:
     """Horizontal step slider. Rect (left, bottom, width, height). value is 0..num_steps-1."""
 
@@ -99,6 +247,10 @@ class Dialog:
         self._dragging = False
         self._drag_start: tuple[float, float] | None = None
         self._on_close: callable | None = None
+        self._dialog_manager: DialogManager | None = None
+
+    def set_dialog_manager(self, manager: "DialogManager") -> None:
+        self._dialog_manager = manager
 
     def set_on_close(self, cb: callable) -> None:
         self._on_close = cb
@@ -163,10 +315,16 @@ class Dialog:
         if self._title_bar_contains(x, y):
             self._dragging = True
             self._drag_start = (self.x - x, self.y - y)
+            if self._dialog_manager:
+                self._dialog_manager.set_focused_widget(None)
             return True
         for w in self.widgets:
             if hasattr(w, "on_press") and w.on_press(x, y):
+                if self._dialog_manager and hasattr(w, "set_focus"):
+                    self._dialog_manager.set_focused_widget(w)
                 return True
+        if self._dialog_manager:
+            self._dialog_manager.set_focused_widget(None)
         return True
 
     def on_mouse_drag(self, x: float, y: float, dx: float, dy: float) -> bool:
@@ -195,23 +353,45 @@ class DialogManager:
 
     def __init__(self):
         self._dialogs: list[Dialog] = []
+        self._focused_widget: NumberBox | None = None
+
+    def set_focused_widget(self, widget: NumberBox | None) -> None:
+        if self._focused_widget is not None and hasattr(self._focused_widget, "set_focus"):
+            self._focused_widget.set_focus(False)
+        self._focused_widget = widget
+        if widget is not None and hasattr(widget, "set_focus"):
+            widget.set_focus(True)
+
+    def get_focused_widget(self) -> NumberBox | None:
+        return self._focused_widget
 
     def open(self, dialog: Dialog) -> None:
         if dialog in self._dialogs:
             self._dialogs.remove(dialog)
         self._dialogs.append(dialog)
+        dialog.set_dialog_manager(self)
         dialog.visible = True
 
     def close(self, dialog: Dialog) -> None:
         if dialog in self._dialogs:
             self._dialogs.remove(dialog)
         dialog.visible = False
+        if self._focused_widget is not None:
+            for w in dialog.widgets:
+                if w is self._focused_widget:
+                    self.set_focused_widget(None)
+                    break
 
     def close_top(self) -> bool:
         if not self._dialogs:
             return False
         top = self._dialogs.pop()
         top.visible = False
+        if self._focused_widget is not None:
+            for w in top.widgets:
+                if w is self._focused_widget:
+                    self.set_focused_widget(None)
+                    break
         return True
 
     def contains_point(self, x: float, y: float) -> bool:
@@ -298,7 +478,7 @@ class CommitButton:
 
 
 class IntersectionVarsDialog(Dialog):
-    """Dialog for editing intersection type (x vs corner) and size. Commit applies both."""
+    """Dialog for editing intersection type, center, and size. Commit applies all."""
 
     def __init__(
         self,
@@ -309,7 +489,7 @@ class IntersectionVarsDialog(Dialog):
         on_change: Callable[[], None] | None = None,
         on_commit: Callable[[], None] | None = None,
     ):
-        super().__init__(x, y, 220, 150, f"Intersection: {intersection_key}")
+        super().__init__(x, y, 220, 200, f"Intersection: {intersection_key}")
         self.intersection_key = intersection_key
         self._config = intersection_config
         self._on_change = on_change
@@ -318,91 +498,139 @@ class IntersectionVarsDialog(Dialog):
         type_step = INTERSECTION_TYPE_VALUES.index(
             getattr(intersection_config, "intersection_type", "x")
         )
+        cx = getattr(intersection_config, "center_x", 18)
+        cy = getattr(intersection_config, "center_y", 24)
         size_val = getattr(intersection_config, "size_cells", 4)
-        size_step = min(
-            range(len(INTERSECTION_SIZE_VALUES)),
-            key=lambda i: abs(INTERSECTION_SIZE_VALUES[i] - size_val),
-        )
 
         self._type_slider = Slider(
             0, 0, 160, 20,
             len(INTERSECTION_TYPE_VALUES), type_step,
             (100, 100, 100), (180, 180, 180),
         )
-        self._size_slider = Slider(
-            0, 0, 160, 20,
-            len(INTERSECTION_SIZE_VALUES), size_step,
-            (100, 100, 100), (180, 180, 180),
-        )
+        self._cx_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, cx, -100, 200, 1)
+        self._cy_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, cy, -100, 200, 1)
+        self._size_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, size_val, 2, 12, 2)
         self._commit_btn = CommitButton(0, 0, 70, 22, on_click=self._do_commit)
 
-        self.widgets = [self._type_slider, self._size_slider, self._commit_btn]
+        self.widgets = [self._type_slider, self._cx_box, self._cy_box, self._size_box, self._commit_btn]
         self._type_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._cx_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._cy_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._size_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
 
     def _do_commit(self) -> None:
-        """Apply type and size from sliders to config and call on_commit."""
+        """Apply type, center, size from widgets to config and call on_commit."""
         self._config.intersection_type = INTERSECTION_TYPE_VALUES[self._type_slider.value]
-        self._config.size_cells = INTERSECTION_SIZE_VALUES[self._size_slider.value]
+        self._config.center_x = self._cx_box.value
+        self._config.center_y = self._cy_box.value
+        self._config.size_cells = max(2, min(12, self._size_box.value))
+        if self._config.size_cells % 2 != 0:
+            self._config.size_cells = (self._config.size_cells // 2) * 2
         if self._on_commit:
             self._on_commit()
 
     def _layout_widgets(self) -> None:
         left = self.x + 12
         content_top = self.y - 32
+        box_w = 100
         self._type_slider.rect = (left, content_top - 24, 160, 20)
-        self._size_slider.rect = (left, content_top - 52, 160, 20)
-        self._commit_btn.rect = (left, content_top - 82, 70, 22)
+        self._cx_box.rect = (left + 70, content_top - 48, box_w, NUMBER_BOX_HEIGHT)
+        self._cy_box.rect = (left + 70, content_top - 74, box_w, NUMBER_BOX_HEIGHT)
+        self._size_box.rect = (left + 70, content_top - 100, box_w, NUMBER_BOX_HEIGHT)
+        self._commit_btn.rect = (left, content_top - 132, 70, 22)
         self._type_label.x = left
         self._type_label.y = content_top - 12
+        self._cx_label.x = left
+        self._cx_label.y = content_top - 36
+        self._cy_label.x = left
+        self._cy_label.y = content_top - 62
         self._size_label.x = left
-        self._size_label.y = content_top - 40
+        self._size_label.y = content_top - 88
 
     def draw(self) -> None:
         self._layout_widgets()
         self._type_label.value = f"Type: {INTERSECTION_TYPE_VALUES[self._type_slider.value]}"
-        self._size_label.value = f"Size: {INTERSECTION_SIZE_VALUES[self._size_slider.value]}"
+        self._cx_label.value = "Center X:"
+        self._cy_label.value = "Center Y:"
+        self._size_label.value = "Size:"
         super().draw()
         self._type_label.draw()
+        self._cx_label.draw()
+        self._cy_label.draw()
         self._size_label.draw()
 
     def on_mouse_press(self, x: float, y: float) -> bool:
         self._layout_widgets()
-        result = super().on_mouse_press(x, y)
-        self._sync_from_sliders()
-        return result
+        return super().on_mouse_press(x, y)
 
     def on_mouse_drag(self, x: float, y: float, dx: float, dy: float) -> bool:
-        result = super().on_mouse_drag(x, y, dx, dy)
-        self._sync_from_sliders()
-        return result
+        return super().on_mouse_drag(x, y, dx, dy)
 
     def on_mouse_release(self, x: float, y: float) -> bool:
-        result = super().on_mouse_release(x, y)
-        self._sync_from_sliders()
-        return result
-
-    def _sync_from_sliders(self) -> None:
-        """No-op: type and size applied only on Commit."""
-        pass
+        return super().on_mouse_release(x, y)
 
 
 class PlaceVarsDialog(Dialog):
-    """Dialog for editing place spawn rate and attract weight."""
+    """Dialog for editing place spawn, attract, and geometry. Geometry requires Commit."""
 
-    def __init__(self, x: float, y: float, place: str, place_config, on_change: Callable[[], None] | None = None):
-        super().__init__(x, y, 220, 140, f"Place: {place}")
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        place: str,
+        place_config,
+        place_geometry: dict,
+        on_change: Callable[[], None] | None = None,
+        on_commit: Callable[[], None] | None = None,
+    ):
+        super().__init__(x, y, 240, 260, f"Place: {place}")
         self.place = place
         self._config = place_config
+        self._place_geometry = place_geometry
         self._on_change = on_change
-        # Sliders will be positioned by _layout_widgets
+        self._on_commit = on_commit
+
         spawn_step = self._step_for_spawn(place_config.spawn_interval)
         attract_step = self._step_for_attract(place_config.attract_weight)
         self._spawn_slider = Slider(0, 0, 160, 20, 5, spawn_step, (100, 100, 100), (180, 180, 180))
         self._attract_slider = Slider(0, 0, 160, 20, 5, attract_step, (100, 100, 100), (180, 180, 180))
-        self.widgets = [self._spawn_slider, self._attract_slider]
+
+        g = place_geometry.get(place)
+        if g is not None:
+            cx, cy, w, l = g.center_x, g.center_y, g.width, g.length
+        else:
+            cx, cy, w, l = 0, 0, 5, 5
+        self._cx_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, cx, -100, 200, 1)
+        self._cy_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, cy, -100, 200, 1)
+        self._w_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, w, 1, 16, 1)
+        self._l_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, l, 1, 16, 1)
+        self._commit_btn = CommitButton(0, 0, 70, 22, on_click=self._do_commit)
+
+        self.widgets = [
+            self._spawn_slider, self._attract_slider,
+            self._cx_box, self._cy_box, self._w_box, self._l_box,
+            self._commit_btn,
+        ]
         self._spawn_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._attract_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._cx_label = arcade.Text("Center X:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._cy_label = arcade.Text("Center Y:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._w_label = arcade.Text("Width:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._l_label = arcade.Text("Length:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+
+    def _do_commit(self) -> None:
+        """Apply geometry from NumberBoxes and call on_commit."""
+        from sim.places import PlaceGeometry, PLACE_SIZE_MIN, PLACE_SIZE_MAX
+        w = max(PLACE_SIZE_MIN, min(PLACE_SIZE_MAX, self._w_box.value))
+        l = max(PLACE_SIZE_MIN, min(PLACE_SIZE_MAX, self._l_box.value))
+        self._place_geometry[self.place] = PlaceGeometry(
+            center_x=self._cx_box.value,
+            center_y=self._cy_box.value,
+            width=w,
+            length=l,
+        )
+        if self._on_commit:
+            self._on_commit()
 
     def _step_for_spawn(self, val: float) -> int:
         best = 0
@@ -421,12 +649,26 @@ class PlaceVarsDialog(Dialog):
     def _layout_widgets(self) -> None:
         left = self.x + 12
         content_top = self.y - 32
+        box_w = 100
         self._spawn_slider.rect = (left, content_top - 24, 160, 20)
         self._attract_slider.rect = (left, content_top - 52, 160, 20)
+        self._cx_box.rect = (left + 70, content_top - 78, box_w, NUMBER_BOX_HEIGHT)
+        self._cy_box.rect = (left + 70, content_top - 104, box_w, NUMBER_BOX_HEIGHT)
+        self._w_box.rect = (left + 70, content_top - 130, box_w, NUMBER_BOX_HEIGHT)
+        self._l_box.rect = (left + 70, content_top - 156, box_w, NUMBER_BOX_HEIGHT)
+        self._commit_btn.rect = (left, content_top - 188, 70, 22)
         self._spawn_label.x = left
         self._spawn_label.y = content_top - 12
         self._attract_label.x = left
         self._attract_label.y = content_top - 40
+        self._cx_label.x = left
+        self._cx_label.y = content_top - 66
+        self._cy_label.x = left
+        self._cy_label.y = content_top - 92
+        self._w_label.x = left
+        self._w_label.y = content_top - 118
+        self._l_label.x = left
+        self._l_label.y = content_top - 144
 
     def draw(self) -> None:
         self._layout_widgets()
@@ -435,6 +677,10 @@ class PlaceVarsDialog(Dialog):
         super().draw()
         self._spawn_label.draw()
         self._attract_label.draw()
+        self._cx_label.draw()
+        self._cy_label.draw()
+        self._w_label.draw()
+        self._l_label.draw()
 
     def on_mouse_press(self, x: float, y: float) -> bool:
         self._layout_widgets()
