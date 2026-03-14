@@ -117,10 +117,67 @@ def build_lanes_from_positions(
     return (lanes, grid_w, grid_h)
 
 
-def build_housing_park_route(place_rects: dict[str, dict]) -> tuple[list[list[tuple[int, int]]], dict]:
+# Main intersection center (fixed). Used when rebuilding with different sizes.
+DEFAULT_MAIN_CENTER = (18, 24)
+
+
+def bounds_from_center(center_x: float, center_y: float, size: int) -> tuple[int, int, int, int]:
+    """Return (x_lo, x_hi, y_lo, y_hi) for an intersection of given size centered at (cx, cy)."""
+    half = size // 2
+    x_lo = int(center_x) - half
+    y_lo = int(center_y) - half
+    return (x_lo, x_lo + size, y_lo, y_lo + size)
+
+
+def intersection_dict_from_bounds(x_lo: int, x_hi: int, y_lo: int, y_hi: int) -> dict:
+    """Build intersection dict for build_lanes_from_positions. Includes cells and slots."""
+    cells = [(x, y) for x in range(x_lo, x_hi) for y in range(y_lo, y_hi)]
+    cx = (x_lo + x_hi - 1) / 2
+    cy = (y_lo + y_hi - 1) / 2
+    slots = [
+        (int(cx), y_lo),
+        (int(cx) + 1, y_hi - 1),
+        (x_hi - 1, int(cy)),
+        (x_lo, int(cy) + 1),
+    ]
+    return {
+        "x_lo": x_lo, "x_hi": x_hi,
+        "y_lo": y_lo, "y_hi": y_hi,
+        "cells": cells,
+        "slots": slots,
+    }
+
+
+def get_main_intersection_center() -> tuple[float, float]:
+    """Return the fixed main intersection center. Comes from default map layout."""
+    return (float(DEFAULT_MAIN_CENTER[0]), float(DEFAULT_MAIN_CENTER[1]))
+
+
+def get_bypass_intersection_center(place_rects: dict[str, dict]) -> tuple[float, float]:
+    """Return bypass junction center from Housing and Park place positions."""
+    def rect(place: str) -> tuple[int, int, int, int]:
+        r = place_rects.get(place, {})
+        return (
+            int(r.get("x", 0)), int(r.get("y", 0)),
+            int(r.get("w", 0)), int(r.get("h", 0)),
+        )
+
+    hx, hy, hw, hh = rect("Housing")
+    px, py, pw, ph = rect("Park")
+
+    h_east_center_y = hy + hh // 2
+    p_south_center_x = px + pw // 2
+    return (float(p_south_center_x), float(h_east_center_y))
+
+
+def build_housing_park_route(
+    place_rects: dict[str, dict],
+    size: int = 4,
+) -> tuple[list[list[tuple[int, int]]], dict]:
     """
     Build Housing–Park direct route from place positions.
     Junction and lane tracks derived from Housing and Park rects; RHT alignment.
+    size: intersection cell count (even, 2–12). Center stays fixed.
     Returns (hp_lanes, hp_intersection).
     """
     def rect(place: str) -> tuple[int, int, int, int]:
@@ -138,10 +195,8 @@ def build_housing_park_route(place_rects: dict[str, dict]) -> tuple[list[list[tu
     p_south = py - 1
     p_south_center_x = px + pw // 2
 
-    hp_x_lo = p_south_center_x - 2
-    hp_x_hi = hp_x_lo + 4
-    hp_y_lo = h_east_center_y - 2
-    hp_y_hi = hp_y_lo + 4
+    center_x, center_y = p_south_center_x, h_east_center_y
+    hp_x_lo, hp_x_hi, hp_y_lo, hp_y_hi = bounds_from_center(center_x, center_y, size)
 
     hp_cells = [(x, y) for x in range(hp_x_lo, hp_x_hi) for y in range(hp_y_lo, hp_y_hi)]
     cx = (hp_x_lo + hp_x_hi - 1) / 2
@@ -167,24 +222,11 @@ def build_housing_park_route(place_rects: dict[str, dict]) -> tuple[list[list[tu
 
 def _default_map() -> dict:
     # Intersection and place positions are the source of truth; lanes are derived.
-    place_size = 5
     intersection_size = 4
 
-    inter_x_lo = 16
-    inter_x_hi = inter_x_lo + intersection_size
-    inter_y_lo = 22
-    inter_y_hi = inter_y_lo + intersection_size
-
-    intersection_cells = [(x, y) for x in range(inter_x_lo, inter_x_hi) for y in range(inter_y_lo, inter_y_hi)]
-    cx = (inter_x_lo + inter_x_hi - 1) / 2
-    cy = (inter_y_lo + inter_y_hi - 1) / 2
-    intersection_slots = [
-        (int(cx), inter_y_lo),
-        (int(cx) + 1, inter_y_hi - 1),
-        (inter_x_hi - 1, int(cy)),
-        (inter_x_lo, int(cy) + 1),
-    ]
-    intersection = {"cells": intersection_cells, "slots": intersection_slots}
+    main_cx, main_cy = get_main_intersection_center()
+    x_lo, x_hi, y_lo, y_hi = bounds_from_center(main_cx, main_cy, intersection_size)
+    intersection = intersection_dict_from_bounds(x_lo, x_hi, y_lo, y_hi)
 
     # Place rects: positions chosen so lane lengths are ~17 (S), ~14 (N), ~10 (E), ~11 (W)
     place_rects = {

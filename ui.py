@@ -252,10 +252,46 @@ LANE_SPEED_VALUES = (0.5, 0.75, 1.0, 1.25, 1.5)
 LANE_TYPE_VALUES = ("normal", "passing")
 # Intersection type: x (cross), corner
 INTERSECTION_TYPE_VALUES = ("x", "corner")
+# Intersection size: 2, 4, 6, 8, 10, 12 cells
+INTERSECTION_SIZE_VALUES = (2, 4, 6, 8, 10, 12)
+
+
+class CommitButton:
+    """Simple clickable Commit button. Rect (left, bottom, width, height)."""
+
+    def __init__(self, left: float, bottom: float, width: float, height: float, on_click: Callable[[], None] | None = None):
+        self.rect = (left, bottom, width, height)
+        self._on_click = on_click
+        self._text = arcade.Text("Commit", 0, 0, color=(220, 220, 220), font_size=11, anchor_x="center", anchor_y="center")
+
+    def contains(self, x: float, y: float) -> bool:
+        left, bottom, width, height = self.rect
+        return left <= x <= left + width and bottom <= y <= bottom + height
+
+    def draw(self) -> None:
+        left, bottom, width, height = self.rect
+        rect_filled(left, bottom, width, height, (80, 120, 80))
+        rect_outline(left, bottom, width, height, (100, 140, 100), 1)
+        self._text.x = left + width / 2
+        self._text.y = bottom + height / 2
+        self._text.draw()
+
+    def on_press(self, x: float, y: float) -> bool:
+        if not self.contains(x, y):
+            return False
+        if self._on_click:
+            self._on_click()
+        return True
+
+    def on_drag(self, x: float) -> bool:
+        return False
+
+    def on_release(self) -> bool:
+        return False
 
 
 class IntersectionVarsDialog(Dialog):
-    """Dialog for editing intersection type (x vs corner)."""
+    """Dialog for editing intersection type (x vs corner) and size. Commit applies size."""
 
     def __init__(
         self,
@@ -264,34 +300,63 @@ class IntersectionVarsDialog(Dialog):
         intersection_key: str,
         intersection_config,
         on_change: Callable[[], None] | None = None,
+        on_commit: Callable[[], None] | None = None,
     ):
-        super().__init__(x, y, 220, 100, f"Intersection: {intersection_key}")
+        super().__init__(x, y, 220, 150, f"Intersection: {intersection_key}")
         self.intersection_key = intersection_key
         self._config = intersection_config
         self._on_change = on_change
+        self._on_commit = on_commit
+
         type_step = INTERSECTION_TYPE_VALUES.index(
             getattr(intersection_config, "intersection_type", "x")
         )
+        size_val = getattr(intersection_config, "size_cells", 4)
+        size_step = min(
+            range(len(INTERSECTION_SIZE_VALUES)),
+            key=lambda i: abs(INTERSECTION_SIZE_VALUES[i] - size_val),
+        )
+
         self._type_slider = Slider(
             0, 0, 160, 20,
             len(INTERSECTION_TYPE_VALUES), type_step,
             (100, 100, 100), (180, 180, 180),
         )
-        self.widgets = [self._type_slider]
+        self._size_slider = Slider(
+            0, 0, 160, 20,
+            len(INTERSECTION_SIZE_VALUES), size_step,
+            (100, 100, 100), (180, 180, 180),
+        )
+        self._commit_btn = CommitButton(0, 0, 70, 22, on_click=self._do_commit)
+
+        self.widgets = [self._type_slider, self._size_slider, self._commit_btn]
         self._type_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._size_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+
+    def _do_commit(self) -> None:
+        """Apply size from slider to config and call on_commit."""
+        self._config.size_cells = INTERSECTION_SIZE_VALUES[self._size_slider.value]
+        if self._on_commit:
+            self._on_commit()
 
     def _layout_widgets(self) -> None:
         left = self.x + 12
         content_top = self.y - 32
         self._type_slider.rect = (left, content_top - 24, 160, 20)
+        self._size_slider.rect = (left, content_top - 52, 160, 20)
+        self._commit_btn.rect = (left, content_top - 82, 70, 22)
         self._type_label.x = left
         self._type_label.y = content_top - 12
+        self._size_label.x = left
+        self._size_label.y = content_top - 40
 
     def draw(self) -> None:
         self._layout_widgets()
         self._type_label.value = f"Type: {INTERSECTION_TYPE_VALUES[self._type_slider.value]}"
+        self._size_label.value = f"Size: {INTERSECTION_SIZE_VALUES[self._size_slider.value]}"
         super().draw()
         self._type_label.draw()
+        self._size_label.draw()
 
     def on_mouse_press(self, x: float, y: float) -> bool:
         self._layout_widgets()
@@ -311,6 +376,7 @@ class IntersectionVarsDialog(Dialog):
 
     def _sync_from_sliders(self) -> None:
         self._config.intersection_type = INTERSECTION_TYPE_VALUES[self._type_slider.value]
+        # size_cells only applied on Commit; slider value shown for preview
         if self._on_change:
             self._on_change()
 

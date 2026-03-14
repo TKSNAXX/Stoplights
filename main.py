@@ -10,7 +10,7 @@ import arcade
 from render.camera import grid_to_screen, screen_to_grid
 from render.debug import visibility_fan_vertices
 from render.sprites import CarSpritePool, load_car_textures
-from render.tiles import TileSet
+from render.tiles import TileSet, generate_corner_texture
 from sim import places
 from sim.constants import (
     CAR_DEFAULT,
@@ -21,15 +21,7 @@ from sim.constants import (
     VIS_ZONE_WIDTH_CELLS,
 )
 from sim.game import GameState
-from sim.world import (
-    ALL_LANES,
-    GRID_H,
-    GRID_W,
-    get_bypass_intersection_cells,
-    get_intersection_at_cell,
-    get_intersection_cells,
-    get_main_intersection_cells,
-)
+from sim import world
 from ui import CarDeetsDialog, DialogManager, IntersectionVarsDialog, LaneVarsDialog, PlaceVarsDialog, Slider
 
 TICKS_PER_SECOND = 60
@@ -159,8 +151,8 @@ class StoplightsWindow(arcade.Window):
 
     def _update_zoom_scale(self) -> None:
         """Compute zoom scale from current zoom level and window size."""
-        map_w = (GRID_W + GRID_H) * TILE_W
-        map_h = (GRID_W + GRID_H) * TILE_H
+        map_w = (world.get_grid_w() + world.get_grid_h()) * TILE_W
+        map_h = (world.get_grid_w() + world.get_grid_h()) * TILE_H
         scale_min = min(self.width / map_w, self.height / map_h)
         scale_max = self.height / (4 * 2 * TILE_H)
         level = max(0, min(ZOOM_LEVEL_MAX, self._zoom_level))
@@ -175,18 +167,18 @@ class StoplightsWindow(arcade.Window):
     def _clamp_camera_bounds(self) -> None:
         """Clamp _cam_x, _cam_y so the map cannot be panned to infinity."""
         z = self._zoom_scale
-        map_w = (GRID_W + GRID_H - 2) * TILE_W * z
-        map_h = (GRID_W + GRID_H - 2) * TILE_H * z
+        map_w = (world.get_grid_w() + world.get_grid_h() - 2) * TILE_W * z
+        map_h = (world.get_grid_w() + world.get_grid_h() - 2) * TILE_H * z
         max_cam_x = max(0, map_w / 2 - self.width / 2)
         max_cam_y = max(0, map_h / 2 - self.height / 2)
         self._cam_x = max(-max_cam_x, min(max_cam_x, self._cam_x))
         self._cam_y = max(-max_cam_y, min(max_cam_y, self._cam_y))
 
     def _to_screen(self, gx: float, gy: float, center_x: float, center_y: float) -> tuple[float, float]:
-        return grid_to_screen(gx, gy, center_x, center_y, GRID_W, GRID_H, self._zoom_scale)
+        return grid_to_screen(gx, gy, center_x, center_y, world.get_grid_w(), world.get_grid_h(), self._zoom_scale)
 
     def _screen_to_grid(self, sx: float, sy: float, center_x: float, center_y: float) -> tuple[float, float]:
-        return screen_to_grid(sx, sy, center_x, center_y, GRID_W, GRID_H, self._zoom_scale)
+        return screen_to_grid(sx, sy, center_x, center_y, world.get_grid_w(), world.get_grid_h(), self._zoom_scale)
 
     def _apply_traffic_step(self, step: int) -> None:
         self.game.spawn_interval = spawn_interval_for_step(max(0, min(TRAFFIC_STEPS - 1, step)))
@@ -209,7 +201,7 @@ class StoplightsWindow(arcade.Window):
             8: "road_e", 11: "road_w",
             9: "road_n", 10: "road_s",
         }
-        for lane_index, lane in enumerate(ALL_LANES):
+        for lane_index, lane in enumerate(world.ALL_LANES):
             base = base_by_lane.get(lane_index, "road_n")
             cfg = self.game.lane_configs.get(lane_index)
             suffix = "_pass" if cfg and cfg.lane_type == places.LANE_TYPE_PASSING else ""
@@ -235,9 +227,8 @@ class StoplightsWindow(arcade.Window):
             "road_w_pass": self._tile_set.get("road_w_pass"),
         }
         road_cross_tex = self._tile_set.get("road_cross")
-        corner_tex = self._tile_set.get("corner")
-        main_inter_cells = set(get_main_intersection_cells())
-        bypass_inter_cells = set(get_bypass_intersection_cells())
+        main_inter_cells = set(world.get_main_intersection_cells())
+        bypass_inter_cells = set(world.get_bypass_intersection_cells())
         main_use_corner = (
             self.game.intersection_configs.get("main")
             and self.game.intersection_configs["main"].intersection_type == places.INTERSECTION_TYPE_CORNER
@@ -246,8 +237,12 @@ class StoplightsWindow(arcade.Window):
             self.game.intersection_configs.get("bypass")
             and self.game.intersection_configs["bypass"].intersection_type == places.INTERSECTION_TYPE_CORNER
         )
-        for gy in range(GRID_H):
-            for gx in range(GRID_W):
+        main_cfg = self.game.intersection_configs.get("main")
+        bypass_cfg = self.game.intersection_configs.get("bypass")
+        main_corner_tex = generate_corner_texture(main_cfg.size_cells if main_cfg else 4) if main_use_corner else None
+        bypass_corner_tex = generate_corner_texture(bypass_cfg.size_cells if bypass_cfg else 4) if bypass_use_corner else None
+        for gy in range(world.get_grid_h()):
+            for gx in range(world.get_grid_w()):
                 cell = (gx, gy)
                 if cell in main_inter_cells or cell in bypass_inter_cells:
                     tex = grass_tex  # always grass under intersections; overlay drawn below
@@ -283,22 +278,22 @@ class StoplightsWindow(arcade.Window):
                 self._tile_sprite_list.append(spr)
                 self._tile_cells.append((gx, gy))
 
-        if main_use_corner and corner_tex is not None and main_inter_cells:
+        if main_use_corner and main_corner_tex is not None and main_inter_cells:
             main_cells = list(main_inter_cells)
             cx = sum(c[0] for c in main_cells) / len(main_cells)
             cy = sum(c[1] for c in main_cells) / len(main_cells)
             sx, sy = self._to_screen(cx, cy, center_x, center_y)
-            spr = arcade.Sprite(corner_tex, scale=self._zoom_scale)
+            spr = arcade.Sprite(main_corner_tex, scale=self._zoom_scale)
             spr.center_x, spr.center_y = sx, sy
             self._tile_sprite_list.append(spr)
             self._tile_cells.append((cx, cy))
 
-        if bypass_use_corner and corner_tex is not None and bypass_inter_cells:
+        if bypass_use_corner and bypass_corner_tex is not None and bypass_inter_cells:
             bypass_cells = list(bypass_inter_cells)
             cx = sum(c[0] for c in bypass_cells) / len(bypass_cells)
             cy = sum(c[1] for c in bypass_cells) / len(bypass_cells)
             sx, sy = self._to_screen(cx, cy, center_x, center_y)
-            spr = arcade.Sprite(corner_tex, scale=self._zoom_scale)
+            spr = arcade.Sprite(bypass_corner_tex, scale=self._zoom_scale)
             spr.center_x, spr.center_y = sx, sy
             self._tile_sprite_list.append(spr)
             self._tile_cells.append((cx, cy))
@@ -318,11 +313,11 @@ class StoplightsWindow(arcade.Window):
             sx, sy = self._to_screen((min_gx + max_gx + 1) / 2, (min_gy + max_gy + 1) / 2, center_x, center_y)
             self._place_texts[place].x, self._place_texts[place].y = sx, sy
 
-        cx_grid = (GRID_W - 1) / 2
-        cy_grid = (GRID_H - 1) / 2
-        self._cardinal_texts["N"].x, self._cardinal_texts["N"].y = self._to_screen(cx_grid, GRID_H - 1, center_x, center_y)
+        cx_grid = (world.get_grid_w() - 1) / 2
+        cy_grid = (world.get_grid_h() - 1) / 2
+        self._cardinal_texts["N"].x, self._cardinal_texts["N"].y = self._to_screen(cx_grid, world.get_grid_h() - 1, center_x, center_y)
         self._cardinal_texts["S"].x, self._cardinal_texts["S"].y = self._to_screen(cx_grid, 0, center_x, center_y)
-        self._cardinal_texts["E"].x, self._cardinal_texts["E"].y = self._to_screen(GRID_W - 1, cy_grid, center_x, center_y)
+        self._cardinal_texts["E"].x, self._cardinal_texts["E"].y = self._to_screen(world.get_grid_w() - 1, cy_grid, center_x, center_y)
         self._cardinal_texts["W"].x, self._cardinal_texts["W"].y = self._to_screen(0, cy_grid, center_x, center_y)
 
     def _update_tile_positions(self, center_x: float, center_y: float) -> None:
@@ -525,9 +520,9 @@ class StoplightsWindow(arcade.Window):
         center_x, center_y = self._effective_center()
         gx, gy = self._screen_to_grid(sx, sy, center_x, center_y)
         cell = (int(round(gx)), int(round(gy)))
-        if get_intersection_at_cell(cell) is not None:
+        if world.get_intersection_at_cell(cell) is not None:
             return None
-        for i, lane in enumerate(ALL_LANES):
+        for i, lane in enumerate(world.ALL_LANES):
             if cell in lane:
                 return i
         return None
@@ -537,7 +532,7 @@ class StoplightsWindow(arcade.Window):
         center_x, center_y = self._effective_center()
         gx, gy = self._screen_to_grid(sx, sy, center_x, center_y)
         cell = (int(round(gx)), int(round(gy)))
-        return get_intersection_at_cell(cell)
+        return world.get_intersection_at_cell(cell)
 
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int):
         if button == arcade.MOUSE_BUTTON_LEFT:
@@ -585,6 +580,10 @@ class StoplightsWindow(arcade.Window):
                         x - 110, y - 50, inter_key,
                         self.game.intersection_configs[inter_key],
                         on_change=self._invalidate_draw_cache,
+                        on_commit=lambda: (
+                            self.game.rebuild_world_from_config(),
+                            self._invalidate_draw_cache(),
+                        ),
                     )
                     self._intersection_dialogs[inter_key] = dlg
                     dlg.set_on_close(lambda d: self._dialog_manager.close(d))

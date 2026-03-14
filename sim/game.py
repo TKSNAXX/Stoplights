@@ -9,6 +9,8 @@ import time
 
 from sim import cars, cop, places
 from sim.constants import POLICE_PRIORITY_SCALE, VIS_ZONE_LENGTH_CELLS, VIS_ZONE_WIDTH_CELLS
+from sim.map_data import MAP_DATA
+from sim import world
 from sim.impasse import apply_impasse
 from sim.movement import advance_car
 from sim.spawner import update_spawns
@@ -72,6 +74,15 @@ class GameState:
     def get_perf_stats(self) -> dict[str, float | int]:
         """Snapshot of lightweight sim performance counters."""
         return dict(self._perf_stats)
+
+    def rebuild_world_from_config(self) -> None:
+        """Rebuild world geometry from intersection size configs. Call on Commit."""
+        place_rects = MAP_DATA.get("place_rects", {})
+        main_cfg = self.intersection_configs.get("main")
+        bypass_cfg = self.intersection_configs.get("bypass")
+        main_size = main_cfg.size_cells if main_cfg else places.INTERSECTION_SIZE_DEFAULT
+        bypass_size = bypass_cfg.size_cells if bypass_cfg else places.INTERSECTION_SIZE_DEFAULT
+        world.rebuild_world(place_rects, main_size, bypass_size)
 
     def _apply_police_influence(
         self,

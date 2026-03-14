@@ -7,7 +7,7 @@ from __future__ import annotations
 import dataclasses
 
 from sim.map_data import MAP_DATA
-from sim.world import GRID_H
+from sim import world
 
 @dataclasses.dataclass
 class PlaceConfig:
@@ -24,11 +24,18 @@ INTERSECTION_TYPE_X = "x"
 INTERSECTION_TYPE_CORNER = "corner"
 INTERSECTION_TYPES = (INTERSECTION_TYPE_X, INTERSECTION_TYPE_CORNER)
 
+# Intersection size: even cells only, 2–12. Default 4.
+INTERSECTION_SIZE_MIN = 2
+INTERSECTION_SIZE_MAX = 12
+INTERSECTION_SIZE_DEFAULT = 4
+INTERSECTION_SIZE_VALUES = (2, 4, 6, 8, 10, 12)
+
 
 @dataclasses.dataclass
 class IntersectionConfig:
-    """Per-intersection type: x (cross) or corner."""
+    """Per-intersection type: x (cross) or corner; size in cells (even, 2–12)."""
     intersection_type: str = INTERSECTION_TYPE_X
+    size_cells: int = INTERSECTION_SIZE_DEFAULT
 
 
 @dataclasses.dataclass
@@ -99,7 +106,7 @@ def place_bounds(place: str) -> list[tuple[int, int]]:
     w = int(rect.get("w", 0))
     h = int(rect.get("h", 0))
     if place == NORTH and y0 < 0:
-        y0 = GRID_H + y0
+        y0 = world.get_grid_h() + y0
     if w <= 0 or h <= 0:
         return []
     return [(x, y) for x in range(x0, x0 + w) for y in range(y0, y0 + h)]

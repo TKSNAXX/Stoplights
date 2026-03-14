@@ -14,6 +14,8 @@ except ImportError:
 
 from sim.constants import ORTHO_TILE_SIZE
 
+from render.corner_gen import make_corner
+
 
 # Affine coeffs for inverse: iso dest (x,y) -> ortho source (a*x+b*y+c, d*x+e*y+f)
 # Maps 64x32 iso diamond pixels back to 32x32 ortho square
@@ -100,3 +102,28 @@ class TileSet:
 
     def __len__(self) -> int:
         return len(self._textures)
+
+
+_corner_texture_cache: dict[int, arcade.Texture] = {}
+
+
+def generate_corner_texture(cells: int) -> arcade.Texture | None:
+    """
+    Generate corner texture for given cell count. Cached by cells.
+    Returns None if Pillow unavailable.
+    """
+    if Image is None:
+        return None
+    cells = max(2, min(12, cells))
+    if cells % 2 != 0:
+        cells = (cells // 2) * 2
+    if cells in _corner_texture_cache:
+        return _corner_texture_cache[cells]
+    try:
+        ortho_img = make_corner(cells)
+        iso_img = ortho_to_iso_large(ortho_img, cells=cells)
+        tex = arcade.Texture(iso_img, name=f"corner_{cells}")
+        _corner_texture_cache[cells] = tex
+        return tex
+    except Exception:
+        return None
