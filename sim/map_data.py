@@ -157,7 +157,8 @@ def build_lanes_from_positions(
 
 
 # Main intersection center (fixed). Used when rebuilding with different sizes.
-DEFAULT_MAIN_CENTER = (18, 24)
+# Map scaled 2x: default layout doubled.
+DEFAULT_MAIN_CENTER = (36, 48)
 
 
 def bounds_from_center(center_x: float, center_y: float, size: int) -> tuple[int, int, int, int]:
@@ -265,12 +266,12 @@ def _default_map() -> dict:
     x_lo, x_hi, y_lo, y_hi = bounds_from_center(main_cx, main_cy, intersection_size)
     intersection = intersection_dict_from_bounds(x_lo, x_hi, y_lo, y_hi)
 
-    # Place rects: positions chosen so lane lengths are ~17 (S), ~14 (N), ~10 (E), ~11 (W)
+    # Place rects: 2x scale - positions doubled, place size 5x5 unchanged
     place_rects = {
-        "Housing": {"x": 17, "y": 0, "w": 5, "h": 5},
-        "Office": {"x": 17, "y": 41, "w": 5, "h": 5},
-        "Park": {"x": 31, "y": 22, "w": 5, "h": 5},
-        "Shopping": {"x": 0, "y": 22, "w": 5, "h": 5},
+        "Housing": {"x": 34, "y": 0, "w": 5, "h": 5},
+        "Office": {"x": 34, "y": 82, "w": 5, "h": 5},
+        "Park": {"x": 62, "y": 44, "w": 5, "h": 5},
+        "Shopping": {"x": 0, "y": 44, "w": 5, "h": 5},
     }
 
     lanes, grid_w, grid_h = build_lanes_from_positions(intersection, place_rects)

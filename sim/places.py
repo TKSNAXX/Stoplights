@@ -43,8 +43,8 @@ INTERSECTION_SIZE_DEFAULT = 4
 INTERSECTION_SIZE_VALUES = (2, 4, 6, 8, 10, 12)
 
 
-# Default bypass center (corner of Housing east + Park south from default map)
-BYPASS_DEFAULT_CENTER = (33, 2)
+# Default bypass center (corner of Housing east + Park south from default map, 2x scale)
+BYPASS_DEFAULT_CENTER = (64, 2)
 
 
 @dataclasses.dataclass
@@ -52,8 +52,8 @@ class IntersectionConfig:
     """Per-intersection type, center, and size. Intersections are a general map entity with movable centers."""
     intersection_type: str = INTERSECTION_TYPE_X
     size_cells: int = INTERSECTION_SIZE_DEFAULT
-    center_x: int = 18
-    center_y: int = 24
+    center_x: int = 36
+    center_y: int = 48
 
 
 @dataclasses.dataclass

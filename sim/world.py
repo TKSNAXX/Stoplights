@@ -15,6 +15,73 @@ from sim.map_data import (
 )
 MAP_DATA = load_map_data()
 
+# Minimum tiles of empty space between any object and the map edge
+MAP_PADDING = 4
+
+
+def _apply_map_padding(
+    lanes: list[list[tuple[int, int]]],
+    place_rects: dict[str, dict],
+    main_intersection: dict,
+    hp_intersection: dict,
+) -> tuple[list[list[tuple[int, int]]], dict[str, dict], dict, dict, int, int]:
+    """
+    Shift all geometry so there are MAP_PADDING empty cells from any object to the edge.
+    Returns (transformed lanes, place_rects, main_intersection, hp_intersection, grid_w, grid_h).
+    """
+    all_x: list[int] = []
+    all_y: list[int] = []
+
+    for lane in lanes:
+        for cx, cy in lane:
+            all_x.append(cx)
+            all_y.append(cy)
+    for r in place_rects.values():
+        rx, ry = int(r.get("x", 0)), int(r.get("y", 0))
+        rw, rh = int(r.get("w", 0)), int(r.get("h", 0))
+        all_x.extend([rx, rx + rw - 1] if rw else [rx])
+        all_y.extend([ry, ry + rh - 1] if rh else [ry])
+    for c in main_intersection.get("cells", []):
+        all_x.append(c[0])
+        all_y.append(c[1])
+    for c in hp_intersection.get("cells", []):
+        all_x.append(c[0])
+        all_y.append(c[1])
+
+    if not all_x or not all_y:
+        return lanes, place_rects, main_intersection, hp_intersection, 32, 36
+
+    x_min, x_max = min(all_x), max(all_x)
+    y_min, y_max = min(all_y), max(all_y)
+    offset_x = MAP_PADDING - x_min
+    offset_y = MAP_PADDING - y_min
+
+    def shift(c: tuple[int, int]) -> tuple[int, int]:
+        return (c[0] + offset_x, c[1] + offset_y)
+
+    new_lanes = [[shift(c) for c in lane] for lane in lanes]
+    new_place_rects = {
+        k: {"x": int(r.get("x", 0)) + offset_x, "y": int(r.get("y", 0)) + offset_y, "w": int(r.get("w", 0)), "h": int(r.get("h", 0))}
+        for k, r in place_rects.items()
+    }
+    new_main = {
+        "x_lo": main_intersection.get("x_lo", 0) + offset_x,
+        "x_hi": main_intersection.get("x_hi", 0) + offset_x,
+        "y_lo": main_intersection.get("y_lo", 0) + offset_y,
+        "y_hi": main_intersection.get("y_hi", 0) + offset_y,
+        "cells": [shift(c) for c in main_intersection.get("cells", [])],
+        "slots": [shift(c) for c in main_intersection.get("slots", [])],
+    }
+    new_hp = {
+        "cells": [shift(c) for c in hp_intersection.get("cells", [])],
+        "slots": [shift(c) for c in hp_intersection.get("slots", [])],
+    }
+
+    grid_w = x_max - x_min + 1 + 2 * MAP_PADDING
+    grid_h = y_max - y_min + 1 + 2 * MAP_PADDING
+
+    return new_lanes, new_place_rects, new_main, new_hp, grid_w, grid_h
+
 
 class _WorldState:
     """Mutable world geometry. Updated by rebuild_world."""
@@ -70,6 +137,10 @@ def rebuild_world(
     for cell in hp_intersection["cells"]:
         grid_w = max(grid_w, cell[0] + 1)
         grid_h = max(grid_h, cell[1] + 1)
+
+    lanes, place_rects, main_intersection, hp_intersection, grid_w, grid_h = _apply_map_padding(
+        lanes, place_rects, main_intersection, hp_intersection
+    )
 
     _state.all_lanes.clear()
     _state.all_lanes.extend([[tuple(c) for c in lane] for lane in lanes])

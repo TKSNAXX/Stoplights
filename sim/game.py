@@ -91,8 +91,8 @@ class GameState:
         bypass_cfg = self.intersection_configs.get("bypass")
         main_size = main_cfg.size_cells if main_cfg else places.INTERSECTION_SIZE_DEFAULT
         bypass_size = bypass_cfg.size_cells if bypass_cfg else places.INTERSECTION_SIZE_DEFAULT
-        main_center = (main_cfg.center_x, main_cfg.center_y) if main_cfg else (18.0, 24.0)
-        bypass_center = (bypass_cfg.center_x, bypass_cfg.center_y) if bypass_cfg else (33.0, 2.0)
+        main_center = (main_cfg.center_x, main_cfg.center_y) if main_cfg else (36.0, 48.0)
+        bypass_center = (bypass_cfg.center_x, bypass_cfg.center_y) if bypass_cfg else (64.0, 2.0)
         world.rebuild_world(
             place_rects, main_center, main_size, bypass_center, bypass_size
         )
