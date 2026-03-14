@@ -1,0 +1,120 @@
+{
+  "place_configs": {
+    "Housing": {
+      "spawn_interval": 2.0,
+      "attract_weight": 1.0
+    },
+    "Office": {
+      "spawn_interval": 2.0,
+      "attract_weight": 1.0
+    },
+    "Park": {
+      "spawn_interval": 2.0,
+      "attract_weight": 1.0
+    },
+    "Shopping": {
+      "spawn_interval": 2.0,
+      "attract_weight": 1.0
+    },
+    "Place 1": {
+      "spawn_interval": 2.0,
+      "attract_weight": 1.0
+    }
+  },
+  "lane_configs": {
+    "0": {
+      "speed_limit": 1.0,
+      "lane_type": "normal"
+    },
+    "1": {
+      "speed_limit": 1.0,
+      "lane_type": "normal"
+    },
+    "2": {
+      "speed_limit": 1.0,
+      "lane_type": "normal"
+    },
+    "3": {
+      "speed_limit": 1.0,
+      "lane_type": "normal"
+    },
+    "4": {
+      "speed_limit": 1.0,
+      "lane_type": "passing"
+    },
+    "5": {
+      "speed_limit": 1.0,
+      "lane_type": "normal"
+    },
+    "6": {
+      "speed_limit": 1.0,
+      "lane_type": "normal"
+    },
+    "7": {
+      "speed_limit": 1.0,
+      "lane_type": "passing"
+    },
+    "8": {
+      "speed_limit": 1.0,
+      "lane_type": "normal"
+    },
+    "9": {
+      "speed_limit": 1.0,
+      "lane_type": "normal"
+    },
+    "10": {
+      "speed_limit": 1.0,
+      "lane_type": "normal"
+    },
+    "11": {
+      "speed_limit": 1.0,
+      "lane_type": "normal"
+    }
+  },
+  "intersection_configs": {
+    "main": {
+      "intersection_type": "x",
+      "size_cells": 4,
+      "center_x": 36,
+      "center_y": 48
+    },
+    "bypass": {
+      "intersection_type": "corner",
+      "size_cells": 4,
+      "center_x": 50,
+      "center_y": 20
+    }
+  },
+  "place_geometry": {
+    "Housing": {
+      "center_x": 30,
+      "center_y": 22,
+      "width": 16,
+      "length": 9
+    },
+    "Office": {
+      "center_x": 36,
+      "center_y": 66,
+      "width": 6,
+      "length": 5
+    },
+    "Park": {
+      "center_x": 55,
+      "center_y": 46,
+      "width": 16,
+      "length": 16
+    },
+    "Shopping": {
+      "center_x": 15,
+      "center_y": 46,
+      "width": 16,
+      "length": 16
+    },
+    "Place 1": {
+      "center_x": 27,
+      "center_y": 40,
+      "width": 5,
+      "length": 5
+    }
+  }
+}

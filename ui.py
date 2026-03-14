@@ -570,6 +570,194 @@ class IntersectionVarsDialog(Dialog):
         return super().on_mouse_release(x, y)
 
 
+class NewIntersectionDialog(Dialog):
+    """Dialog for creating a new intersection. Commit adds to game and closes."""
+
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        game,
+        on_commit: Callable[[], None] | None = None,
+    ):
+        key = _next_intersection_key(game.intersection_configs)
+        super().__init__(x, y, 220, 200, f"New Intersection: {key}")
+        self._game = game
+        self._key = key
+        self._on_commit = on_commit
+
+        self._type_slider = Slider(
+            0, 0, 160, 20,
+            len(INTERSECTION_TYPE_VALUES), 0,
+            (100, 100, 100), (180, 180, 180),
+        )
+        self._cx_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, 36, -100, 200, 1)
+        self._cy_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, 48, -100, 200, 1)
+        self._size_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, 4, 2, 12, 2)
+        self._commit_btn = CommitButton(0, 0, 70, 22, on_click=self._do_commit)
+
+        self.widgets = [self._type_slider, self._cx_box, self._cy_box, self._size_box, self._commit_btn]
+        self._type_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._cx_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._cy_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._size_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+
+    def _do_commit(self) -> None:
+        from sim import places
+        cfg = places.IntersectionConfig(
+            intersection_type=INTERSECTION_TYPE_VALUES[self._type_slider.value],
+            center_x=self._cx_box.value,
+            center_y=self._cy_box.value,
+            size_cells=max(2, min(12, self._size_box.value)),
+        )
+        if cfg.size_cells % 2 != 0:
+            cfg.size_cells = (cfg.size_cells // 2) * 2
+        self._game.intersection_configs[self._key] = cfg
+        self._game.rebuild_world_from_config()
+        if self._on_commit:
+            self._on_commit()
+
+    def _layout_widgets(self) -> None:
+        left = self.x + 12
+        content_top = self.y - 32
+        box_w = 100
+        self._type_slider.rect = (left, content_top - 24, 160, 20)
+        self._cx_box.rect = (left + 70, content_top - 48, box_w, NUMBER_BOX_HEIGHT)
+        self._cy_box.rect = (left + 70, content_top - 74, box_w, NUMBER_BOX_HEIGHT)
+        self._size_box.rect = (left + 70, content_top - 100, box_w, NUMBER_BOX_HEIGHT)
+        self._commit_btn.rect = (left, content_top - 132, 70, 22)
+        self._type_label.x = left
+        self._type_label.y = content_top - 12
+        self._cx_label.x = left
+        self._cx_label.y = content_top - 36
+        self._cy_label.x = left
+        self._cy_label.y = content_top - 62
+        self._size_label.x = left
+        self._size_label.y = content_top - 88
+
+    def draw(self) -> None:
+        self._layout_widgets()
+        self._type_label.value = f"Type: {INTERSECTION_TYPE_VALUES[self._type_slider.value]}"
+        self._cx_label.value = "Center X:"
+        self._cy_label.value = "Center Y:"
+        self._size_label.value = "Size:"
+        super().draw()
+        self._type_label.draw()
+        self._cx_label.draw()
+        self._cy_label.draw()
+        self._size_label.draw()
+
+    def on_mouse_press(self, x: float, y: float) -> bool:
+        self._layout_widgets()
+        return super().on_mouse_press(x, y)
+
+
+class NewPlaceDialog(Dialog):
+    """Dialog for creating a new place. Commit adds to game and closes."""
+
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        game,
+        on_commit: Callable[[], None] | None = None,
+    ):
+        name = _next_place_name(game.place_geometry)
+        super().__init__(x, y, 220, 200, f"New Place: {name}")
+        self._game = game
+        self._name = name
+        self._on_commit = on_commit
+
+        self._cx_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, 20, -100, 200, 1)
+        self._cy_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, 20, -100, 200, 1)
+        self._w_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, 5, 1, 16, 1)
+        self._l_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, 5, 1, 16, 1)
+        self._commit_btn = CommitButton(0, 0, 70, 22, on_click=self._do_commit)
+
+        self.widgets = [self._cx_box, self._cy_box, self._w_box, self._l_box, self._commit_btn]
+        self._cx_label = arcade.Text("Center X:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._cy_label = arcade.Text("Center Y:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._w_label = arcade.Text("Width:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._l_label = arcade.Text("Length:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+
+    def _do_commit(self) -> None:
+        from sim import places
+        from sim.places import PLACE_SIZE_MIN, PLACE_SIZE_MAX
+        w = max(PLACE_SIZE_MIN, min(PLACE_SIZE_MAX, self._w_box.value))
+        l = max(PLACE_SIZE_MIN, min(PLACE_SIZE_MAX, self._l_box.value))
+        g = places.PlaceGeometry(
+            center_x=self._cx_box.value,
+            center_y=self._cy_box.value,
+            width=w,
+            length=l,
+        )
+        self._game.place_geometry[self._name] = g
+        self._game.place_configs[self._name] = places.PlaceConfig()
+        self._game.rebuild_world_from_config()
+        if self._on_commit:
+            self._on_commit()
+
+    def _layout_widgets(self) -> None:
+        left = self.x + 12
+        content_top = self.y - 32
+        box_w = 100
+        self._cx_box.rect = (left + 70, content_top - 24, box_w, NUMBER_BOX_HEIGHT)
+        self._cy_box.rect = (left + 70, content_top - 50, box_w, NUMBER_BOX_HEIGHT)
+        self._w_box.rect = (left + 70, content_top - 76, box_w, NUMBER_BOX_HEIGHT)
+        self._l_box.rect = (left + 70, content_top - 102, box_w, NUMBER_BOX_HEIGHT)
+        self._commit_btn.rect = (left, content_top - 134, 70, 22)
+        self._cx_label.x = left
+        self._cx_label.y = content_top - 12
+        self._cy_label.x = left
+        self._cy_label.y = content_top - 38
+        self._w_label.x = left
+        self._w_label.y = content_top - 64
+        self._l_label.x = left
+        self._l_label.y = content_top - 90
+
+    def draw(self) -> None:
+        self._layout_widgets()
+        super().draw()
+        self._cx_label.draw()
+        self._cy_label.draw()
+        self._w_label.draw()
+        self._l_label.draw()
+
+    def on_mouse_press(self, x: float, y: float) -> bool:
+        self._layout_widgets()
+        return super().on_mouse_press(x, y)
+
+
+def _next_intersection_key(configs: dict) -> str:
+    """Return intersection_N where N is the next available index (2, 3, ...)."""
+    seen = set()
+    for k in configs:
+        if k.startswith("intersection_") and k != "intersection_":
+            try:
+                seen.add(int(k.split("_")[1]))
+            except (ValueError, IndexError):
+                pass
+    n = 2
+    while n in seen:
+        n += 1
+    return f"intersection_{n}"
+
+
+def _next_place_name(place_geometry: dict) -> str:
+    """Return Place N where N is the next available index (1, 2, ...)."""
+    seen = set()
+    for k in place_geometry:
+        if k.startswith("Place ") and k != "Place ":
+            try:
+                seen.add(int(k.split()[1]))
+            except (ValueError, IndexError):
+                pass
+    n = 1
+    while n in seen:
+        n += 1
+    return f"Place {n}"
+
+
 class PlaceVarsDialog(Dialog):
     """Dialog for editing place spawn, attract, and geometry. Geometry requires Commit."""
 
@@ -861,3 +1049,68 @@ class Switch:
         else:
             self._text_off.x, self._text_off.y = cx, cy
             self._text_off.draw()
+
+
+TOOLBAR_LEFT = 8
+TOOLBAR_WIDTH = 44
+TOOLBAR_BUTTON_SIZE = 36
+TOOLBAR_GAP = 4
+TOOLBAR_BG = (50, 50, 60)
+TOOLBAR_BORDER = (80, 80, 90)
+
+
+class Toolbar:
+    """
+    Vertical bar on the left with square icon buttons.
+    on_press(x, y) returns "new_intersection", "new_place", or None.
+    """
+
+    def __init__(self, left: float, bottom: float, width: float = TOOLBAR_WIDTH):
+        self.left = left
+        self.bottom = bottom
+        self.width = width
+        self._button_size = TOOLBAR_BUTTON_SIZE
+        self._gap = TOOLBAR_GAP
+        padding = (width - self._button_size) / 2
+        self._height = 2 * self._button_size + self._gap + 2 * padding
+
+        self._inter_icon = arcade.Text("+", 0, 0, color=(220, 220, 220), font_size=18, anchor_x="center", anchor_y="center")
+        self._place_icon = arcade.Text("P", 0, 0, color=(220, 220, 220), font_size=18, anchor_x="center", anchor_y="center")
+
+    def _button_rects(self) -> list[tuple[float, float, float, float, str]]:
+        """Return list of (left, bottom, width, height, action) for each button."""
+        pad = (self.width - self._button_size) / 2
+        bx = self.left + pad
+        top_btn_bottom = self.bottom + self._height - self._button_size - pad
+        bot_btn_bottom = self.bottom + pad
+        return [
+            (bx, top_btn_bottom, self._button_size, self._button_size, "new_intersection"),
+            (bx, bot_btn_bottom, self._button_size, self._button_size, "new_place"),
+        ]
+
+    def contains(self, x: float, y: float) -> bool:
+        return (
+            self.left <= x <= self.left + self.width
+            and self.bottom <= y <= self.bottom + self._height
+        )
+
+    def on_press(self, x: float, y: float) -> str | None:
+        for l, b, w, h, action in self._button_rects():
+            if l <= x <= l + w and b <= y <= b + h:
+                return action
+        return None
+
+    def draw(self) -> None:
+        rect_filled(self.left, self.bottom, self.width, self._height, TOOLBAR_BG)
+        rect_outline(self.left, self.bottom, self.width, self._height, TOOLBAR_BORDER, 1)
+        for l, b, w, h, action in self._button_rects():
+            rect_filled(l, b, w, h, (70, 70, 80))
+            rect_outline(l, b, w, h, (100, 100, 110), 1)
+            cx = l + w / 2
+            cy = b + h / 2
+            if action == "new_intersection":
+                self._inter_icon.x, self._inter_icon.y = cx, cy
+                self._inter_icon.draw()
+            else:
+                self._place_icon.x, self._place_icon.y = cx, cy
+                self._place_icon.draw()

@@ -44,7 +44,7 @@ def load_config(game: "GameState") -> None:
     pc = data.get("place_configs", {})
     for key, cfg in pc.items():
         if key not in game.place_configs:
-            continue
+            game.place_configs[key] = places.PlaceConfig()
         if isinstance(cfg, dict):
             if "spawn_interval" in cfg and isinstance(cfg["spawn_interval"], (int, float)):
                 game.place_configs[key].spawn_interval = max(0.1, float(cfg["spawn_interval"]))
@@ -69,7 +69,7 @@ def load_config(game: "GameState") -> None:
     ic = data.get("intersection_configs", {})
     for key, cfg in ic.items():
         if key not in game.intersection_configs:
-            continue
+            game.intersection_configs[key] = places.IntersectionConfig()
         if isinstance(cfg, dict):
             if "intersection_type" in cfg and cfg["intersection_type"] in places.INTERSECTION_TYPES:
                 game.intersection_configs[key].intersection_type = cfg["intersection_type"]
@@ -82,14 +82,14 @@ def load_config(game: "GameState") -> None:
 
     pg = data.get("place_geometry", {})
     for key, g in pg.items():
-        if key not in places.PLACES:
-            continue
         if isinstance(g, dict):
             cx = int(g.get("center_x", 0))
             cy = int(g.get("center_y", 0))
             w = max(places.PLACE_SIZE_MIN, min(places.PLACE_SIZE_MAX, int(g.get("width", 5))))
             l = max(places.PLACE_SIZE_MIN, min(places.PLACE_SIZE_MAX, int(g.get("length", 5))))
             game.place_geometry[key] = places.PlaceGeometry(center_x=cx, center_y=cy, width=w, length=l)
+            if key not in game.place_configs:
+                game.place_configs[key] = places.PlaceConfig()
 
 
 def save_config(game: "GameState") -> None:

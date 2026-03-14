@@ -21,7 +21,19 @@ from sim.constants import (
 )
 from sim.game import GameState
 from sim import persistence, world
-from ui import CarDeetsDialog, DialogManager, IntersectionVarsDialog, LaneVarsDialog, NumberBox, PlaceVarsDialog
+from sim.map_data import bounds_from_center
+from ui import (
+    CarDeetsDialog,
+    DialogManager,
+    IntersectionVarsDialog,
+    LaneVarsDialog,
+    NewIntersectionDialog,
+    NewPlaceDialog,
+    NumberBox,
+    PlaceVarsDialog,
+    Toolbar,
+    TOOLBAR_LEFT,
+)
 
 TICKS_PER_SECOND = 60
 TICK_DT = 1.0 / TICKS_PER_SECOND
@@ -85,6 +97,7 @@ class StoplightsWindow(arcade.Window):
         self._place_dialogs: dict[str, PlaceVarsDialog] = {}
         self._lane_dialogs: dict[int, LaneVarsDialog] = {}
         self._intersection_dialogs: dict[str, IntersectionVarsDialog] = {}
+        self._toolbar = Toolbar(TOOLBAR_LEFT, self.height - 110)
 
         self._cam_x = 0.0
         self._cam_y = 0.0
@@ -173,7 +186,7 @@ class StoplightsWindow(arcade.Window):
                 lane_cell_to_road[(gx, gy)] = road_type
 
         place_cells: set[tuple[int, int]] = set()
-        for place in places.PLACES:
+        for place in world.get_place_rects():
             place_cells.update(places.place_bounds(place))
 
         self._tile_sprite_list = arcade.SpriteList()
@@ -261,14 +274,54 @@ class StoplightsWindow(arcade.Window):
             self._tile_sprite_list.append(spr)
             self._tile_cells.append((cx, cy))
 
+        # Extra intersections (not main/bypass)
+        extra_keys = [k for k in self.game.intersection_configs if k not in ("main", "bypass")]
+        for key in extra_keys:
+            cfg = self.game.intersection_configs[key]
+            x_lo, x_hi, y_lo, y_hi = bounds_from_center(cfg.center_x, cfg.center_y, cfg.size_cells)
+            extra_cells = [
+                (gx, gy) for gx in range(x_lo, x_hi) for gy in range(y_lo, y_hi)
+                if (gx, gy) not in main_inter_cells and (gx, gy) not in bypass_inter_cells
+            ]
+            use_corner = cfg.intersection_type == places.INTERSECTION_TYPE_CORNER
+            corner_tex = generate_corner_texture(cfg.size_cells) if use_corner else None
+            for cell in extra_cells:
+                gx, gy = cell
+                sx, sy = self._to_screen(gx, gy, center_x, center_y)
+                if grass_tex is not None:
+                    spr = arcade.Sprite(grass_tex, scale=self._zoom_scale)
+                    spr.center_x, spr.center_y = sx, sy
+                    self._tile_sprite_list.append(spr)
+                    self._tile_cells.append((gx, gy))
+                if use_corner and corner_tex is not None:
+                    continue  # drawn as single centered sprite below
+                if not use_corner and road_cross_tex is not None:
+                    spr = arcade.Sprite(road_cross_tex, scale=self._zoom_scale)
+                    spr.center_x, spr.center_y = sx, sy
+                    self._tile_sprite_list.append(spr)
+                    self._tile_cells.append((gx, gy))
+            if use_corner and corner_tex is not None and extra_cells:
+                cx = sum(c[0] for c in extra_cells) / len(extra_cells)
+                cy = sum(c[1] for c in extra_cells) / len(extra_cells)
+                sx, sy = self._to_screen(cx, cy, center_x, center_y)
+                spr = arcade.Sprite(corner_tex, scale=self._zoom_scale)
+                spr.center_x, spr.center_y = sx, sy
+                self._tile_sprite_list.append(spr)
+                self._tile_cells.append((cx, cy))
+
         self._update_text_positions(center_x, center_y)
 
     def _update_text_positions(self, center_x: float, center_y: float) -> None:
         """Update place and cardinal text screen positions."""
-        for place in places.PLACES:
+        for place in world.get_place_rects():
             cells = places.place_bounds(place)
             if not cells:
                 continue
+            if place not in self._place_texts:
+                self._place_texts[place] = arcade.Text(
+                    place, 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE,
+                    anchor_x="center", anchor_y="center",
+                )
             min_gx = min(p[0] for p in cells)
             max_gx = max(p[0] for p in cells)
             min_gy = min(p[1] for p in cells)
@@ -344,6 +397,7 @@ class StoplightsWindow(arcade.Window):
 
     def on_resize(self, width: int, height: int) -> None:
         super().on_resize(width, height)
+        self._toolbar.bottom = self.height - 110
         self._update_zoom_scale()
         if self._car_sprite_pool is not None:
             self._car_sprite_pool.set_zoom_scale(self._zoom_scale)
@@ -399,8 +453,13 @@ class StoplightsWindow(arcade.Window):
         if self._tile_sprite_list is not None:
             self._tile_sprite_list.draw(pixelated=True)
 
-        for place in places.PLACES:
+        for place in world.get_place_rects():
             if places.place_bounds(place):
+                if place not in self._place_texts:
+                    self._place_texts[place] = arcade.Text(
+                        place, 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE,
+                        anchor_x="center", anchor_y="center",
+                    )
                 self._place_texts[place].draw()
         for txt in self._cardinal_texts.values():
             txt.draw()
@@ -459,6 +518,7 @@ class StoplightsWindow(arcade.Window):
         )
         self._perf_text.draw()
 
+        self._toolbar.draw()
         self._dialog_manager.draw_all()
 
     def _place_at_screen(self, sx: float, sy: float) -> str | None:
@@ -466,7 +526,7 @@ class StoplightsWindow(arcade.Window):
         center_x, center_y = self._effective_center()
         gx, gy = self._screen_to_grid(sx, sy, center_x, center_y)
         cell = (int(round(gx)), int(round(gy)))
-        for place in places.PLACES:
+        for place in world.get_place_rects():
             if cell in places.place_bounds(place):
                 return place
         return None
@@ -507,6 +567,33 @@ class StoplightsWindow(arcade.Window):
             if not self._dialog_manager.contains_point(x, y):
                 self._dialog_manager.set_focused_widget(None)
             if self._dialog_manager.on_mouse_press(x, y):
+                return
+            toolbar_action = self._toolbar.on_press(x, y)
+            if toolbar_action == "new_place":
+                dlg_x = TOOLBAR_LEFT + 56
+                dlg_y = self.height / 2 + 100
+                dlg = NewPlaceDialog(
+                    dlg_x, dlg_y, self.game,
+                    on_commit=lambda: (
+                        self._on_config_change(),
+                        self._dialog_manager.close(dlg),
+                    ),
+                )
+                dlg.set_on_close(lambda d: self._dialog_manager.close(d))
+                self._dialog_manager.open(dlg)
+                return
+            if toolbar_action == "new_intersection":
+                dlg_x = TOOLBAR_LEFT + 56
+                dlg_y = self.height / 2 + 100
+                dlg = NewIntersectionDialog(
+                    dlg_x, dlg_y, self.game,
+                    on_commit=lambda: (
+                        self._on_config_change(),
+                        self._dialog_manager.close(dlg),
+                    ),
+                )
+                dlg.set_on_close(lambda d: self._dialog_manager.close(d))
+                self._dialog_manager.open(dlg)
                 return
             place = self._place_at_screen(x, y)
             if place is not None:
