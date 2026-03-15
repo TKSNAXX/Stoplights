@@ -368,6 +368,15 @@ class Dialog:
         bottom = self._bottom()
         return left <= x <= left + self.width and bottom <= y <= self.y
 
+    def extended_contains(self, x: float, y: float) -> bool:
+        """True if point is in dialog rect or in any open dropdown's expanded list."""
+        if self.contains(x, y):
+            return True
+        for w in self.widgets:
+            if isinstance(w, Dropdown) and getattr(w, "_open", False) and w.contains(x, y):
+                return True
+        return False
+
     def _x_button_rect(self) -> tuple[float, float, float, float]:
         """(left, bottom, width, height) for X button."""
         left = self.x + self.width - X_BUTTON_SIZE - 4
@@ -409,7 +418,7 @@ class Dialog:
             w.draw()
 
     def on_mouse_press(self, x: float, y: float) -> bool:
-        if not self.contains(x, y) or not self.visible:
+        if not self.extended_contains(x, y) or not self.visible:
             return False
         self._layout_widgets()
         if self._x_button_contains(x, y):
@@ -504,16 +513,16 @@ class DialogManager:
         return True
 
     def contains_point(self, x: float, y: float) -> bool:
-        """True if (x, y) is over any visible dialog."""
+        """True if (x, y) is over any visible dialog (including open dropdowns)."""
         for d in self._dialogs:
-            if d.visible and d.contains(x, y):
+            if d.visible and d.extended_contains(x, y):
                 return True
         return False
 
     def on_mouse_press(self, x: float, y: float) -> bool:
         for i in range(len(self._dialogs) - 1, -1, -1):
             d = self._dialogs[i]
-            if d.contains(x, y) and d.visible:
+            if d.extended_contains(x, y) and d.visible:
                 if i < len(self._dialogs) - 1:
                     self._dialogs.pop(i)
                     self._dialogs.append(d)

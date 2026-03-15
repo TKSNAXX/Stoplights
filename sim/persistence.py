@@ -31,8 +31,15 @@ def _clamp_size(n: int) -> int:
     return n if n % 2 == 0 else (n // 2) * 2
 
 
-def load_config(game: "GameState") -> None:
-    """Load config from disk and apply to game. On error or missing, leave configs unchanged."""
+def _user_settings_dict(window) -> dict:
+    """Extract user settings from window for serialization."""
+    return {
+        "edge_pan_enabled": getattr(window, "_edge_pan_enabled", True),
+    }
+
+
+def load_config(game: "GameState", window=None) -> None:
+    """Load config from disk and apply to game. If window provided, also load user_settings."""
     path = get_save_path()
     if not path.exists():
         return
@@ -40,6 +47,11 @@ def load_config(game: "GameState") -> None:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return
+
+    us = data.get("user_settings", {})
+    if window is not None and isinstance(us, dict):
+        if "edge_pan_enabled" in us and isinstance(us["edge_pan_enabled"], bool):
+            window._edge_pan_enabled = us["edge_pan_enabled"]
 
     pc = data.get("place_configs", {})
     for key, cfg in pc.items():
@@ -106,10 +118,11 @@ def load_config(game: "GameState") -> None:
                 game.place_configs[key] = places.PlaceConfig()
 
 
-def save_config(game: "GameState") -> None:
-    """Serialize configs to JSON and write to disk."""
+def save_config(game: "GameState", window=None) -> None:
+    """Serialize configs to JSON and write to disk. If window provided, also save user_settings."""
     path = get_save_path()
     data = {
+        "user_settings": _user_settings_dict(window) if window is not None else {},
         "place_configs": {
             k: {"spawn_interval": v.spawn_interval, "attract_weight": v.attract_weight}
             for k, v in game.place_configs.items()
@@ -151,12 +164,12 @@ def request_debounced_save() -> None:
     _save_timer = DEBOUNCE_SEC
 
 
-def tick_debounced_save(game: "GameState", dt: float) -> None:
+def tick_debounced_save(game: "GameState", dt: float, window=None) -> None:
     """Call from on_update. Countdown and save when timer expires."""
     global _save_timer
     if _save_timer <= 0:
         return
     _save_timer -= dt
     if _save_timer <= 0:
-        save_config(game)
+        save_config(game, window=window)
         _save_timer = 0.0

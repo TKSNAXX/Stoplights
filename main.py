@@ -70,7 +70,8 @@ class StoplightsWindow(arcade.Window):
         super().__init__(800, 600, "Stoplights", resizable=True)
         arcade.set_background_color(arcade.color.BLACK)
         self.game = GameState()
-        persistence.load_config(self.game)
+        self._edge_pan_enabled = True
+        persistence.load_config(self.game, window=self)
         self.game.rebuild_world_from_config()
         self._tick_accumulator = 0.0
         self._sim_time = 0.0
@@ -111,7 +112,6 @@ class StoplightsWindow(arcade.Window):
         self._mouse_x = 0.0
         self._mouse_y = 0.0
         self._mouse_in_window = False
-        self._edge_pan_enabled = True
 
         assets_dir = Path(__file__).resolve().parent / "assets"
         self._tile_set = TileSet(assets_dir / "ortho")
@@ -410,11 +410,11 @@ class StoplightsWindow(arcade.Window):
             self._car_sprite_pool.set_zoom_scale(self._zoom_scale)
 
     def on_close(self) -> None:
-        persistence.save_config(self.game)
+        persistence.save_config(self.game, window=self)
         super().on_close()
 
     def on_update(self, delta_time: float):
-        persistence.tick_debounced_save(self.game, delta_time)
+        persistence.tick_debounced_save(self.game, delta_time, window=self)
         if delta_time > 1e-9:
             fps_now = 1.0 / delta_time
             self._fps_ema = fps_now if self._fps_ema <= 0.0 else (0.9 * self._fps_ema + 0.1 * fps_now)
@@ -593,7 +593,10 @@ class StoplightsWindow(arcade.Window):
                 dlg = SettingsDialog(
                     dlg_x, dlg_y,
                     edge_pan_enabled=self._edge_pan_enabled,
-                    on_edge_pan_change=lambda v: setattr(self, "_edge_pan_enabled", v),
+                    on_edge_pan_change=lambda v: (
+                        setattr(self, "_edge_pan_enabled", v),
+                        persistence.request_debounced_save(),
+                    ),
                 )
                 dlg.set_on_close(lambda d: self._dialog_manager.close(d))
                 self._dialog_manager.open(dlg)

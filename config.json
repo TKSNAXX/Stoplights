@@ -1,4 +1,7 @@
 {
+  "user_settings": {
+    "edge_pan_enabled": false
+  },
   "place_configs": {
     "Housing": {
       "spawn_interval": 2.0,
