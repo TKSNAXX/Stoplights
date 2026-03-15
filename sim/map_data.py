@@ -79,18 +79,20 @@ def _apply_lane_offset(
     lane_configs: dict[int, "LaneConfig"] | None,
     base_index: int = 0,
 ) -> list[list[tuple[int, int]]]:
-    """Apply offset_x, offset_y from lane_configs to each lane's cells. base_index added to lane index."""
+    """Apply perpendicular offset from lane_configs. N-S lanes: (offset, 0); E-W: (0, offset)."""
     if not lane_configs:
         return lanes
+    from sim.places import LANE_IS_NORTH_SOUTH
     result: list[list[tuple[int, int]]] = []
     for i, lane in enumerate(lanes):
         cfg = lane_configs.get(base_index + i)
-        dx = cfg.offset_x if cfg else 0
-        dy = cfg.offset_y if cfg else 0
-        if dx == 0 and dy == 0:
+        off = cfg.offset if cfg else 0
+        if off == 0:
             result.append(lane)
-        else:
-            result.append([(x + dx, y + dy) for x, y in lane])
+            continue
+        lane_idx = base_index + i
+        dx, dy = (off, 0) if lane_idx in LANE_IS_NORTH_SOUTH else (0, off)
+        result.append([(x + dx, y + dy) for x, y in lane])
     return result
 
 
@@ -141,7 +143,7 @@ def build_lanes_from_positions(
     """
     Derive lane cells and grid size from intersection and place positions.
     Lanes connect each place's road edge to the intersection approach edge.
-    When lane_configs is provided, applies offset_x/offset_y to each lane.
+    When lane_configs is provided, applies perpendicular offset to each lane.
     Returns (lanes, grid_w, grid_h).
     """
     x_lo, x_hi, y_lo, y_hi = _intersection_bounds(intersection)
@@ -281,7 +283,7 @@ def build_housing_park_route(
     """
     Build Housing–Park direct route from place positions and explicit bypass center.
     Junction at bypass_center; lane tracks connect to Housing and Park rects. RHT alignment.
-    When lane_configs is provided, applies offset_x/offset_y to lanes 8-11.
+    When lane_configs is provided, applies perpendicular offset to lanes 8-11.
     Returns (hp_lanes, hp_intersection).
     """
     def rect(place: str) -> tuple[int, int, int, int]:

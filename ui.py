@@ -227,6 +227,8 @@ class Slider:
 
 
 DROPDOWN_ROW_HEIGHT = 20
+LANEVARS_CAPTION_WIDTH = 65
+LANEVARS_GAP = 8
 
 
 class Dropdown:
@@ -1119,12 +1121,8 @@ class LaneVarsDialog(Dialog):
         def _sync_and_notify(_v: int) -> None:
             self._sync_from_widgets()
 
-        self._offset_x_box = NumberBox(
-            0, 0, 80, NUMBER_BOX_HEIGHT, getattr(lane_config, "offset_x", 0), -10, 10, 1,
-            on_change=_sync_and_notify,
-        )
-        self._offset_y_box = NumberBox(
-            0, 0, 80, NUMBER_BOX_HEIGHT, getattr(lane_config, "offset_y", 0), -10, 10, 1,
+        self._offset_box = NumberBox(
+            0, 0, 80, NUMBER_BOX_HEIGHT, getattr(lane_config, "offset", 0), -10, 10, 1,
             on_change=_sync_and_notify,
         )
 
@@ -1133,14 +1131,13 @@ class LaneVarsDialog(Dialog):
             self._type_slider,
             self._origin_dropdown,
             self._dest_dropdown,
-            self._offset_x_box,
-            self._offset_y_box,
+            self._offset_box,
         ]
-        self._speed_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
-        self._type_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
-        self._origin_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
-        self._dest_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
-        self._offset_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._speed_label = arcade.Text("Speed:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._type_label = arcade.Text("Type:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._origin_label = arcade.Text("Origin:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._dest_label = arcade.Text("Dest:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._offset_label = arcade.Text("Offset:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
 
     def _step_for_node(self, val: str) -> int:
         try:
@@ -1163,42 +1160,44 @@ class LaneVarsDialog(Dialog):
 
     def _layout_widgets(self) -> None:
         left = self.x + 12
+        control_left = left + LANEVARS_CAPTION_WIDTH + LANEVARS_GAP
+        control_width = self.width - 24 - (control_left - self.x)
         content_top = self.y - 32
         row = 0
-        self._speed_slider.rect = (left, content_top - 24 - row * 28, 200, 20)
+        # Captions left, controls right
         self._speed_label.x = left
         self._speed_label.y = content_top - 12 - row * 28
+        self._speed_slider.rect = (control_left, content_top - 24 - row * 28, control_width, 20)
         row += 1
-        self._type_slider.rect = (left, content_top - 24 - row * 28, 200, 20)
         self._type_label.x = left
         self._type_label.y = content_top - 12 - row * 28
+        self._type_slider.rect = (control_left, content_top - 24 - row * 28, control_width, 20)
         row += 1
-        self._origin_dropdown.rect = (left, content_top - 24 - row * 28, 200, DROPDOWN_ROW_HEIGHT)
         self._origin_label.x = left
         self._origin_label.y = content_top - 12 - row * 28
+        self._origin_dropdown.rect = (control_left, content_top - 24 - row * 28, control_width, DROPDOWN_ROW_HEIGHT)
         row += 1
-        self._dest_dropdown.rect = (left, content_top - 24 - row * 28, 200, DROPDOWN_ROW_HEIGHT)
         self._dest_label.x = left
         self._dest_label.y = content_top - 12 - row * 28
+        self._dest_dropdown.rect = (control_left, content_top - 24 - row * 28, control_width, DROPDOWN_ROW_HEIGHT)
         row += 1
-        self._offset_x_box.rect = (left, content_top - 24 - row * 28, 80, NUMBER_BOX_HEIGHT)
-        self._offset_y_box.rect = (left + 95, content_top - 24 - row * 28, 80, NUMBER_BOX_HEIGHT)
         self._offset_label.x = left
         self._offset_label.y = content_top - 12 - row * 28
+        self._offset_box.rect = (control_left, content_top - 24 - row * 28, 80, NUMBER_BOX_HEIGHT)
 
     def draw(self) -> None:
         self._layout_widgets()
-        self._speed_label.value = f"Speed: {LANE_SPEED_VALUES[self._speed_slider.value]:.2f}x"
-        self._type_label.value = f"Type: {LANE_TYPE_VALUES[self._type_slider.value]}"
-        self._origin_label.value = "Origin:"
-        self._dest_label.value = "Dest:"
-        self._offset_label.value = "Offset X/Y:"
         super().draw()
         self._speed_label.draw()
         self._type_label.draw()
         self._origin_label.draw()
         self._dest_label.draw()
         self._offset_label.draw()
+        # Redraw open dropdowns on top so expanded list isn't obscured by controls below
+        if getattr(self._origin_dropdown, "_open", False):
+            self._origin_dropdown.draw()
+        if getattr(self._dest_dropdown, "_open", False):
+            self._dest_dropdown.draw()
 
     def on_mouse_press(self, x: float, y: float) -> bool:
         self._layout_widgets()
@@ -1222,8 +1221,7 @@ class LaneVarsDialog(Dialog):
         if self._node_opts:
             self._config.origin = self._node_opts[self._origin_dropdown.value]
             self._config.destination = self._node_opts[self._dest_dropdown.value]
-        self._config.offset_x = self._offset_x_box.value
-        self._config.offset_y = self._offset_y_box.value
+        self._config.offset = self._offset_box.value
         if self._on_change:
             self._on_change()
 

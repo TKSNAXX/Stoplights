@@ -69,10 +69,14 @@ def load_config(game: "GameState") -> None:
                 game.lane_configs[idx].origin = cfg["origin"]
             if "destination" in cfg and isinstance(cfg["destination"], str):
                 game.lane_configs[idx].destination = cfg["destination"]
-            if "offset_x" in cfg and isinstance(cfg["offset_x"], (int, float)):
-                game.lane_configs[idx].offset_x = max(-20, min(20, int(cfg["offset_x"])))
-            if "offset_y" in cfg and isinstance(cfg["offset_y"], (int, float)):
-                game.lane_configs[idx].offset_y = max(-20, min(20, int(cfg["offset_y"])))
+            if "offset" in cfg and isinstance(cfg["offset"], (int, float)):
+                game.lane_configs[idx].offset = max(-20, min(20, int(cfg["offset"])))
+            else:
+                # Migrate legacy offset_x/offset_y to perpendicular-only
+                if idx in places.LANE_IS_NORTH_SOUTH and "offset_x" in cfg and isinstance(cfg["offset_x"], (int, float)):
+                    game.lane_configs[idx].offset = max(-20, min(20, int(cfg["offset_x"])))
+                elif idx not in places.LANE_IS_NORTH_SOUTH and "offset_y" in cfg and isinstance(cfg["offset_y"], (int, float)):
+                    game.lane_configs[idx].offset = max(-20, min(20, int(cfg["offset_y"])))
 
     ic = data.get("intersection_configs", {})
     for key, cfg in ic.items():
@@ -114,8 +118,7 @@ def save_config(game: "GameState") -> None:
                 "lane_type": v.lane_type,
                 "origin": v.origin,
                 "destination": v.destination,
-                "offset_x": v.offset_x,
-                "offset_y": v.offset_y,
+                "offset": v.offset,
             }
             for k, v in game.lane_configs.items()
         },

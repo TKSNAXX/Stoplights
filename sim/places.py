@@ -60,13 +60,16 @@ class IntersectionConfig:
 class LaneConfig:
     """Per-lane configuration. speed_limit not yet wired to car movement. lane_type selects sprite (normal vs passing).
     origin/destination can be place names or intersection keys; direction and natural center derived at build time.
-    offset_x/offset_y shift lane cells relative to intersection peg (grid cells)."""
+    offset is perpendicular to lane travel only (grid cells)."""
     speed_limit: float = 1.0
     lane_type: str = LANE_TYPE_NORMAL
     origin: str = ""
     destination: str = ""
-    offset_x: int = 0
-    offset_y: int = 0
+    offset: int = 0
+
+
+# N-S lanes: apply (offset, 0). E-W lanes: apply (0, offset).
+LANE_IS_NORTH_SOUTH: frozenset[int] = frozenset({0, 1, 2, 3, 9, 10})
 
 
 # Place names: south = Housing, north = Office, east = Park, west = Shopping
