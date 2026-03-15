@@ -1,5 +1,5 @@
 """
-Lightweight reusable UI controls (Slider, Switch, Dialog).
+Lightweight reusable UI controls (Slider, Switch, Dropdown, Dialog).
 Screen space: x right, y up. Rect is (left, bottom, width, height).
 """
 from __future__ import annotations
@@ -224,6 +224,104 @@ class Slider:
             return False
         self._dragging = False
         return True
+
+
+DROPDOWN_ROW_HEIGHT = 20
+
+
+class Dropdown:
+    """
+    Option selector: shows current value in a box; click to expand list, click option to select.
+    Rect (left, bottom, width, height). options is list[str]; value is selected index.
+    """
+
+    def __init__(
+        self,
+        left: float,
+        bottom: float,
+        width: float,
+        height: float,
+        options: list[str],
+        initial_index: int = 0,
+        on_change: Callable[[int], None] | None = None,
+    ):
+        self.rect = (left, bottom, width, height)
+        self.options = options if options else [""]
+        self.value = max(0, min(initial_index, len(self.options) - 1))
+        self._on_change = on_change
+        self._open = False
+        self._text = arcade.Text(
+            "", 0, 0, color=(220, 220, 220), font_size=10,
+            anchor_x="left", anchor_y="center",
+        )
+
+    def contains(self, x: float, y: float) -> bool:
+        left, bottom, width, height = self.rect
+        if left <= x <= left + width and bottom <= y <= bottom + height:
+            return True
+        if self._open and len(self.options) > 0:
+            list_top = bottom + height
+            list_height = len(self.options) * DROPDOWN_ROW_HEIGHT
+            list_bottom = list_top - list_height
+            if left <= x <= left + width and list_bottom <= y <= list_top:
+                return True
+        return False
+
+    def set_value(self, index: int) -> None:
+        idx = max(0, min(index, len(self.options) - 1))
+        if idx != self.value:
+            self.value = idx
+            if self._on_change:
+                self._on_change(self.value)
+
+    def draw(self) -> None:
+        left, bottom, width, height = self.rect
+        rect_filled(left, bottom, width, height, (70, 70, 85))
+        rect_outline(left, bottom, width, height, (100, 100, 120), 1)
+        self._text.value = self.options[self.value] if self.options else "-"
+        self._text.x = left + 6
+        self._text.y = bottom + height / 2
+        self._text.draw()
+        arrow = arcade.Text("▼", left + width - 12, bottom + height / 2,
+                            color=(180, 180, 180), font_size=9, anchor_x="center", anchor_y="center")
+        arrow.draw()
+
+        if self._open and len(self.options) > 0:
+            list_top = bottom + height
+            for i, opt in enumerate(self.options):
+                row_bottom = list_top - (i + 1) * DROPDOWN_ROW_HEIGHT
+                row_top = row_bottom + DROPDOWN_ROW_HEIGHT
+                rect_filled(left, row_bottom, width, DROPDOWN_ROW_HEIGHT, (55, 55, 65))
+                rect_outline(left, row_bottom, width, DROPDOWN_ROW_HEIGHT, (80, 80, 95), 1)
+                if i == self.value:
+                    rect_filled(left + 1, row_bottom + 1, width - 2, DROPDOWN_ROW_HEIGHT - 2, (90, 90, 110))
+                item_text = arcade.Text(opt, left + 6, row_bottom + DROPDOWN_ROW_HEIGHT / 2,
+                                        color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+                item_text.draw()
+
+    def on_press(self, x: float, y: float) -> bool:
+        if not self.contains(x, y):
+            return False
+        left, bottom, width, height = self.rect
+        if self._open and len(self.options) > 0:
+            list_top = bottom + height
+            for i in range(len(self.options)):
+                row_bottom = list_top - (i + 1) * DROPDOWN_ROW_HEIGHT
+                row_top = row_bottom + DROPDOWN_ROW_HEIGHT
+                if left <= x <= left + width and row_bottom <= y <= row_top:
+                    self.set_value(i)
+                    self._open = False
+                    return True
+            self._open = False
+            return True
+        self._open = True
+        return True
+
+    def on_drag(self, x: float) -> bool:
+        return False
+
+    def on_release(self) -> bool:
+        return False
 
 
 TITLE_BAR_HEIGHT = 24
@@ -1006,8 +1104,18 @@ class LaneVarsDialog(Dialog):
         type_step = self._step_for_type(lane_config.lane_type)
         self._speed_slider = Slider(0, 0, 200, 20, len(LANE_SPEED_VALUES), speed_step, (100, 100, 100), (180, 180, 180))
         self._type_slider = Slider(0, 0, 200, 20, len(LANE_TYPE_VALUES), type_step, (100, 100, 100), (180, 180, 180))
-        self._origin_slider = Slider(0, 0, 200, 20, max(1, len(self._node_opts)), 0, (100, 100, 100), (180, 180, 180))
-        self._dest_slider = Slider(0, 0, 200, 20, max(1, len(self._node_opts)), 0, (100, 100, 100), (180, 180, 180))
+        origin_idx = self._step_for_node(getattr(lane_config, "origin", ""))
+        dest_idx = self._step_for_node(getattr(lane_config, "destination", ""))
+
+        def _dropdown_sync(_: int) -> None:
+            self._sync_from_widgets()
+
+        self._origin_dropdown = Dropdown(
+            0, 0, 200, DROPDOWN_ROW_HEIGHT, self._node_opts, origin_idx, on_change=_dropdown_sync
+        )
+        self._dest_dropdown = Dropdown(
+            0, 0, 200, DROPDOWN_ROW_HEIGHT, self._node_opts, dest_idx, on_change=_dropdown_sync
+        )
         def _sync_and_notify(_v: int) -> None:
             self._sync_from_widgets()
 
@@ -1020,16 +1128,11 @@ class LaneVarsDialog(Dialog):
             on_change=_sync_and_notify,
         )
 
-        self._origin_step = self._step_for_node(getattr(lane_config, "origin", ""))
-        self._dest_step = self._step_for_node(getattr(lane_config, "destination", ""))
-        self._origin_slider.set_step(self._origin_step)
-        self._dest_slider.set_step(self._dest_step)
-
         self.widgets = [
             self._speed_slider,
             self._type_slider,
-            self._origin_slider,
-            self._dest_slider,
+            self._origin_dropdown,
+            self._dest_dropdown,
             self._offset_x_box,
             self._offset_y_box,
         ]
@@ -1070,11 +1173,11 @@ class LaneVarsDialog(Dialog):
         self._type_label.x = left
         self._type_label.y = content_top - 12 - row * 28
         row += 1
-        self._origin_slider.rect = (left, content_top - 24 - row * 28, 200, 20)
+        self._origin_dropdown.rect = (left, content_top - 24 - row * 28, 200, DROPDOWN_ROW_HEIGHT)
         self._origin_label.x = left
         self._origin_label.y = content_top - 12 - row * 28
         row += 1
-        self._dest_slider.rect = (left, content_top - 24 - row * 28, 200, 20)
+        self._dest_dropdown.rect = (left, content_top - 24 - row * 28, 200, DROPDOWN_ROW_HEIGHT)
         self._dest_label.x = left
         self._dest_label.y = content_top - 12 - row * 28
         row += 1
@@ -1087,8 +1190,8 @@ class LaneVarsDialog(Dialog):
         self._layout_widgets()
         self._speed_label.value = f"Speed: {LANE_SPEED_VALUES[self._speed_slider.value]:.2f}x"
         self._type_label.value = f"Type: {LANE_TYPE_VALUES[self._type_slider.value]}"
-        self._origin_label.value = f"Origin: {self._node_opts[self._origin_slider.value] if self._node_opts else '-'}"
-        self._dest_label.value = f"Dest: {self._node_opts[self._dest_slider.value] if self._node_opts else '-'}"
+        self._origin_label.value = "Origin:"
+        self._dest_label.value = "Dest:"
         self._offset_label.value = "Offset X/Y:"
         super().draw()
         self._speed_label.draw()
@@ -1117,8 +1220,8 @@ class LaneVarsDialog(Dialog):
         self._config.speed_limit = LANE_SPEED_VALUES[self._speed_slider.value]
         self._config.lane_type = LANE_TYPE_VALUES[self._type_slider.value]
         if self._node_opts:
-            self._config.origin = self._node_opts[self._origin_slider.value]
-            self._config.destination = self._node_opts[self._dest_slider.value]
+            self._config.origin = self._node_opts[self._origin_dropdown.value]
+            self._config.destination = self._node_opts[self._dest_dropdown.value]
         self._config.offset_x = self._offset_x_box.value
         self._config.offset_y = self._offset_y_box.value
         if self._on_change:

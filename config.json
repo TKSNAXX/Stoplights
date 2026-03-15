@@ -77,7 +77,7 @@
     "7": {
       "speed_limit": 1.0,
       "lane_type": "passing",
-      "origin": "main",
+      "origin": "Housing",
       "destination": "Shopping",
       "offset_x": 0,
       "offset_y": 0
