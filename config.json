@@ -23,84 +23,96 @@
       "lane_type": "normal",
       "origin": "Housing",
       "destination": "main",
-      "offset": 0
+      "offset": 0,
+      "is_north_south": true
     },
     "1": {
       "speed_limit": 1.0,
       "lane_type": "normal",
       "origin": "main",
       "destination": "Office",
-      "offset": 0
+      "offset": 0,
+      "is_north_south": true
     },
     "2": {
       "speed_limit": 1.0,
       "lane_type": "normal",
       "origin": "Office",
       "destination": "main",
-      "offset": 0
+      "offset": 0,
+      "is_north_south": true
     },
     "3": {
       "speed_limit": 1.0,
       "lane_type": "normal",
       "origin": "main",
       "destination": "Housing",
-      "offset": 0
+      "offset": 0,
+      "is_north_south": true
     },
     "4": {
       "speed_limit": 1.0,
       "lane_type": "passing",
       "origin": "Park",
       "destination": "main",
-      "offset": 0
+      "offset": 0,
+      "is_north_south": true
     },
     "5": {
       "speed_limit": 1.0,
       "lane_type": "normal",
       "origin": "main",
       "destination": "Park",
-      "offset": 0
+      "offset": 0,
+      "is_north_south": true
     },
     "6": {
       "speed_limit": 1.0,
       "lane_type": "normal",
       "origin": "Shopping",
       "destination": "main",
-      "offset": 0
+      "offset": 0,
+      "is_north_south": true
     },
     "7": {
       "speed_limit": 1.0,
       "lane_type": "passing",
       "origin": "Housing",
       "destination": "Shopping",
-      "offset": 0
+      "offset": 0,
+      "is_north_south": true
     },
     "8": {
       "speed_limit": 1.0,
       "lane_type": "normal",
       "origin": "Housing",
       "destination": "bypass",
-      "offset": 0
+      "offset": 0,
+      "is_north_south": true
     },
     "9": {
       "speed_limit": 1.0,
       "lane_type": "normal",
       "origin": "bypass",
       "destination": "Park",
-      "offset": 0
+      "offset": 0,
+      "is_north_south": true
     },
     "10": {
       "speed_limit": 1.0,
       "lane_type": "normal",
       "origin": "Park",
       "destination": "bypass",
-      "offset": 0
+      "offset": 0,
+      "is_north_south": true
     },
     "11": {
       "speed_limit": 1.0,
       "lane_type": "normal",
       "origin": "bypass",
       "destination": "Housing",
-      "offset": 0
+      "offset": 0,
+      "is_north_south": true
     }
   },
   "intersection_configs": {

@@ -113,6 +113,7 @@ def rebuild_world(
     bypass_center: tuple[float, float],
     bypass_size: int,
     lane_configs: dict[int, "LaneConfig"] | None = None,
+    intersection_bounds: dict[str, tuple[int, int, int, int]] | None = None,
 ) -> None:
     """
     Rebuild lanes and intersection geometry from centers and sizes.
@@ -135,6 +136,7 @@ def rebuild_world(
     lanes, hp_intersection = map_data.build_lanes_from_config(
         place_rects, main_intersection, bypass_center, bypass_size,
         lane_configs or {},
+        intersection_bounds=intersection_bounds,
     )
 
     grid_w, grid_h = 32, 36

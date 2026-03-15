@@ -119,11 +119,13 @@ def build_lanes_from_config(
     bypass_center: tuple[float, float],
     bypass_size: int,
     lane_configs: dict[int, "LaneConfig"],
+    intersection_bounds: dict[str, tuple[int, int, int, int]] | None = None,
 ) -> tuple[list[list[tuple[int, int]]], dict]:
     """
     Build all lanes from place_rects and intersection geometry. Geometry is derived from
     lane configs' origin/destination; direction and natural center come from those.
     Falls back to canonical routes for indices 0-11 when config origin/dest invalid.
+    For lane_configs keys > 11, builds geometry-only lanes via build_lane_from_endpoints.
     Returns (lanes, hp_intersection).
     """
     main_lanes, grid_w, grid_h = build_lanes_from_positions(
@@ -132,7 +134,18 @@ def build_lanes_from_config(
     hp_lanes, hp_intersection = build_housing_park_route(
         place_rects, bypass_center, size=bypass_size, lane_configs=lane_configs
     )
-    return main_lanes + hp_lanes, hp_intersection
+    lanes = main_lanes + hp_lanes
+
+    ib = intersection_bounds or {}
+    for idx in sorted(k for k in lane_configs if k > 11):
+        cfg = lane_configs[idx]
+        cells = build_lane_from_endpoints(
+            cfg.origin, cfg.destination, cfg.is_north_south, place_rects, ib
+        )
+        if cells:
+            lanes.append(cells)
+
+    return lanes, hp_intersection
 
 
 def build_lanes_from_positions(
@@ -223,6 +236,78 @@ def build_lanes_from_positions(
 # Main intersection center (fixed). Used when rebuilding with different sizes.
 # Map scaled 2x: default layout doubled.
 DEFAULT_MAIN_CENTER = (36, 48)
+
+
+def _bounds_for_node(
+    node_key: str,
+    place_rects: dict[str, dict],
+    intersection_bounds: dict[str, tuple[int, int, int, int]],
+) -> tuple[int, int, int, int] | None:
+    """Return (x_lo, x_hi, y_lo, y_hi) for a place (from rect) or intersection. None if not found."""
+    if node_key in place_rects:
+        r = place_rects[node_key]
+        x = int(r.get("x", 0))
+        y = int(r.get("y", 0))
+        w = int(r.get("w", 0))
+        h = int(r.get("h", 0))
+        if w <= 0 or h <= 0:
+            return None
+        return (x, x + w, y, y + h)
+    if node_key in intersection_bounds:
+        return intersection_bounds[node_key]
+    return None
+
+
+def build_lane_from_endpoints(
+    origin: str,
+    destination: str,
+    is_north_south: bool,
+    place_rects: dict[str, dict],
+    intersection_bounds: dict[str, tuple[int, int, int, int]],
+) -> list[tuple[int, int]] | None:
+    """
+    Build lane cells from origin and destination nodes. Center from line between nodes;
+    length from edge-to-edge span along the chosen axis. Returns list of (x,y) cells or None.
+    """
+    ob = _bounds_for_node(origin, place_rects, intersection_bounds)
+    db = _bounds_for_node(destination, place_rects, intersection_bounds)
+    if ob is None or db is None:
+        return None
+
+    ox_lo, ox_hi, oy_lo, oy_hi = ob
+    dx_lo, dx_hi, dy_lo, dy_hi = db
+
+    orig_cx = (ox_lo + ox_hi - 1) / 2
+    orig_cy = (oy_lo + oy_hi - 1) / 2
+    dest_cx = (dx_lo + dx_hi - 1) / 2
+    dest_cy = (dy_lo + dy_hi - 1) / 2
+
+    if is_north_south:
+        lane_x = round((orig_cx + dest_cx) / 2)
+        if dest_cy > orig_cy:
+            y_start = oy_hi
+            y_end = dy_lo
+        else:
+            y_start = dy_hi
+            y_end = oy_lo
+        y_lo = min(y_start, y_end)
+        y_hi = max(y_start, y_end)
+        # Exclusive end: lane runs in the gap, not including the destination entity's edge (matches core lanes)
+        cells = [(lane_x, y) for y in range(y_lo, y_hi)]
+        return cells if cells else [(lane_x, y_lo)]
+    else:
+        lane_y = round((orig_cy + dest_cy) / 2)
+        if dest_cx > orig_cx:
+            x_start = ox_hi
+            x_end = dx_lo
+        else:
+            x_start = dx_hi
+            x_end = ox_lo
+        x_lo = min(x_start, x_end)
+        x_hi = max(x_start, x_end)
+        # Exclusive end: lane runs in the gap, not including the destination entity's edge
+        cells = [(x, lane_y) for x in range(x_lo, x_hi)]
+        return cells if cells else [(x_lo, lane_y)]
 
 
 def bounds_from_center(center_x: float, center_y: float, size: int) -> tuple[int, int, int, int]:

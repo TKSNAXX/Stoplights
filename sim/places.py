@@ -66,6 +66,7 @@ class LaneConfig:
     origin: str = ""
     destination: str = ""
     offset: int = 0
+    is_north_south: bool = True  # True = N-S/vertical, False = E-W/horizontal. Used for extra lanes (12+).
 
 
 # N-S lanes: apply (offset, 0). E-W lanes: apply (0, offset).

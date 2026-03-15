@@ -9,7 +9,12 @@ import time
 
 from sim import cars, cop, places
 from sim.constants import POLICE_PRIORITY_SCALE, VIS_ZONE_LENGTH_CELLS, VIS_ZONE_WIDTH_CELLS
-from sim.map_data import MAP_DATA, geometry_from_place_rects, place_rects_from_geometry
+from sim.map_data import (
+    MAP_DATA,
+    bounds_from_center,
+    geometry_from_place_rects,
+    place_rects_from_geometry,
+)
 from sim import world
 from sim.impasse import apply_impasse
 from sim.movement import advance_car
@@ -18,6 +23,21 @@ from sim.visibility import build_poses, nearby_indices, rebuild_spatial_buckets_
 
 # Spawn: one car every N seconds per place (with jitter)
 SPAWN_INTERVAL = 2.0
+
+_LANE_ORIGIN_DEST: list[tuple[str, str]] = [
+    (places.SOUTH, "main"),
+    ("main", places.NORTH),
+    (places.NORTH, "main"),
+    ("main", places.SOUTH),
+    (places.PARK, "main"),
+    ("main", places.PARK),
+    (places.SHOPPING, "main"),
+    ("main", places.SHOPPING),
+    (places.SOUTH, "bypass"),
+    ("bypass", places.PARK),
+    (places.PARK, "bypass"),
+    ("bypass", places.SOUTH),
+]
 
 # Housing, Office, Park, and Shopping spawn.
 SPAWN_PLACES = (places.SOUTH, places.NORTH, places.PARK, places.SHOPPING)
@@ -36,20 +56,6 @@ class GameState:
         self.spawn_enabled: dict[str, bool] = {p: True for p in SPAWN_PLACES}
         self.place_configs: dict[str, places.PlaceConfig] = {p: places.PlaceConfig() for p in SPAWN_PLACES}
         self.lane_configs: dict[int, places.LaneConfig] = {i: places.LaneConfig() for i in range(12)}
-        _LANE_ORIGIN_DEST: list[tuple[str, str]] = [
-            (places.SOUTH, "main"),
-            ("main", places.NORTH),
-            (places.NORTH, "main"),
-            ("main", places.SOUTH),
-            (places.PARK, "main"),
-            ("main", places.PARK),
-            (places.SHOPPING, "main"),
-            ("main", places.SHOPPING),
-            (places.SOUTH, "bypass"),
-            ("bypass", places.PARK),
-            (places.PARK, "bypass"),
-            ("bypass", places.SOUTH),
-        ]
         for i, (orig, dest) in enumerate(_LANE_ORIGIN_DEST):
             self.lane_configs[i].origin = orig
             self.lane_configs[i].destination = dest
@@ -151,7 +157,42 @@ class GameState:
         }
         self.spawn_timers = {p: 0.0 for p in SPAWN_PLACES}
         self._impasse_timers.clear()
+        # Reset lane_configs to core 0-11 only
+        self.lane_configs = {i: places.LaneConfig() for i in range(12)}
+        for i, (orig, dest) in enumerate(_LANE_ORIGIN_DEST):
+            self.lane_configs[i].origin = orig
+            self.lane_configs[i].destination = dest
+        for i in (4, 7):
+            self.lane_configs[i].lane_type = places.LANE_TYPE_PASSING
         self.rebuild_world_from_config()
+
+    def next_lane_index(self) -> int:
+        """Return next available lane index for adding a new lane."""
+        if not self.lane_configs:
+            return 12
+        return max(self.lane_configs.keys()) + 1
+
+    def _build_intersection_bounds(
+        self,
+        main_center: tuple[float, float],
+        main_size: int,
+        bypass_center: tuple[float, float],
+        bypass_size: int,
+    ) -> dict[str, tuple[int, int, int, int]]:
+        """Build {key: (x_lo, x_hi, y_lo, y_hi)} for all intersections."""
+        result: dict[str, tuple[int, int, int, int]] = {}
+        main_cfg = self.intersection_configs.get("main")
+        bypass_cfg = self.intersection_configs.get("bypass")
+        m_sz = main_cfg.size_cells if main_cfg else main_size
+        b_sz = bypass_cfg.size_cells if bypass_cfg else bypass_size
+        result["main"] = bounds_from_center(main_center[0], main_center[1], m_sz)
+        result["bypass"] = bounds_from_center(bypass_center[0], bypass_center[1], b_sz)
+        for key, cfg in self.intersection_configs.items():
+            if key in ("main", "bypass"):
+                continue
+            x_lo, x_hi, y_lo, y_hi = bounds_from_center(cfg.center_x, cfg.center_y, cfg.size_cells)
+            result[key] = (x_lo, x_hi, y_lo, y_hi)
+        return result
 
     def rebuild_world_from_config(self) -> None:
         """Rebuild world geometry from place_geometry and intersection configs. Call on Commit."""
@@ -163,9 +204,13 @@ class GameState:
         bypass_size = bypass_cfg.size_cells if bypass_cfg else places.INTERSECTION_SIZE_DEFAULT
         main_center = (main_cfg.center_x, main_cfg.center_y) if main_cfg else (36.0, 48.0)
         bypass_center = (bypass_cfg.center_x, bypass_cfg.center_y) if bypass_cfg else (64.0, 2.0)
+        intersection_bounds = self._build_intersection_bounds(
+            main_center, main_size, bypass_center, bypass_size
+        )
         world.rebuild_world(
             place_rects, main_center, main_size, bypass_center, bypass_size,
             lane_configs=self.lane_configs,
+            intersection_bounds=intersection_bounds,
         )
 
     def _apply_police_influence(

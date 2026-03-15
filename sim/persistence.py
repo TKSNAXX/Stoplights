@@ -58,7 +58,7 @@ def load_config(game: "GameState") -> None:
         except (ValueError, TypeError):
             continue
         if idx not in game.lane_configs:
-            continue
+            game.lane_configs[idx] = places.LaneConfig()
         if isinstance(cfg, dict):
             if "speed_limit" in cfg and isinstance(cfg["speed_limit"], (int, float)):
                 v = float(cfg["speed_limit"])
@@ -71,7 +71,9 @@ def load_config(game: "GameState") -> None:
                 game.lane_configs[idx].destination = cfg["destination"]
             if "offset" in cfg and isinstance(cfg["offset"], (int, float)):
                 game.lane_configs[idx].offset = max(-20, min(20, int(cfg["offset"])))
-            else:
+            if "is_north_south" in cfg and isinstance(cfg["is_north_south"], bool):
+                game.lane_configs[idx].is_north_south = cfg["is_north_south"]
+            if "offset" not in cfg:
                 # Migrate legacy offset_x/offset_y to perpendicular-only
                 if idx in places.LANE_IS_NORTH_SOUTH and "offset_x" in cfg and isinstance(cfg["offset_x"], (int, float)):
                     game.lane_configs[idx].offset = max(-20, min(20, int(cfg["offset_x"])))
@@ -119,6 +121,7 @@ def save_config(game: "GameState") -> None:
                 "origin": v.origin,
                 "destination": v.destination,
                 "offset": v.offset,
+                "is_north_south": v.is_north_south,
             }
             for k, v in game.lane_configs.items()
         },

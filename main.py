@@ -23,6 +23,7 @@ from sim.game import GameState
 from sim import persistence, world
 from sim.map_data import bounds_from_center
 from ui import (
+    AddLaneDialog,
     CarDeetsDialog,
     DialogManager,
     IntersectionVarsDialog,
@@ -180,7 +181,11 @@ class StoplightsWindow(arcade.Window):
             9: "road_n", 10: "road_s",
         }
         for lane_index, lane in enumerate(world.ALL_LANES):
-            base = base_by_lane.get(lane_index, "road_n")
+            if lane_index >= 12:
+                cfg12 = self.game.lane_configs.get(lane_index)
+                base = "road_n" if (cfg12 and cfg12.is_north_south) else "road_e"
+            else:
+                base = base_by_lane.get(lane_index, "road_n")
             cfg = self.game.lane_configs.get(lane_index)
             suffix = "_pass" if cfg and cfg.lane_type == places.LANE_TYPE_PASSING else ""
             road_type = base + suffix if self._tile_set.get(base + suffix) else base
@@ -619,6 +624,19 @@ class StoplightsWindow(arcade.Window):
                 dlg.set_on_close(lambda d: self._dialog_manager.close(d))
                 self._dialog_manager.open(dlg)
                 return
+            if toolbar_action == "new_lane":
+                dlg_x = TOOLBAR_LEFT + 56
+                dlg_y = self.height / 2 + 100
+                dlg = AddLaneDialog(
+                    dlg_x, dlg_y, self.game,
+                    on_commit=lambda: (
+                        self._on_config_change(),
+                        self._dialog_manager.close(dlg),
+                    ),
+                )
+                dlg.set_on_close(lambda d: self._dialog_manager.close(d))
+                self._dialog_manager.open(dlg)
+                return
             place = self._place_at_screen(x, y)
             if place is not None:
                 if place in self._place_dialogs:
@@ -662,9 +680,16 @@ class StoplightsWindow(arcade.Window):
                         self.game.lane_configs[lane_idx],
                         self.game.place_geometry,
                         self.game.intersection_configs,
+                        game=self.game,
                         on_change=lambda: (
                             self.game.rebuild_world_from_config(),
                             self._on_config_change(),
+                        ),
+                        on_remove=lambda: (
+                            self._on_config_change(),
+                            self._lane_dialogs.pop(lane_idx, None),
+                            self._dialog_manager.close(dlg),
+                            persistence.request_debounced_save(),
                         ),
                     )
                     self._lane_dialogs[lane_idx] = dlg
