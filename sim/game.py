@@ -12,6 +12,7 @@ from sim.constants import POLICE_PRIORITY_SCALE, VIS_ZONE_LENGTH_CELLS, VIS_ZONE
 from sim.map_data import (
     MAP_DATA,
     bounds_from_center,
+    derive_default_start_end,
     geometry_from_place_rects,
     place_rects_from_geometry,
 )
@@ -23,21 +24,6 @@ from sim.visibility import build_poses, nearby_indices, rebuild_spatial_buckets_
 
 # Spawn: one car every N seconds per place (with jitter)
 SPAWN_INTERVAL = 2.0
-
-_LANE_ORIGIN_DEST: list[tuple[str, str]] = [
-    (places.SOUTH, "main"),
-    ("main", places.NORTH),
-    (places.NORTH, "main"),
-    ("main", places.SOUTH),
-    (places.PARK, "main"),
-    ("main", places.PARK),
-    (places.SHOPPING, "main"),
-    ("main", places.SHOPPING),
-    (places.SOUTH, "bypass"),
-    ("bypass", places.PARK),
-    (places.PARK, "bypass"),
-    ("bypass", places.SOUTH),
-]
 
 # Housing, Office, Park, and Shopping spawn.
 SPAWN_PLACES = (places.SOUTH, places.NORTH, places.PARK, places.SHOPPING)
@@ -56,9 +42,6 @@ class GameState:
         self.spawn_enabled: dict[str, bool] = {p: True for p in SPAWN_PLACES}
         self.place_configs: dict[str, places.PlaceConfig] = {p: places.PlaceConfig() for p in SPAWN_PLACES}
         self.lane_configs: dict[int, places.LaneConfig] = {i: places.LaneConfig() for i in range(12)}
-        for i, (orig, dest) in enumerate(_LANE_ORIGIN_DEST):
-            self.lane_configs[i].origin = orig
-            self.lane_configs[i].destination = dest
         self.intersection_configs: dict[str, places.IntersectionConfig] = {
             "main": places.IntersectionConfig(intersection_type=places.INTERSECTION_TYPE_X),
             "bypass": places.IntersectionConfig(
@@ -70,6 +53,9 @@ class GameState:
         self.place_geometry: dict[str, places.PlaceGeometry] = {}
         for i in (4, 7):
             self.lane_configs[i].lane_type = places.LANE_TYPE_PASSING
+        default_place_rects = MAP_DATA.get("place_rects", {})
+        self.place_geometry = geometry_from_place_rects(default_place_rects)
+        self._apply_default_lane_tiles()
         self.spawn_timers: dict[str, float] = {p: random.uniform(0, self.spawn_interval) for p in SPAWN_PLACES}
         self._accumulated_time = 0.0
         self._tick_count = 0
@@ -159,18 +145,44 @@ class GameState:
         self._impasse_timers.clear()
         # Reset lane_configs to core 0-11 only
         self.lane_configs = {i: places.LaneConfig() for i in range(12)}
-        for i, (orig, dest) in enumerate(_LANE_ORIGIN_DEST):
-            self.lane_configs[i].origin = orig
-            self.lane_configs[i].destination = dest
         for i in (4, 7):
             self.lane_configs[i].lane_type = places.LANE_TYPE_PASSING
+        self._apply_default_lane_tiles()
         self.rebuild_world_from_config()
 
-    def next_lane_index(self) -> int:
-        """Return next available lane index for adding a new lane."""
-        if not self.lane_configs:
-            return 12
-        return max(self.lane_configs.keys()) + 1
+    def _build_hp_intersection(self, bypass_center: tuple[float, float], bypass_size: int) -> dict:
+        x_lo, x_hi, y_lo, y_hi = bounds_from_center(bypass_center[0], bypass_center[1], bypass_size)
+        cells = [(x, y) for x in range(x_lo, x_hi) for y in range(y_lo, y_hi)]
+        cx = (x_lo + x_hi - 1) / 2
+        slots = [(int(cx), y_lo), (int(cx), y_hi - 1)]
+        return {"x_lo": x_lo, "x_hi": x_hi, "y_lo": y_lo, "y_hi": y_hi, "cells": cells, "slots": slots}
+
+    def _apply_default_lane_tiles(self) -> None:
+        """Ensure lane 0-11 have start/end tiles derived from default geometry."""
+        place_rects = place_rects_from_geometry(self.place_geometry)
+        main_cfg = self.intersection_configs.get("main")
+        bypass_cfg = self.intersection_configs.get("bypass")
+        main_size = main_cfg.size_cells if main_cfg else places.INTERSECTION_SIZE_DEFAULT
+        bypass_size = bypass_cfg.size_cells if bypass_cfg else places.INTERSECTION_SIZE_DEFAULT
+        main_center = (main_cfg.center_x, main_cfg.center_y) if main_cfg else (36.0, 48.0)
+        bypass_center = (bypass_cfg.center_x, bypass_cfg.center_y) if bypass_cfg else (64.0, 2.0)
+        mx_lo, mx_hi, my_lo, my_hi = bounds_from_center(main_center[0], main_center[1], main_size)
+        main_intersection = {
+            "x_lo": mx_lo,
+            "x_hi": mx_hi,
+            "y_lo": my_lo,
+            "y_hi": my_hi,
+            "cells": [(x, y) for x in range(mx_lo, mx_hi) for y in range(my_lo, my_hi)],
+        }
+        hp_intersection = self._build_hp_intersection(bypass_center, bypass_size)
+        for lane_idx in range(12):
+            cfg = self.lane_configs.get(lane_idx)
+            if cfg is None:
+                continue
+            if cfg.start_tile == (0, 0) and cfg.end_tile == (0, 0):
+                start, end = derive_default_start_end(lane_idx, place_rects, main_intersection, hp_intersection)
+                cfg.start_tile = start
+                cfg.end_tile = end
 
     def _build_intersection_bounds(
         self,
@@ -204,13 +216,14 @@ class GameState:
         bypass_size = bypass_cfg.size_cells if bypass_cfg else places.INTERSECTION_SIZE_DEFAULT
         main_center = (main_cfg.center_x, main_cfg.center_y) if main_cfg else (36.0, 48.0)
         bypass_center = (bypass_cfg.center_x, bypass_cfg.center_y) if bypass_cfg else (64.0, 2.0)
-        intersection_bounds = self._build_intersection_bounds(
+        extra_intersection_bounds = self._build_intersection_bounds(
             main_center, main_size, bypass_center, bypass_size
         )
+        self._apply_default_lane_tiles()
         world.rebuild_world(
             place_rects, main_center, main_size, bypass_center, bypass_size,
             lane_configs=self.lane_configs,
-            intersection_bounds=intersection_bounds,
+            extra_intersection_bounds=extra_intersection_bounds,
         )
 
     def _apply_police_influence(
@@ -305,7 +318,7 @@ class GameState:
             if car.motion_mode == "path":
                 candidates.add(i)
                 continue
-            if car.lane_index in places.IN_LANE_INDICES and lane and car.position_in_lane >= max(0, len(lane) - 2):
+            if car.lane_index in places.in_lane_indices() and lane and car.position_in_lane >= max(0, len(lane) - 2):
                 candidates.add(i)
         return candidates
 

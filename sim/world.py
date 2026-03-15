@@ -92,6 +92,7 @@ class _WorldState:
 
     def __init__(self) -> None:
         self.all_lanes: list[list[tuple[int, int]]] = []
+        self.lane_meta: list[tuple[str, str, str]] = []  # (direction, traffic_in, traffic_out)
         self.grid_w: int = 32
         self.grid_h: int = 36
         self._place_rects: dict[str, dict] = {}
@@ -113,12 +114,12 @@ def rebuild_world(
     bypass_center: tuple[float, float],
     bypass_size: int,
     lane_configs: dict[int, "LaneConfig"] | None = None,
-    intersection_bounds: dict[str, tuple[int, int, int, int]] | None = None,
+    extra_intersection_bounds: dict[str, tuple[int, int, int, int]] | None = None,
 ) -> None:
     """
     Rebuild lanes and intersection geometry from centers and sizes.
     Places and intersections own their positions; lanes are derived.
-    When lane_configs is provided, applies offset to each lane's cells.
+    When lane_configs is provided, lane cells are built from config start/end tiles.
     """
     main_size = max(2, min(12, main_size))
     bypass_size = max(2, min(12, bypass_size))
@@ -133,10 +134,10 @@ def rebuild_world(
     x_lo, x_hi, y_lo, y_hi = bounds_from_center(main_cx, main_cy, main_size)
     main_intersection = intersection_dict_from_bounds(x_lo, x_hi, y_lo, y_hi)
 
-    lanes, hp_intersection = map_data.build_lanes_from_config(
+    lanes, hp_intersection, lane_meta = map_data.build_lanes_from_config(
         place_rects, main_intersection, bypass_center, bypass_size,
         lane_configs or {},
-        intersection_bounds=intersection_bounds,
+        extra_intersection_bounds=extra_intersection_bounds,
     )
 
     grid_w, grid_h = 32, 36
@@ -154,6 +155,7 @@ def rebuild_world(
 
     _state.all_lanes.clear()
     _state.all_lanes.extend([[tuple(c) for c in lane] for lane in lanes])
+    _state.lane_meta = lane_meta
     _state._place_rects = dict(place_rects)
     _state.grid_w = grid_w
     _state.grid_h = grid_h
@@ -272,6 +274,27 @@ def intersection_center() -> tuple[float, float]:
 
 def get_grid_w() -> int:
     return _state.grid_w
+
+
+def lane_traffic_in(lane_index: int) -> str:
+    """Return traffic_in (origin) for lane. Empty if out of range."""
+    if 0 <= lane_index < len(_state.lane_meta):
+        return _state.lane_meta[lane_index][1]
+    return ""
+
+
+def lane_traffic_out(lane_index: int) -> str:
+    """Return traffic_out (destination) for lane. Empty if out of range."""
+    if 0 <= lane_index < len(_state.lane_meta):
+        return _state.lane_meta[lane_index][2]
+    return ""
+
+
+def lane_direction(lane_index: int) -> str:
+    """Return N, S, E, or W for lane. Empty if out of range."""
+    if 0 <= lane_index < len(_state.lane_meta):
+        return _state.lane_meta[lane_index][0]
+    return ""
 
 
 def get_place_rects() -> dict[str, dict]:

@@ -1,6 +1,6 @@
 {
   "user_settings": {
-    "edge_pan_enabled": false
+    "edge_pan_enabled": true
   },
   "place_configs": {
     "Housing": {
@@ -24,98 +24,146 @@
     "0": {
       "speed_limit": 1.0,
       "lane_type": "normal",
-      "origin": "Housing",
-      "destination": "main",
-      "offset": 0,
-      "is_north_south": true
+      "start_tile": [
+        36,
+        5
+      ],
+      "end_tile": [
+        36,
+        45
+      ]
     },
     "1": {
       "speed_limit": 1.0,
       "lane_type": "normal",
-      "origin": "main",
-      "destination": "Office",
-      "offset": 0,
-      "is_north_south": true
+      "start_tile": [
+        36,
+        50
+      ],
+      "end_tile": [
+        36,
+        81
+      ]
     },
     "2": {
       "speed_limit": 1.0,
       "lane_type": "normal",
-      "origin": "Office",
-      "destination": "main",
-      "offset": 0,
-      "is_north_south": true
+      "start_tile": [
+        35,
+        81
+      ],
+      "end_tile": [
+        35,
+        50
+      ]
     },
     "3": {
       "speed_limit": 1.0,
       "lane_type": "normal",
-      "origin": "main",
-      "destination": "Housing",
-      "offset": 0,
-      "is_north_south": true
+      "start_tile": [
+        35,
+        45
+      ],
+      "end_tile": [
+        35,
+        5
+      ]
     },
     "4": {
       "speed_limit": 1.0,
       "lane_type": "passing",
-      "origin": "Park",
-      "destination": "main",
-      "offset": 0,
-      "is_north_south": true
+      "start_tile": [
+        61,
+        48
+      ],
+      "end_tile": [
+        38,
+        48
+      ]
     },
     "5": {
       "speed_limit": 1.0,
       "lane_type": "normal",
-      "origin": "main",
-      "destination": "Park",
-      "offset": 0,
-      "is_north_south": true
+      "start_tile": [
+        38,
+        47
+      ],
+      "end_tile": [
+        61,
+        47
+      ]
     },
     "6": {
       "speed_limit": 1.0,
       "lane_type": "normal",
-      "origin": "Shopping",
-      "destination": "main",
-      "offset": 0,
-      "is_north_south": true
+      "start_tile": [
+        5,
+        47
+      ],
+      "end_tile": [
+        33,
+        47
+      ]
     },
     "7": {
       "speed_limit": 1.0,
       "lane_type": "passing",
-      "origin": "Housing",
-      "destination": "Shopping",
-      "offset": 0,
-      "is_north_south": true
+      "start_tile": [
+        33,
+        48
+      ],
+      "end_tile": [
+        5,
+        48
+      ]
     },
     "8": {
       "speed_limit": 1.0,
       "lane_type": "normal",
-      "origin": "Housing",
-      "destination": "bypass",
-      "offset": 0,
-      "is_north_south": true
+      "start_tile": [
+        39,
+        1
+      ],
+      "end_tile": [
+        61,
+        1
+      ]
     },
     "9": {
       "speed_limit": 1.0,
       "lane_type": "normal",
-      "origin": "bypass",
-      "destination": "Park",
-      "offset": 0,
-      "is_north_south": true
+      "start_tile": [
+        64,
+        4
+      ],
+      "end_tile": [
+        64,
+        43
+      ]
     },
     "10": {
       "speed_limit": 1.0,
       "lane_type": "normal",
-      "origin": "Park",
-      "destination": "bypass",
-      "offset": 0,
-      "is_north_south": true
+      "start_tile": [
+        63,
+        43
+      ],
+      "end_tile": [
+        63,
+        4
+      ]
     },
     "11": {
       "speed_limit": 1.0,
       "lane_type": "normal",
-      "origin": "bypass",
-      "destination": "Housing",
-      "offset": 0,
-      "is_north_south": true
+      "start_tile": [
+        61,
+        2
+      ],
+      "end_tile": [
+        39,
+        2
+      ]
     }
   },
   "intersection_configs": {
@@ -127,35 +175,35 @@
     },
     "bypass": {
       "intersection_type": "corner",
-      "size_cells": 12,
-      "center_x": 50,
-      "center_y": 21
+      "size_cells": 4,
+      "center_x": 64,
+      "center_y": 2
     }
   },
   "place_geometry": {
     "Housing": {
-      "center_x": 30,
-      "center_y": 22,
-      "width": 16,
-      "length": 9
+      "center_x": 36,
+      "center_y": 2,
+      "width": 5,
+      "length": 5
     },
     "Office": {
       "center_x": 36,
-      "center_y": 66,
-      "width": 6,
+      "center_y": 84,
+      "width": 5,
       "length": 5
     },
     "Park": {
-      "center_x": 55,
+      "center_x": 64,
       "center_y": 46,
-      "width": 16,
-      "length": 16
+      "width": 5,
+      "length": 5
     },
     "Shopping": {
-      "center_x": 15,
+      "center_x": 2,
       "center_y": 46,
-      "width": 16,
-      "length": 16
+      "width": 5,
+      "length": 5
     }
   }
 }

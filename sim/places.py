@@ -59,18 +59,11 @@ class IntersectionConfig:
 @dataclasses.dataclass
 class LaneConfig:
     """Per-lane configuration. speed_limit not yet wired to car movement. lane_type selects sprite (normal vs passing).
-    origin/destination can be place names or intersection keys; direction and natural center derived at build time.
-    offset is perpendicular to lane travel only (grid cells)."""
+    Lanes are defined by start and end tiles. Direction and traffic in/out are derived at build time."""
     speed_limit: float = 1.0
     lane_type: str = LANE_TYPE_NORMAL
-    origin: str = ""
-    destination: str = ""
-    offset: int = 0
-    is_north_south: bool = True  # True = N-S/vertical, False = E-W/horizontal. Used for extra lanes (12+).
-
-
-# N-S lanes: apply (offset, 0). E-W lanes: apply (0, offset).
-LANE_IS_NORTH_SOUTH: frozenset[int] = frozenset({0, 1, 2, 3, 9, 10})
+    start_tile: tuple[int, int] = (0, 0)
+    end_tile: tuple[int, int] = (0, 0)
 
 
 # Place names: south = Housing, north = Office, east = Park, west = Shopping
@@ -81,27 +74,26 @@ SHOPPING = "Shopping"
 
 PLACES = (SOUTH, NORTH, PARK, SHOPPING)
 
-# Spawn: Housing on lane 0, Office on lane 2, Park on lane 4, Shopping on lane 6.
-LANES_BY_PLACE: dict[str, list[int]] = {
-    SOUTH: [0],
-    NORTH: [2],
-    PARK: [4],
-    SHOPPING: [6],
-}
-
 # Housing-Park direct route: lanes 8-11, own junction.
 ROUTE_HOUSING_PARK = frozenset({(SOUTH, PARK), (PARK, SOUTH)})
-HP_IN_LANE_INDICES = {8, 10}
-HP_OUT_LANE_INDICES = {9, 11}
-HP_OUT_LANE_FOR_IN: dict[int, int] = {8: 9, 10: 11}
 
-# At intersection: route by destination (place → out-lane index).
-OUT_LANE_BY_PLACE: dict[str, int] = {NORTH: 1, SOUTH: 3, PARK: 5, SHOPPING: 7}
 
-# Lanes that are "in" (approach intersection); end of these = transition. Others = arrival, remove car.
-IN_LANE_INDICES = {0, 2, 4, 6, 8, 10}
-# Lanes that are "out" (leave intersection toward place); end = arrival.
-OUT_LANE_INDICES = {1, 3, 5, 7, 9, 11}
+def out_lane_for_place(place: str, from_intersection: str = "main") -> int | None:
+    """Out-lane that goes to place from the given intersection (main or bypass)."""
+    for i in range(12):
+        if world.lane_traffic_in(i) == from_intersection and world.lane_traffic_out(i) == place:
+            return i
+    return None
+
+
+def in_lane_indices() -> set[int]:
+    """Lanes that approach an intersection (traffic_out is main or bypass)."""
+    return {i for i in range(12) if world.lane_traffic_out(i) in ("main", "bypass")}
+
+
+def out_lane_indices() -> set[int]:
+    """Lanes that leave an intersection (traffic_in is main or bypass)."""
+    return {i for i in range(12) if world.lane_traffic_in(i) in ("main", "bypass")}
 
 # Straight-through at intersection (in_lane, out_lane): N-S arm plus Park↔Shopping cross.
 STRAIGHT_TRANSITIONS = {(0, 1), (2, 3), (4, 7), (6, 5)}
@@ -142,6 +134,14 @@ def place_bounds(place: str) -> list[tuple[int, int]]:
 
 def spawn_lanes_for_place(place: str, destination: str | None = None) -> list[int]:
     """Lane indices where a car spawning at this place should start (position 0)."""
-    if destination is not None and (place, destination) in ROUTE_HOUSING_PARK:
+    result: list[int] = []
+    for i in range(12):
+        if world.lane_traffic_in(i) == place:
+            out = world.lane_traffic_out(i)
+            if destination is None or out == destination:
+                result.append(i)
+            elif destination is not None and (place, destination) in ROUTE_HOUSING_PARK and out == "bypass":
+                result.append(i)
+    if not result and destination is not None and (place, destination) in ROUTE_HOUSING_PARK:
         return [8] if place == SOUTH else [10]
-    return list(LANES_BY_PLACE.get(place, []))
+    return result if result else [0]

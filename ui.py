@@ -8,6 +8,7 @@ from typing import Callable
 
 import arcade
 from draw_compat import rect_filled, rect_outline
+from sim import world
 
 
 NUMBER_BOX_HEIGHT = 22
@@ -1085,15 +1086,104 @@ class PlaceVarsDialog(Dialog):
             self._on_change()
 
 
-def _node_options(place_geometry: dict, intersection_configs: dict) -> list[str]:
-    """Combined sorted list of place names and intersection keys for origin/destination selectors."""
-    places = sorted(place_geometry.keys())
-    inters = sorted(intersection_configs.keys())
-    return places + inters
+class CompassSelect:
+    """
+    Tile selector control.
+    Displays (x, y) plus directional buttons in one row: N, S, W, E.
+    locked_axis:
+      - "x": disable E/W (x fixed)
+      - "y": disable N/S (y fixed)
+      - None: all enabled
+    """
+
+    def __init__(
+        self,
+        left: float,
+        bottom: float,
+        width: float,
+        height: float,
+        value: tuple[int, int],
+        on_change: Callable[[tuple[int, int]], None] | None = None,
+        locked_axis: str | None = None,
+    ):
+        self.rect = (left, bottom, width, height)
+        self.value = (int(value[0]), int(value[1]))
+        self.locked_axis = locked_axis
+        self._on_change = on_change
+        self._text = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+
+    def set_value(self, value: tuple[int, int]) -> None:
+        self.value = (int(value[0]), int(value[1]))
+
+    def _button_defs(self) -> list[tuple[str, str, tuple[int, int]]]:
+        return [
+            ("N", "↑", (0, 1)),
+            ("S", "↓", (0, -1)),
+            ("W", "←", (-1, 0)),
+            ("E", "→", (1, 0)),
+        ]
+
+    def _button_rect(self, idx: int) -> tuple[float, float, float, float]:
+        left, bottom, width, height = self.rect
+        text_w = min(64.0, width * 0.35)
+        btn_left = left + text_w + 6
+        btn_width_total = max(40.0, width - (btn_left - left))
+        btn_w = max(18.0, btn_width_total / 4 - 2)
+        return (btn_left + idx * (btn_w + 2), bottom, btn_w, height)
+
+    def _is_disabled(self, key: str) -> bool:
+        if self.locked_axis == "x":
+            return key in ("W", "E")
+        if self.locked_axis == "y":
+            return key in ("N", "S")
+        return False
+
+    def contains(self, x: float, y: float) -> bool:
+        left, bottom, width, height = self.rect
+        return left <= x <= left + width and bottom <= y <= bottom + height
+
+    def on_press(self, x: float, y: float) -> bool:
+        if not self.contains(x, y):
+            return False
+        for i, (key, _label, delta) in enumerate(self._button_defs()):
+            l, b, w, h = self._button_rect(i)
+            if l <= x <= l + w and b <= y <= b + h:
+                if self._is_disabled(key):
+                    return True
+                nx = self.value[0] + delta[0]
+                ny = self.value[1] + delta[1]
+                self.value = (nx, ny)
+                if self._on_change:
+                    self._on_change(self.value)
+                return True
+        return True
+
+    def on_drag(self, x: float) -> bool:
+        return False
+
+    def on_release(self) -> bool:
+        return False
+
+    def draw(self) -> None:
+        left, bottom, width, height = self.rect
+        self._text.value = f"({self.value[0]}, {self.value[1]})"
+        self._text.x = left + 2
+        self._text.y = bottom + height / 2
+        self._text.draw()
+        for i, (key, label, _delta) in enumerate(self._button_defs()):
+            l, b, w, h = self._button_rect(i)
+            disabled = self._is_disabled(key)
+            bg = (70, 70, 80) if not disabled else (52, 52, 58)
+            border = (100, 100, 115) if not disabled else (78, 78, 88)
+            fg = (220, 220, 220) if not disabled else (130, 130, 140)
+            rect_filled(l, b, w, h, bg)
+            rect_outline(l, b, w, h, border, 1)
+            txt = arcade.Text(label, l + w / 2, b + h / 2, color=fg, font_size=10, anchor_x="center", anchor_y="center")
+            txt.draw()
 
 
 class LaneVarsDialog(Dialog):
-    """Dialog for editing lane speed limit, type, origin, destination, and offset. Remove for user-added lanes (12+)."""
+    """Dialog for editing lane speed/type and start/end tiles."""
 
     def __init__(
         self,
@@ -1105,63 +1195,46 @@ class LaneVarsDialog(Dialog):
         intersection_configs: dict,
         game=None,
         on_change: Callable[[], None] | None = None,
-        on_remove: Callable[[], None] | None = None,
     ):
-        height = 238 if lane_index >= 12 and game is not None else 210
-        super().__init__(x, y, 260, height, f"Lane {lane_index}")
+        super().__init__(x, y, 320, 240, f"Lane {lane_index}")
         self.lane_index = lane_index
         self._config = lane_config
-        self._game = game
         self._on_change = on_change
-        self._on_remove = on_remove
-        self._can_remove = lane_index >= 12 and game is not None
-        self._node_opts = _node_options(place_geometry, intersection_configs)
 
         speed_step = self._step_for_speed(lane_config.speed_limit)
         type_step = self._step_for_type(lane_config.lane_type)
-        self._speed_slider = Slider(0, 0, 200, 20, len(LANE_SPEED_VALUES), speed_step, (100, 100, 100), (180, 180, 180))
-        self._type_slider = Slider(0, 0, 200, 20, len(LANE_TYPE_VALUES), type_step, (100, 100, 100), (180, 180, 180))
-        origin_idx = self._step_for_node(getattr(lane_config, "origin", ""))
-        dest_idx = self._step_for_node(getattr(lane_config, "destination", ""))
-
-        def _dropdown_sync(_: int) -> None:
-            self._sync_from_widgets()
-
-        self._origin_dropdown = Dropdown(
-            0, 0, 200, DROPDOWN_ROW_HEIGHT, self._node_opts, origin_idx, on_change=_dropdown_sync
+        self._speed_slider = Slider(0, 0, 220, 20, len(LANE_SPEED_VALUES), speed_step, (100, 100, 100), (180, 180, 180))
+        self._type_slider = Slider(0, 0, 220, 20, len(LANE_TYPE_VALUES), type_step, (100, 100, 100), (180, 180, 180))
+        self._start_compass = CompassSelect(
+            0, 0, 220, DROPDOWN_ROW_HEIGHT, getattr(lane_config, "start_tile", (0, 0)),
+            on_change=lambda _v: self._sync_from_widgets(),
         )
-        self._dest_dropdown = Dropdown(
-            0, 0, 200, DROPDOWN_ROW_HEIGHT, self._node_opts, dest_idx, on_change=_dropdown_sync
+        self._end_compass = CompassSelect(
+            0, 0, 220, DROPDOWN_ROW_HEIGHT, getattr(lane_config, "end_tile", (0, 0)),
+            on_change=lambda _v: self._sync_from_widgets(),
         )
-        def _sync_and_notify(_v: int) -> None:
-            self._sync_from_widgets()
-
-        self._offset_box = NumberBox(
-            0, 0, 80, NUMBER_BOX_HEIGHT, getattr(lane_config, "offset", 0), -10, 10, 1,
-            on_change=_sync_and_notify,
-        )
-        self._remove_btn = RemoveButton(0, 0, 70, 22, on_click=self._do_remove)
+        start = self._start_compass.value
+        end = self._end_compass.value
+        if start[0] == end[0]:
+            self._end_compass.locked_axis = "x"
+        elif start[1] == end[1]:
+            self._end_compass.locked_axis = "y"
+        else:
+            self._end_compass.locked_axis = None
 
         self.widgets = [
             self._speed_slider,
             self._type_slider,
-            self._origin_dropdown,
-            self._dest_dropdown,
-            self._offset_box,
+            self._start_compass,
+            self._end_compass,
         ]
-        if self._can_remove:
-            self.widgets.append(self._remove_btn)
         self._speed_label = arcade.Text("Speed:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._type_label = arcade.Text("Type:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
-        self._origin_label = arcade.Text("Origin:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
-        self._dest_label = arcade.Text("Dest:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
-        self._offset_label = arcade.Text("Offset:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
-
-    def _step_for_node(self, val: str) -> int:
-        try:
-            return self._node_opts.index(val)
-        except (ValueError, IndexError):
-            return 0
+        self._start_label = arcade.Text("Start:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._end_label = arcade.Text("End:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._dir_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._in_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._out_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
 
     def _step_for_speed(self, val: float) -> int:
         best = 0
@@ -1191,41 +1264,40 @@ class LaneVarsDialog(Dialog):
         self._type_label.y = content_top - 12 - row * 28
         self._type_slider.rect = (control_left, content_top - 24 - row * 28, control_width, 20)
         row += 1
-        self._origin_label.x = left
-        self._origin_label.y = content_top - 12 - row * 28
-        self._origin_dropdown.rect = (control_left, content_top - 24 - row * 28, control_width, DROPDOWN_ROW_HEIGHT)
+        self._start_label.x = left
+        self._start_label.y = content_top - 12 - row * 28
+        self._start_compass.rect = (control_left, content_top - 24 - row * 28, control_width, DROPDOWN_ROW_HEIGHT)
         row += 1
-        self._dest_label.x = left
-        self._dest_label.y = content_top - 12 - row * 28
-        self._dest_dropdown.rect = (control_left, content_top - 24 - row * 28, control_width, DROPDOWN_ROW_HEIGHT)
+        self._end_label.x = left
+        self._end_label.y = content_top - 12 - row * 28
+        self._end_compass.rect = (control_left, content_top - 24 - row * 28, control_width, DROPDOWN_ROW_HEIGHT)
         row += 1
-        self._offset_label.x = left
-        self._offset_label.y = content_top - 12 - row * 28
-        self._offset_box.rect = (control_left, content_top - 24 - row * 28, 80, NUMBER_BOX_HEIGHT)
-        if self._can_remove:
-            self._remove_btn.rect = (left, content_top - 164, 70, 22)
-
-    def _do_remove(self) -> None:
-        """Remove this lane from game and call on_remove."""
-        if self._game is not None and self.lane_index in self._game.lane_configs:
-            del self._game.lane_configs[self.lane_index]
-            self._game.rebuild_world_from_config()
-        if self._on_remove:
-            self._on_remove()
+        self._dir_label.x = left
+        self._dir_label.y = content_top - 12 - row * 24
+        row += 1
+        self._in_label.x = left
+        self._in_label.y = content_top - 12 - row * 20
+        row += 1
+        self._out_label.x = left
+        self._out_label.y = content_top - 12 - row * 20
 
     def draw(self) -> None:
         self._layout_widgets()
+        direction = world.lane_direction(self.lane_index)
+        traffic_in = world.lane_traffic_in(self.lane_index) or "-"
+        traffic_out = world.lane_traffic_out(self.lane_index) or "-"
+        direction_map = {"N": "Northbound", "S": "Southbound", "E": "Eastbound", "W": "Westbound"}
+        self._dir_label.value = f"Direction: {direction_map.get(direction, '-')}"
+        self._in_label.value = f"Traffic in: {traffic_in}"
+        self._out_label.value = f"Traffic out: {traffic_out}"
         super().draw()
         self._speed_label.draw()
         self._type_label.draw()
-        self._origin_label.draw()
-        self._dest_label.draw()
-        self._offset_label.draw()
-        # Redraw open dropdowns on top so expanded list isn't obscured by controls below
-        if getattr(self._origin_dropdown, "_open", False):
-            self._origin_dropdown.draw()
-        if getattr(self._dest_dropdown, "_open", False):
-            self._dest_dropdown.draw()
+        self._start_label.draw()
+        self._end_label.draw()
+        self._dir_label.draw()
+        self._in_label.draw()
+        self._out_label.draw()
 
     def on_mouse_press(self, x: float, y: float) -> bool:
         self._layout_widgets()
@@ -1246,106 +1318,18 @@ class LaneVarsDialog(Dialog):
     def _sync_from_widgets(self) -> None:
         self._config.speed_limit = LANE_SPEED_VALUES[self._speed_slider.value]
         self._config.lane_type = LANE_TYPE_VALUES[self._type_slider.value]
-        if self._node_opts:
-            self._config.origin = self._node_opts[self._origin_dropdown.value]
-            self._config.destination = self._node_opts[self._dest_dropdown.value]
-        self._config.offset = self._offset_box.value
+        start = self._start_compass.value
+        end = self._end_compass.value
+        if start[0] == end[0]:
+            self._end_compass.locked_axis = "x"
+        elif start[1] == end[1]:
+            self._end_compass.locked_axis = "y"
+        else:
+            self._end_compass.locked_axis = None
+        self._config.start_tile = start
+        self._config.end_tile = end
         if self._on_change:
             self._on_change()
-
-
-class AddLaneDialog(Dialog):
-    """Dialog to add a new lane. Origin, destination, N-S/E-W orientation."""
-
-    def __init__(
-        self,
-        x: float,
-        y: float,
-        game,
-        on_commit: Callable[[], None] | None = None,
-    ):
-        super().__init__(x, y, 260, 210, "Add Lane")
-        self._game = game
-        self._on_commit = on_commit
-        self._node_opts = _node_options(game.place_geometry, game.intersection_configs)
-        self._error_text = arcade.Text(
-            "", 0, 0, color=(220, 100, 100), font_size=10, anchor_x="left", anchor_y="center"
-        )
-        self._ns_ew_values = ("N–S", "E–W")
-        self._orient_slider = Slider(0, 0, 160, 20, 2, 0, (100, 100, 100), (180, 180, 180))
-        self._origin_dropdown = Dropdown(0, 0, 200, DROPDOWN_ROW_HEIGHT, self._node_opts, 0)
-        self._dest_dropdown = Dropdown(0, 0, 200, DROPDOWN_ROW_HEIGHT, self._node_opts, 1)
-        self._add_btn = CommitButton(0, 0, 70, 22, on_click=self._do_add)
-        self.widgets = [
-            self._orient_slider,
-            self._origin_dropdown,
-            self._dest_dropdown,
-            self._add_btn,
-        ]
-        self._orient_label = arcade.Text("Orientation:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
-        self._origin_label = arcade.Text("Origin:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
-        self._dest_label = arcade.Text("Destination:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
-
-    def _do_add(self) -> None:
-        from sim import places
-        if not self._node_opts:
-            self._error_text.value = "No places/intersections"
-            return
-        orig = self._node_opts[self._origin_dropdown.value]
-        dest = self._node_opts[self._dest_dropdown.value]
-        if orig == dest:
-            self._error_text.value = "Origin and destination must differ"
-            return
-        if orig not in self._game.place_geometry and orig not in self._game.intersection_configs:
-            self._error_text.value = "Invalid origin"
-            return
-        if dest not in self._game.place_geometry and dest not in self._game.intersection_configs:
-            self._error_text.value = "Invalid destination"
-            return
-        self._error_text.value = ""
-        idx = self._game.next_lane_index()
-        is_ns = self._orient_slider.value == 0
-        cfg = places.LaneConfig(origin=orig, destination=dest, is_north_south=is_ns)
-        self._game.lane_configs[idx] = cfg
-        self._game.rebuild_world_from_config()
-        if self._on_commit:
-            self._on_commit()
-        self.visible = False
-
-    def _layout_widgets(self) -> None:
-        left = self.x + 12
-        control_left = left + LANEVARS_CAPTION_WIDTH + LANEVARS_GAP
-        control_width = self.width - 24 - (control_left - self.x)
-        content_top = self.y - 32
-        self._orient_label.x = left
-        self._orient_label.y = content_top - 12
-        self._orient_slider.rect = (control_left, content_top - 24, control_width, 20)
-        self._origin_label.x = left
-        self._origin_label.y = content_top - 52
-        self._origin_dropdown.rect = (control_left, content_top - 64, control_width, DROPDOWN_ROW_HEIGHT)
-        self._dest_label.x = left
-        self._dest_label.y = content_top - 92
-        self._dest_dropdown.rect = (control_left, content_top - 104, control_width, DROPDOWN_ROW_HEIGHT)
-        self._add_btn.rect = (left, content_top - 140, 70, 22)
-        self._error_text.x = left
-        self._error_text.y = content_top - 168
-
-    def draw(self) -> None:
-        self._layout_widgets()
-        self._orient_label.value = f"Orientation: {self._ns_ew_values[self._orient_slider.value]}"
-        super().draw()
-        self._orient_label.draw()
-        self._origin_label.draw()
-        self._dest_label.draw()
-        self._error_text.draw()
-        if getattr(self._origin_dropdown, "_open", False):
-            self._origin_dropdown.draw()
-        if getattr(self._dest_dropdown, "_open", False):
-            self._dest_dropdown.draw()
-
-    def on_mouse_press(self, x: float, y: float) -> bool:
-        self._layout_widgets()
-        return super().on_mouse_press(x, y)
 
 
 class CarDeetsDialog(Dialog):
@@ -1490,7 +1474,7 @@ TOOLBAR_BORDER = (80, 80, 90)
 class Toolbar:
     """
     Vertical bar on the left with square icon buttons.
-    on_press(x, y) returns "settings", "new_intersection", "new_place", "new_lane", or None.
+    on_press(x, y) returns "settings", "new_intersection", "new_place", or None.
     """
 
     def __init__(self, left: float, bottom: float, width: float = TOOLBAR_WIDTH):
@@ -1500,12 +1484,11 @@ class Toolbar:
         self._button_size = TOOLBAR_BUTTON_SIZE
         self._gap = TOOLBAR_GAP
         padding = (width - self._button_size) / 2
-        self._height = 4 * self._button_size + 3 * self._gap + 2 * padding
+        self._height = 3 * self._button_size + 2 * self._gap + 2 * padding
 
         self._settings_icon = arcade.Text("...", 0, 0, color=(220, 220, 220), font_size=16, anchor_x="center", anchor_y="center")
         self._inter_icon = arcade.Text("+", 0, 0, color=(220, 220, 220), font_size=18, anchor_x="center", anchor_y="center")
         self._place_icon = arcade.Text("P", 0, 0, color=(220, 220, 220), font_size=18, anchor_x="center", anchor_y="center")
-        self._lane_icon = arcade.Text("L", 0, 0, color=(220, 220, 220), font_size=18, anchor_x="center", anchor_y="center")
 
     def _button_rects(self) -> list[tuple[float, float, float, float, str]]:
         """Return list of (left, bottom, width, height, action) for each button."""
@@ -1515,7 +1498,6 @@ class Toolbar:
         return [
             (bx, top_btn_bottom, self._button_size, self._button_size, "new_intersection"),
             (bx, top_btn_bottom - self._button_size - self._gap, self._button_size, self._button_size, "new_place"),
-            (bx, top_btn_bottom - 2 * (self._button_size + self._gap), self._button_size, self._button_size, "new_lane"),
             (bx, self.bottom + pad, self._button_size, self._button_size, "settings"),
         ]
 
@@ -1545,9 +1527,6 @@ class Toolbar:
             elif action == "new_intersection":
                 self._inter_icon.x, self._inter_icon.y = cx, cy
                 self._inter_icon.draw()
-            elif action == "new_lane":
-                self._lane_icon.x, self._lane_icon.y = cx, cy
-                self._lane_icon.draw()
             else:
                 self._place_icon.x, self._place_icon.y = cx, cy
                 self._place_icon.draw()

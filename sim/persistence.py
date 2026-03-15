@@ -77,20 +77,24 @@ def load_config(game: "GameState", window=None) -> None:
                 game.lane_configs[idx].speed_limit = max(0.1, min(3.0, v))
             if "lane_type" in cfg and cfg["lane_type"] in places.LANE_TYPES:
                 game.lane_configs[idx].lane_type = cfg["lane_type"]
-            if "origin" in cfg and isinstance(cfg["origin"], str):
-                game.lane_configs[idx].origin = cfg["origin"]
-            if "destination" in cfg and isinstance(cfg["destination"], str):
-                game.lane_configs[idx].destination = cfg["destination"]
-            if "offset" in cfg and isinstance(cfg["offset"], (int, float)):
-                game.lane_configs[idx].offset = max(-20, min(20, int(cfg["offset"])))
-            if "is_north_south" in cfg and isinstance(cfg["is_north_south"], bool):
-                game.lane_configs[idx].is_north_south = cfg["is_north_south"]
-            if "offset" not in cfg:
-                # Migrate legacy offset_x/offset_y to perpendicular-only
-                if idx in places.LANE_IS_NORTH_SOUTH and "offset_x" in cfg and isinstance(cfg["offset_x"], (int, float)):
-                    game.lane_configs[idx].offset = max(-20, min(20, int(cfg["offset_x"])))
-                elif idx not in places.LANE_IS_NORTH_SOUTH and "offset_y" in cfg and isinstance(cfg["offset_y"], (int, float)):
-                    game.lane_configs[idx].offset = max(-20, min(20, int(cfg["offset_y"])))
+            if "start_tile" in cfg and isinstance(cfg["start_tile"], list) and len(cfg["start_tile"]) == 2:
+                sx, sy = cfg["start_tile"]
+                if isinstance(sx, (int, float)) and isinstance(sy, (int, float)):
+                    game.lane_configs[idx].start_tile = (int(sx), int(sy))
+            if "end_tile" in cfg and isinstance(cfg["end_tile"], list) and len(cfg["end_tile"]) == 2:
+                ex, ey = cfg["end_tile"]
+                if isinstance(ex, (int, float)) and isinstance(ey, (int, float)):
+                    game.lane_configs[idx].end_tile = (int(ex), int(ey))
+            if "start_tile" not in cfg or "end_tile" not in cfg:
+                # Legacy migration path: keep safe defaults from GameState initialization.
+                pass
+
+            sx, sy = game.lane_configs[idx].start_tile
+            ex, ey = game.lane_configs[idx].end_tile
+            if sx != ex and sy != ey:
+                # Orthogonality guard; keep existing safe default.
+                game.lane_configs[idx].start_tile = (0, 0)
+                game.lane_configs[idx].end_tile = (0, 0)
 
     ic = data.get("intersection_configs", {})
     for key, cfg in ic.items():
@@ -131,10 +135,8 @@ def save_config(game: "GameState", window=None) -> None:
             str(k): {
                 "speed_limit": v.speed_limit,
                 "lane_type": v.lane_type,
-                "origin": v.origin,
-                "destination": v.destination,
-                "offset": v.offset,
-                "is_north_south": v.is_north_south,
+                "start_tile": [int(v.start_tile[0]), int(v.start_tile[1])],
+                "end_tile": [int(v.end_tile[0]), int(v.end_tile[1])],
             }
             for k, v in game.lane_configs.items()
         },

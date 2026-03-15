@@ -3,7 +3,7 @@ Car movement segment logic.
 """
 from __future__ import annotations
 
-from sim import cars, places
+from sim import cars, places, world
 from sim.paths import (
     direction_index_8_from_tangent,
     lane_segment_position,
@@ -69,10 +69,11 @@ def start_lane_segment(car: cars.Car, start_time: float, speed: float, start_pos
 
 
 def start_path_segment(car: cars.Car, start_time: float, speed: float) -> bool:
-    if car.lane_index in places.HP_IN_LANE_INDICES:
-        out_lane_idx = places.HP_OUT_LANE_FOR_IN.get(car.lane_index)
+    out_cell = world.lane_traffic_out(car.lane_index)
+    if out_cell == "bypass":
+        out_lane_idx = places.out_lane_for_place(car.destination, "bypass")
     else:
-        out_lane_idx = places.OUT_LANE_BY_PLACE.get(car.destination)
+        out_lane_idx = places.out_lane_for_place(car.destination, "main")
     if out_lane_idx is None:
         return False
     car.intersection_cell = intersection_cell_for_transition(car.lane_index, out_lane_idx)
@@ -94,7 +95,7 @@ def start_segment_for_current_state(car: cars.Car, start_time: float, speed: flo
         return False
     if car.position_in_lane + 1 < len(lane):
         return start_lane_segment(car, start_time, speed, car.position_in_lane)
-    if car.lane_index in places.IN_LANE_INDICES:
+    if car.lane_index in places.in_lane_indices():
         return start_path_segment(car, start_time, speed)
     return False
 
@@ -152,7 +153,7 @@ def advance_car(car: cars.Car, current_time: float, speed: float, to_remove: lis
                     to_remove.append(car)
                     return
                 continue
-            if car.lane_index in places.IN_LANE_INDICES:
+            if car.lane_index in places.in_lane_indices():
                 if not start_path_segment(car, segment_end_time, speed):
                     to_remove.append(car)
                     return

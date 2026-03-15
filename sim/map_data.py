@@ -74,43 +74,162 @@ def _intersection_bounds(intersection: dict) -> tuple[int, int, int, int]:
     return (min(xs), max(xs) + 1, min(ys), max(ys) + 1)
 
 
-def _apply_lane_offset(
-    lanes: list[list[tuple[int, int]]],
-    lane_configs: dict[int, "LaneConfig"] | None,
-    base_index: int = 0,
-) -> list[list[tuple[int, int]]]:
-    """Apply perpendicular offset from lane_configs. N-S lanes: (offset, 0); E-W: (0, offset)."""
-    if not lane_configs:
-        return lanes
-    from sim.places import LANE_IS_NORTH_SOUTH
-    result: list[list[tuple[int, int]]] = []
-    for i, lane in enumerate(lanes):
-        cfg = lane_configs.get(base_index + i)
-        off = cfg.offset if cfg else 0
-        if off == 0:
-            result.append(lane)
-            continue
-        lane_idx = base_index + i
-        dx, dy = (off, 0) if lane_idx in LANE_IS_NORTH_SOUTH else (0, off)
-        result.append([(x + dx, y + dy) for x, y in lane])
-    return result
+def build_lane_cells(start: tuple[int, int], end: tuple[int, int]) -> list[tuple[int, int]]:
+    """Return all cells from start to end inclusive when orthogonal, else empty."""
+    sx, sy = start
+    ex, ey = end
+    if sx == ex and sy == ey:
+        return [(sx, sy)]
+    if sx == ex:
+        step = 1 if ey >= sy else -1
+        return [(sx, y) for y in range(sy, ey + step, step)]
+    if sy == ey:
+        step = 1 if ex >= sx else -1
+        return [(x, sy) for x in range(sx, ex + step, step)]
+    return []
 
 
-# Canonical (origin, destination) for each lane index. Used to derive direction and validate config.
-LANE_ROUTES: list[tuple[str, str]] = [
-    ("Housing", "main"),
-    ("main", "Office"),
-    ("Office", "main"),
-    ("main", "Housing"),
-    ("Park", "main"),
-    ("main", "Park"),
-    ("Shopping", "main"),
-    ("main", "Shopping"),
-    ("Housing", "bypass"),
-    ("bypass", "Park"),
-    ("Park", "bypass"),
-    ("bypass", "Housing"),
-]
+def _direction_from_tiles(start: tuple[int, int], end: tuple[int, int]) -> str:
+    sx, sy = start
+    ex, ey = end
+    if sx == ex:
+        if ey > sy:
+            return "N"
+        if ey < sy:
+            return "S"
+    if sy == ey:
+        if ex > sx:
+            return "E"
+        if ex < sx:
+            return "W"
+    return ""
+
+
+def _offset_for_direction(direction: str) -> tuple[int, int]:
+    if direction == "N":
+        return (0, 1)
+    if direction == "S":
+        return (0, -1)
+    if direction == "E":
+        return (1, 0)
+    if direction == "W":
+        return (-1, 0)
+    return (0, 0)
+
+
+def object_at_cell(
+    gx: int,
+    gy: int,
+    place_rects: dict[str, dict],
+    main_intersection: dict,
+    hp_intersection: dict,
+    extra_intersection_bounds: dict[str, tuple[int, int, int, int]] | None = None,
+) -> str | None:
+    """Return place name / intersection key if this cell belongs to one, else None."""
+    for name, rect in place_rects.items():
+        x = int(rect.get("x", 0))
+        y = int(rect.get("y", 0))
+        w = int(rect.get("w", 0))
+        h = int(rect.get("h", 0))
+        if x <= gx < x + w and y <= gy < y + h:
+            return name
+    if (gx, gy) in set(main_intersection.get("cells", [])):
+        return "main"
+    if (gx, gy) in set(hp_intersection.get("cells", [])):
+        return "bypass"
+    if extra_intersection_bounds:
+        for key, (x_lo, x_hi, y_lo, y_hi) in extra_intersection_bounds.items():
+            if key in ("main", "bypass"):
+                continue
+            if x_lo <= gx < x_hi and y_lo <= gy < y_hi:
+                return key
+    return None
+
+
+def derive_traffic(
+    lane_idx: int,
+    start: tuple[int, int],
+    end: tuple[int, int],
+    place_rects: dict[str, dict],
+    main_intersection: dict,
+    hp_intersection: dict,
+    extra_intersection_bounds: dict[str, tuple[int, int, int, int]] | None = None,
+) -> tuple[str, str, str]:
+    """Return (direction, traffic_in, traffic_out) derived from endpoints and adjacency."""
+    direction = _direction_from_tiles(start, end)
+    if not direction:
+        return ("", "", "")
+    dx, dy = _offset_for_direction(direction)
+    sx, sy = start
+    ex, ey = end
+    in_cell = (sx - dx, sy - dy)
+    out_cell = (ex + dx, ey + dy)
+    traffic_in = object_at_cell(in_cell[0], in_cell[1], place_rects, main_intersection, hp_intersection, extra_intersection_bounds) or ""
+    traffic_out = object_at_cell(out_cell[0], out_cell[1], place_rects, main_intersection, hp_intersection, extra_intersection_bounds) or ""
+    return (direction, traffic_in, traffic_out)
+
+
+def _build_hp_intersection(bypass_center: tuple[float, float], size: int) -> dict:
+    hp_x_lo, hp_x_hi, hp_y_lo, hp_y_hi = bounds_from_center(bypass_center[0], bypass_center[1], size)
+    hp_cells = [(x, y) for x in range(hp_x_lo, hp_x_hi) for y in range(hp_y_lo, hp_y_hi)]
+    cx = (hp_x_lo + hp_x_hi - 1) / 2
+    hp_slots = [(int(cx), hp_y_lo), (int(cx), hp_y_hi - 1)]
+    return {
+        "x_lo": hp_x_lo,
+        "x_hi": hp_x_hi,
+        "y_lo": hp_y_lo,
+        "y_hi": hp_y_hi,
+        "cells": hp_cells,
+        "slots": hp_slots,
+    }
+
+
+def derive_default_start_end(
+    lane_idx: int,
+    place_rects: dict[str, dict],
+    main_intersection: dict,
+    hp_intersection: dict,
+) -> tuple[tuple[int, int], tuple[int, int]]:
+    """Derive the default start/end endpoints from legacy base-lane geometry."""
+    x_lo, x_hi, y_lo, y_hi = _intersection_bounds(main_intersection)
+    ns_x_lo, ns_x_hi = _centered_tracks(x_lo, x_hi)
+    ew_y_lo, ew_y_hi = _centered_tracks(y_lo, y_hi)
+
+    def rect(place: str) -> tuple[int, int, int, int]:
+        r = place_rects.get(place, {})
+        return (int(r.get("x", 0)), int(r.get("y", 0)), int(r.get("w", 0)), int(r.get("h", 0)))
+
+    hx, hy, hw, hh = rect("Housing")
+    ox, oy, ow, oh = rect("Office")
+    px, py, pw, ph = rect("Park")
+    sx, sy, sw, sh = rect("Shopping")
+    h_north = hy + hh
+    o_south = oy - 1
+    p_west = px - 1
+    s_east = sx + sw
+
+    hp_x_lo, hp_x_hi, hp_y_lo, hp_y_hi = _intersection_bounds(hp_intersection)
+    hp_ns_x_lo, hp_ns_x_hi = _centered_tracks(hp_x_lo, hp_x_hi)
+    hp_ew_y_lo, hp_ew_y_hi = _centered_tracks(hp_y_lo, hp_y_hi)
+    p_south = py - 1
+
+    defaults: list[tuple[tuple[int, int], tuple[int, int]]] = [
+        ((ns_x_hi, h_north), (ns_x_hi, y_lo - 1)),
+        ((ns_x_hi, y_hi), (ns_x_hi, o_south)),
+        ((ns_x_lo, o_south), (ns_x_lo, y_hi)),
+        ((ns_x_lo, y_lo - 1), (ns_x_lo, h_north)),
+        ((p_west, ew_y_hi), (x_hi, ew_y_hi)),
+        ((x_hi, ew_y_lo), (p_west, ew_y_lo)),
+        ((s_east, ew_y_lo), (x_lo - 1, ew_y_lo)),
+        ((x_lo - 1, ew_y_hi), (s_east, ew_y_hi)),
+        ((h_east := hx + hw, hp_ew_y_lo), (hp_x_lo - 1, hp_ew_y_lo)),
+        ((hp_ns_x_hi, hp_y_hi), (hp_ns_x_hi, p_south)),
+        ((hp_ns_x_lo, p_south), (hp_ns_x_lo, hp_y_hi)),
+        ((hp_x_lo - 1, hp_ew_y_hi), (h_east, hp_ew_y_hi)),
+    ]
+    if 0 <= lane_idx < len(defaults):
+        return defaults[lane_idx]
+    return ((0, 0), (0, 0))
 
 
 def build_lanes_from_config(
@@ -119,195 +238,44 @@ def build_lanes_from_config(
     bypass_center: tuple[float, float],
     bypass_size: int,
     lane_configs: dict[int, "LaneConfig"],
-    intersection_bounds: dict[str, tuple[int, int, int, int]] | None = None,
-) -> tuple[list[list[tuple[int, int]]], dict]:
-    """
-    Build all lanes from place_rects and intersection geometry. Geometry is derived from
-    lane configs' origin/destination; direction and natural center come from those.
-    Falls back to canonical routes for indices 0-11 when config origin/dest invalid.
-    For lane_configs keys > 11, builds geometry-only lanes via build_lane_from_endpoints.
-    Returns (lanes, hp_intersection).
-    """
-    main_lanes, grid_w, grid_h = build_lanes_from_positions(
-        main_intersection, place_rects, lane_configs=lane_configs
-    )
-    hp_lanes, hp_intersection = build_housing_park_route(
-        place_rects, bypass_center, size=bypass_size, lane_configs=lane_configs
-    )
-    lanes = main_lanes + hp_lanes
-
-    ib = intersection_bounds or {}
-    for idx in sorted(k for k in lane_configs if k > 11):
-        cfg = lane_configs[idx]
-        cells = build_lane_from_endpoints(
-            cfg.origin, cfg.destination, cfg.is_north_south, place_rects, ib
-        )
-        if cells:
-            lanes.append(cells)
-
-    return lanes, hp_intersection
-
-
-def build_lanes_from_positions(
-    intersection: dict,
-    place_rects: dict[str, dict],
-    lane_configs: dict[int, "LaneConfig"] | None = None,
-) -> tuple[list[list[tuple[int, int]]], int, int]:
-    """
-    Derive lane cells and grid size from intersection and place positions.
-    Lanes connect each place's road edge to the intersection approach edge.
-    When lane_configs is provided, applies perpendicular offset to each lane.
-    Returns (lanes, grid_w, grid_h).
-    """
-    x_lo, x_hi, y_lo, y_hi = _intersection_bounds(intersection)
-    ns_x_lo, ns_x_hi = _centered_tracks(x_lo, x_hi)
-    ew_y_lo, ew_y_hi = _centered_tracks(y_lo, y_hi)
-
-    def rect(place: str) -> tuple[int, int, int, int]:
-        r = place_rects.get(place, {})
-        return (
-            int(r.get("x", 0)),
-            int(r.get("y", 0)),
-            int(r.get("w", 0)),
-            int(r.get("h", 0)),
-        )
-
+    extra_intersection_bounds: dict[str, tuple[int, int, int, int]] | None = None,
+) -> tuple[list[list[tuple[int, int]]], dict, list[tuple[str, str, str]]]:
+    """Build base lanes from explicit start/end tiles. Returns (lanes, hp_intersection, lane_meta)."""
+    hp_intersection = _build_hp_intersection(bypass_center, bypass_size)
     lanes: list[list[tuple[int, int]]] = []
-
-    # Housing (S): lane 0 in (place→inter), lane 3 out (inter→place)
-    hx, hy, hw, hh = rect("Housing")
-    h_north = hy + hh  # north edge of rect
-    # Lane 0: (nx, h_north) to (nx, y_lo - 1), increasing y
-    lane0 = [(ns_x_hi, y) for y in range(h_north, y_lo)]
-    lanes.append(lane0 if lane0 else [(ns_x_hi, h_north)])
-    # Lane 1: Office outbound (inter→place, northbound)
-    ox, oy, ow, oh = rect("Office")
-    o_south = oy - 1  # south edge (row just south of rect)
-    lane1 = [(ns_x_hi, y) for y in range(y_hi, o_south + 1)]
-    lanes.append(lane1 if lane1 else [(ns_x_hi, y_hi)])
-    # Lane 2: Office inbound (place→inter, southbound)
-    lane2 = [(ns_x_lo, y) for y in range(o_south, y_hi - 1, -1)]
-    lanes.append(lane2 if lane2 else [(ns_x_lo, o_south)])
-    # Lane 3: Housing outbound (inter→place, southbound)
-    lane3 = [(ns_x_lo, y) for y in range(y_lo - 1, h_north - 1, -1)]
-    lanes.append(lane3 if lane3 else [(ns_x_lo, y_lo - 1)])
-
-    # Park (E): lane 4 in, lane 5 out
-    px, py, pw, ph = rect("Park")
-    p_west = px - 1  # west edge
-    # Lane 4: (p_west, py) to (x_hi, py), decreasing x
-    lane4 = [(x, ew_y_hi) for x in range(p_west, x_hi - 1, -1)]
-    lanes.append(lane4 if lane4 else [(p_west, ew_y_hi)])
-    # Lane 5: (x_hi, py) to (p_west, py), increasing x
-    lane5 = [(x, ew_y_lo) for x in range(x_hi, p_west + 1)]
-    lanes.append(lane5 if lane5 else [(x_hi, ew_y_lo)])
-
-    # Shopping (W): lane 6 in, lane 7 out
-    sx, sy, sw, sh = rect("Shopping")
-    s_east = sx + sw  # east edge
-    # Lane 6: (s_east, py) to (x_lo - 1, py), increasing x
-    lane6 = [(x, ew_y_lo) for x in range(s_east, x_lo)]
-    lanes.append(lane6 if lane6 else [(s_east, ew_y_lo)])
-    # Lane 7: (x_lo - 1, py) to (s_east, py), decreasing x
-    lane7 = [(x, ew_y_hi) for x in range(x_lo - 1, s_east - 1, -1)]
-    lanes.append(lane7 if lane7 else [(x_lo - 1, ew_y_hi)])
-
-    # Grid size: bounding box of all geometry
-    all_x: list[int] = []
-    all_y: list[int] = []
-    for lane in lanes:
-        for cx, cy in lane:
-            all_x.append(cx)
-            all_y.append(cy)
-    for r in place_rects.values():
-        rx, ry = int(r.get("x", 0)), int(r.get("y", 0))
-        rw, rh = int(r.get("w", 0)), int(r.get("h", 0))
-        all_x.extend([rx, rx + rw])
-        all_y.extend([ry, ry + rh])
-    all_x.extend([x_lo, x_hi - 1])
-    all_y.extend([y_lo, y_hi - 1])
-    grid_w = max(all_x) + 1 if all_x else 32
-    grid_h = max(all_y) + 1 if all_y else 36
-
-    lanes = _apply_lane_offset(lanes, lane_configs, base_index=0)
-    return (lanes, grid_w, grid_h)
+    lane_meta: list[tuple[str, str, str]] = []
+    for lane_idx in range(12):
+        cfg = lane_configs.get(lane_idx)
+        if cfg is None:
+            start, end = derive_default_start_end(lane_idx, place_rects, main_intersection, hp_intersection)
+        else:
+            start = tuple(int(v) for v in cfg.start_tile)
+            end = tuple(int(v) for v in cfg.end_tile)
+            if not build_lane_cells(start, end):
+                start, end = derive_default_start_end(lane_idx, place_rects, main_intersection, hp_intersection)
+                cfg.start_tile = start
+                cfg.end_tile = end
+        cells = build_lane_cells(start, end)
+        if not cells:
+            start, end = derive_default_start_end(lane_idx, place_rects, main_intersection, hp_intersection)
+            cells = build_lane_cells(start, end)
+        lanes.append(cells)
+        lane_meta.append(
+            derive_traffic(
+                lane_idx,
+                start,
+                end,
+                place_rects,
+                main_intersection,
+                hp_intersection,
+                extra_intersection_bounds,
+            )
+        )
+    return lanes, hp_intersection, lane_meta
 
 
-# Main intersection center (fixed). Used when rebuilding with different sizes.
-# Map scaled 2x: default layout doubled.
+# Main intersection center (fixed). Map scaled 2x: default layout doubled.
 DEFAULT_MAIN_CENTER = (36, 48)
-
-
-def _bounds_for_node(
-    node_key: str,
-    place_rects: dict[str, dict],
-    intersection_bounds: dict[str, tuple[int, int, int, int]],
-) -> tuple[int, int, int, int] | None:
-    """Return (x_lo, x_hi, y_lo, y_hi) for a place (from rect) or intersection. None if not found."""
-    if node_key in place_rects:
-        r = place_rects[node_key]
-        x = int(r.get("x", 0))
-        y = int(r.get("y", 0))
-        w = int(r.get("w", 0))
-        h = int(r.get("h", 0))
-        if w <= 0 or h <= 0:
-            return None
-        return (x, x + w, y, y + h)
-    if node_key in intersection_bounds:
-        return intersection_bounds[node_key]
-    return None
-
-
-def build_lane_from_endpoints(
-    origin: str,
-    destination: str,
-    is_north_south: bool,
-    place_rects: dict[str, dict],
-    intersection_bounds: dict[str, tuple[int, int, int, int]],
-) -> list[tuple[int, int]] | None:
-    """
-    Build lane cells from origin and destination nodes. Center from line between nodes;
-    length from edge-to-edge span along the chosen axis. Returns list of (x,y) cells or None.
-    """
-    ob = _bounds_for_node(origin, place_rects, intersection_bounds)
-    db = _bounds_for_node(destination, place_rects, intersection_bounds)
-    if ob is None or db is None:
-        return None
-
-    ox_lo, ox_hi, oy_lo, oy_hi = ob
-    dx_lo, dx_hi, dy_lo, dy_hi = db
-
-    orig_cx = (ox_lo + ox_hi - 1) / 2
-    orig_cy = (oy_lo + oy_hi - 1) / 2
-    dest_cx = (dx_lo + dx_hi - 1) / 2
-    dest_cy = (dy_lo + dy_hi - 1) / 2
-
-    if is_north_south:
-        lane_x = round((orig_cx + dest_cx) / 2)
-        if dest_cy > orig_cy:
-            y_start = oy_hi
-            y_end = dy_lo
-        else:
-            y_start = dy_hi
-            y_end = oy_lo
-        y_lo = min(y_start, y_end)
-        y_hi = max(y_start, y_end)
-        # Exclusive end: lane runs in the gap, not including the destination entity's edge (matches core lanes)
-        cells = [(lane_x, y) for y in range(y_lo, y_hi)]
-        return cells if cells else [(lane_x, y_lo)]
-    else:
-        lane_y = round((orig_cy + dest_cy) / 2)
-        if dest_cx > orig_cx:
-            x_start = ox_hi
-            x_end = dx_lo
-        else:
-            x_start = dx_hi
-            x_end = ox_lo
-        x_lo = min(x_start, x_end)
-        x_hi = max(x_start, x_end)
-        # Exclusive end: lane runs in the gap, not including the destination entity's edge
-        cells = [(x, lane_y) for x in range(x_lo, x_hi)]
-        return cells if cells else [(x_lo, lane_y)]
 
 
 def bounds_from_center(center_x: float, center_y: float, size: int) -> tuple[int, int, int, int]:
@@ -319,7 +287,7 @@ def bounds_from_center(center_x: float, center_y: float, size: int) -> tuple[int
 
 
 def intersection_dict_from_bounds(x_lo: int, x_hi: int, y_lo: int, y_hi: int) -> dict:
-    """Build intersection dict for build_lanes_from_positions. Includes cells and slots."""
+    """Build intersection dict including cells and lane-transition slots."""
     cells = [(x, y) for x in range(x_lo, x_hi) for y in range(y_lo, y_hi)]
     cx = (x_lo + x_hi - 1) / 2
     cy = (y_lo + y_hi - 1) / 2
@@ -359,59 +327,7 @@ def get_bypass_intersection_center(place_rects: dict[str, dict]) -> tuple[float,
     return (float(p_south_center_x), float(h_east_center_y))
 
 
-def build_housing_park_route(
-    place_rects: dict[str, dict],
-    bypass_center: tuple[float, float],
-    size: int = 4,
-    lane_configs: dict[int, "LaneConfig"] | None = None,
-) -> tuple[list[list[tuple[int, int]]], dict]:
-    """
-    Build Housing–Park direct route from place positions and explicit bypass center.
-    Junction at bypass_center; lane tracks connect to Housing and Park rects. RHT alignment.
-    When lane_configs is provided, applies perpendicular offset to lanes 8-11.
-    Returns (hp_lanes, hp_intersection).
-    """
-    def rect(place: str) -> tuple[int, int, int, int]:
-        r = place_rects.get(place, {})
-        return (
-            int(r.get("x", 0)), int(r.get("y", 0)),
-            int(r.get("w", 0)), int(r.get("h", 0)),
-        )
-
-    hx, hy, hw, hh = rect("Housing")
-    px, py, pw, ph = rect("Park")
-
-    h_east = hx + hw
-    p_south = py - 1
-
-    center_x, center_y = bypass_center
-    hp_x_lo, hp_x_hi, hp_y_lo, hp_y_hi = bounds_from_center(center_x, center_y, size)
-
-    hp_cells = [(x, y) for x in range(hp_x_lo, hp_x_hi) for y in range(hp_y_lo, hp_y_hi)]
-    cx = (hp_x_lo + hp_x_hi - 1) / 2
-    hp_slots = [(int(cx), hp_y_lo), (int(cx), hp_y_hi - 1)]
-    hp_intersection = {"cells": hp_cells, "slots": hp_slots}
-
-    hp_ns_x_lo, hp_ns_x_hi = _centered_tracks(hp_x_lo, hp_x_hi)
-    hp_ew_y_lo, hp_ew_y_hi = _centered_tracks(hp_y_lo, hp_y_hi)
-
-    # E–W arm (Housing): RHT = eastbound on right (south/lower y)
-    lane8 = [(x, hp_ew_y_lo) for x in range(h_east, hp_x_lo)]
-    lane11 = [(x, hp_ew_y_hi) for x in range(hp_x_lo - 1, h_east - 1, -1)]
-
-    # N–S arm (Park): RHT = northbound on right (east/higher x)
-    # Extend to p_south (row just south of Park) so road connects to Park edge
-    park_approach_y = p_south
-    lane9 = [(hp_ns_x_hi, y) for y in range(hp_y_hi, park_approach_y + 1)]
-    lane10 = [(hp_ns_x_lo, y) for y in range(park_approach_y, hp_y_hi - 1, -1)]
-
-    hp_lanes = [lane8, lane9, lane10, lane11]
-    hp_lanes = _apply_lane_offset(hp_lanes, lane_configs, base_index=8)
-    return (hp_lanes, hp_intersection)
-
-
 def _default_map() -> dict:
-    # Intersection and place positions are the source of truth; lanes are derived.
     intersection_size = 4
 
     main_cx, main_cy = get_main_intersection_center()
@@ -426,13 +342,12 @@ def _default_map() -> dict:
         "Shopping": {"x": 0, "y": 44, "w": 5, "h": 5},
     }
 
-    lanes, grid_w, grid_h = build_lanes_from_positions(intersection, place_rects)
     bypass_center = get_bypass_intersection_center(place_rects)
-    hp_lanes, hp_intersection = build_housing_park_route(place_rects, bypass_center)
-    lanes = lanes + hp_lanes
-
-    # Extend grid to include HP route
-    for lane in hp_lanes:
+    lanes, hp_intersection, _lane_meta = build_lanes_from_config(
+        place_rects, intersection, bypass_center, 4, {}
+    )
+    grid_w, grid_h = 32, 36
+    for lane in lanes:
         for cx, cy in lane:
             grid_w = max(grid_w, cx + 1)
             grid_h = max(grid_h, cy + 1)
@@ -468,12 +383,17 @@ def load_map_data() -> dict:
     merged["hp_intersection"] = merged.get("hp_intersection") or default.get("hp_intersection", {})
     merged["place_rects"] = {**default["place_rects"], **loaded.get("place_rects", {})}
     if "lanes" not in loaded:
-        lanes, grid_w, grid_h = build_lanes_from_positions(merged["intersection"], merged["place_rects"])
-        bypass_center = get_bypass_intersection_center(merged["place_rects"])
-        hp_lanes, hp_intersection = build_housing_park_route(merged["place_rects"], bypass_center)
-        merged["lanes"] = lanes + hp_lanes
+        place_rects = merged["place_rects"]
+        intersection = merged["intersection"]
+        bypass_center = get_bypass_intersection_center(place_rects)
+        lanes, hp_intersection, _lane_meta = build_lanes_from_config(
+            place_rects, intersection, bypass_center, 4, {}
+        )
+        merged["lanes"] = lanes
         merged["hp_intersection"] = hp_intersection
-        for lane in hp_lanes:
+
+        grid_w, grid_h = 32, 36
+        for lane in lanes:
             for cx, cy in lane:
                 grid_w = max(grid_w, cx + 1)
                 grid_h = max(grid_h, cy + 1)
