@@ -1207,20 +1207,13 @@ class LaneVarsDialog(Dialog):
         self._type_slider = Slider(0, 0, 220, 20, len(LANE_TYPE_VALUES), type_step, (100, 100, 100), (180, 180, 180))
         self._start_compass = CompassSelect(
             0, 0, 220, DROPDOWN_ROW_HEIGHT, getattr(lane_config, "start_tile", (0, 0)),
-            on_change=lambda _v: self._sync_from_widgets(),
+            on_change=self._on_start_change,
         )
         self._end_compass = CompassSelect(
             0, 0, 220, DROPDOWN_ROW_HEIGHT, getattr(lane_config, "end_tile", (0, 0)),
             on_change=lambda _v: self._sync_from_widgets(),
         )
-        start = self._start_compass.value
-        end = self._end_compass.value
-        if start[0] == end[0]:
-            self._end_compass.locked_axis = "x"
-        elif start[1] == end[1]:
-            self._end_compass.locked_axis = "y"
-        else:
-            self._end_compass.locked_axis = None
+        self._update_locked_axes()
 
         self.widgets = [
             self._speed_slider,
@@ -1235,6 +1228,39 @@ class LaneVarsDialog(Dialog):
         self._dir_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._in_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._out_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+
+    def _update_locked_axes(self) -> None:
+        """End moves only along the lane (parallel). Start has full movement."""
+        start = self._start_compass.value
+        end = self._end_compass.value
+        self._start_compass.locked_axis = None  # Start: full movement
+        if start[0] == end[0]:
+            # N-S lane: End moves N/S only (along lane)
+            self._end_compass.locked_axis = "x"  # grey out E/W
+        elif start[1] == end[1]:
+            # E-W lane: End moves E/W only (along lane)
+            self._end_compass.locked_axis = "y"  # grey out N/S
+        else:
+            self._end_compass.locked_axis = None
+
+    def _on_start_change(self, new_start: tuple[int, int]) -> None:
+        """When Start moves perpendicular, also move End by the same delta to keep lane collinear."""
+        old_start = self._config.start_tile
+        delta = (new_start[0] - old_start[0], new_start[1] - old_start[1])
+        if delta == (0, 0):
+            self._sync_from_widgets()
+            return
+        # Only apply delta to End when it was a perpendicular move
+        old_end = self._end_compass.value
+        if old_start[0] == old_end[0]:
+            # N-S lane: perpendicular = change in X
+            if delta[0] != 0:
+                self._end_compass.set_value((old_end[0] + delta[0], old_end[1]))
+        elif old_start[1] == old_end[1]:
+            # E-W lane: perpendicular = change in Y
+            if delta[1] != 0:
+                self._end_compass.set_value((old_end[0], old_end[1] + delta[1]))
+        self._sync_from_widgets()
 
     def _step_for_speed(self, val: float) -> int:
         best = 0
@@ -1320,12 +1346,7 @@ class LaneVarsDialog(Dialog):
         self._config.lane_type = LANE_TYPE_VALUES[self._type_slider.value]
         start = self._start_compass.value
         end = self._end_compass.value
-        if start[0] == end[0]:
-            self._end_compass.locked_axis = "x"
-        elif start[1] == end[1]:
-            self._end_compass.locked_axis = "y"
-        else:
-            self._end_compass.locked_axis = None
+        self._update_locked_axes()
         self._config.start_tile = start
         self._config.end_tile = end
         if self._on_change:
