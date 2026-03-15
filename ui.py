@@ -255,6 +255,11 @@ class Dialog:
     def set_on_close(self, cb: callable) -> None:
         self._on_close = cb
 
+    def clamp_to_window(self, window_w: float, window_h: float, margin: float = 8) -> None:
+        """Adjust x, y so the entire dialog stays within window bounds with optional margin."""
+        self.x = max(margin, min(window_w - self.width - margin, self.x))
+        self.y = max(self.height + margin, min(window_h - margin, self.y))
+
     def _bottom(self) -> float:
         return self.y - self.height
 
@@ -351,9 +356,10 @@ class Dialog:
 class DialogManager:
     """Manages open dialogs: z-order, input routing, draw."""
 
-    def __init__(self):
+    def __init__(self, get_window_size: Callable[[], tuple[float, float]] | None = None):
         self._dialogs: list[Dialog] = []
         self._focused_widget: NumberBox | None = None
+        self._get_window_size = get_window_size
 
     def set_focused_widget(self, widget: NumberBox | None) -> None:
         if self._focused_widget is not None and hasattr(self._focused_widget, "set_focus"):
@@ -370,6 +376,9 @@ class DialogManager:
             self._dialogs.remove(dialog)
         self._dialogs.append(dialog)
         dialog.set_dialog_manager(self)
+        if self._get_window_size is not None:
+            w, h = self._get_window_size()
+            dialog.clamp_to_window(w, h)
         dialog.visible = True
 
     def close(self, dialog: Dialog) -> None:

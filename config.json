@@ -76,7 +76,7 @@
     },
     "bypass": {
       "intersection_type": "corner",
-      "size_cells": 4,
+      "size_cells": 12,
       "center_x": 50,
       "center_y": 20
     }

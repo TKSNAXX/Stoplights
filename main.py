@@ -94,11 +94,11 @@ class StoplightsWindow(arcade.Window):
         self._draw_ms_ema = 0.0
         self._show_visibility_fans = False
 
-        self._dialog_manager = DialogManager()
+        self._dialog_manager = DialogManager(get_window_size=lambda: (self.width, self.height))
         self._place_dialogs: dict[str, PlaceVarsDialog] = {}
         self._lane_dialogs: dict[int, LaneVarsDialog] = {}
         self._intersection_dialogs: dict[str, IntersectionVarsDialog] = {}
-        self._toolbar = Toolbar(TOOLBAR_LEFT, self.height - 110)
+        self._toolbar = Toolbar(TOOLBAR_LEFT, self.height - 180)
 
         self._cam_x = 0.0
         self._cam_y = 0.0
@@ -399,7 +399,7 @@ class StoplightsWindow(arcade.Window):
 
     def on_resize(self, width: int, height: int) -> None:
         super().on_resize(width, height)
-        self._toolbar.bottom = self.height - 110
+        self._toolbar.bottom = self.height - 180
         self._update_zoom_scale()
         if self._car_sprite_pool is not None:
             self._car_sprite_pool.set_zoom_scale(self._zoom_scale)
