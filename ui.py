@@ -1111,6 +1111,12 @@ class Switch:
         self.value = not self.value
         return self.value
 
+    def on_press(self, x: float, y: float) -> bool:
+        if not self.contains(x, y):
+            return False
+        self.toggle()
+        return True
+
     def draw(self) -> None:
         left, bottom, width, height = self.rect
         color = self.thumb_color if self.value else self.bar_color
@@ -1125,6 +1131,43 @@ class Switch:
             self._text_off.draw()
 
 
+class SettingsDialog(Dialog):
+    """Dialog for global settings. Edge pan toggle."""
+
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        edge_pan_enabled: bool,
+        on_edge_pan_change: Callable[[bool], None] | None = None,
+    ):
+        super().__init__(x, y, 220, 90, "Settings")
+        self._on_edge_pan_change = on_edge_pan_change
+        self._switch = Switch(0, 0, 50, 24, initial_value=edge_pan_enabled)
+        self._label = arcade.Text("Edge pan", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self.widgets = [self._switch]
+
+    def _layout_widgets(self) -> None:
+        left = self.x + 12
+        content_top = self.y - 32
+        label_w = 60
+        self._label.x = left
+        self._label.y = content_top - 12
+        self._switch.rect = (left + label_w, content_top - 24, 50, 24)
+
+    def draw(self) -> None:
+        self._layout_widgets()
+        super().draw()
+        self._label.draw()
+
+    def on_mouse_press(self, x: float, y: float) -> bool:
+        self._layout_widgets()
+        result = super().on_mouse_press(x, y)
+        if self._switch.contains(x, y) and self._on_edge_pan_change:
+            self._on_edge_pan_change(self._switch.value)
+        return result
+
+
 TOOLBAR_LEFT = 8
 TOOLBAR_WIDTH = 44
 TOOLBAR_BUTTON_SIZE = 36
@@ -1136,7 +1179,7 @@ TOOLBAR_BORDER = (80, 80, 90)
 class Toolbar:
     """
     Vertical bar on the left with square icon buttons.
-    on_press(x, y) returns "new_intersection", "new_place", or None.
+    on_press(x, y) returns "settings", "new_intersection", "new_place", or None.
     """
 
     def __init__(self, left: float, bottom: float, width: float = TOOLBAR_WIDTH):
@@ -1146,8 +1189,9 @@ class Toolbar:
         self._button_size = TOOLBAR_BUTTON_SIZE
         self._gap = TOOLBAR_GAP
         padding = (width - self._button_size) / 2
-        self._height = 2 * self._button_size + self._gap + 2 * padding
+        self._height = 3 * self._button_size + 2 * self._gap + 2 * padding
 
+        self._settings_icon = arcade.Text("...", 0, 0, color=(220, 220, 220), font_size=16, anchor_x="center", anchor_y="center")
         self._inter_icon = arcade.Text("+", 0, 0, color=(220, 220, 220), font_size=18, anchor_x="center", anchor_y="center")
         self._place_icon = arcade.Text("P", 0, 0, color=(220, 220, 220), font_size=18, anchor_x="center", anchor_y="center")
 
@@ -1156,10 +1200,12 @@ class Toolbar:
         pad = (self.width - self._button_size) / 2
         bx = self.left + pad
         top_btn_bottom = self.bottom + self._height - self._button_size - pad
+        mid_btn_bottom = top_btn_bottom - self._button_size - self._gap
         bot_btn_bottom = self.bottom + pad
         return [
             (bx, top_btn_bottom, self._button_size, self._button_size, "new_intersection"),
-            (bx, bot_btn_bottom, self._button_size, self._button_size, "new_place"),
+            (bx, mid_btn_bottom, self._button_size, self._button_size, "new_place"),
+            (bx, bot_btn_bottom, self._button_size, self._button_size, "settings"),
         ]
 
     def contains(self, x: float, y: float) -> bool:
@@ -1182,7 +1228,10 @@ class Toolbar:
             rect_outline(l, b, w, h, (100, 100, 110), 1)
             cx = l + w / 2
             cy = b + h / 2
-            if action == "new_intersection":
+            if action == "settings":
+                self._settings_icon.x, self._settings_icon.y = cx, cy
+                self._settings_icon.draw()
+            elif action == "new_intersection":
                 self._inter_icon.x, self._inter_icon.y = cx, cy
                 self._inter_icon.draw()
             else:
