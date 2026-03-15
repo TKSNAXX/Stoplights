@@ -65,6 +65,14 @@ def load_config(game: "GameState") -> None:
                 game.lane_configs[idx].speed_limit = max(0.1, min(3.0, v))
             if "lane_type" in cfg and cfg["lane_type"] in places.LANE_TYPES:
                 game.lane_configs[idx].lane_type = cfg["lane_type"]
+            if "origin" in cfg and isinstance(cfg["origin"], str):
+                game.lane_configs[idx].origin = cfg["origin"]
+            if "destination" in cfg and isinstance(cfg["destination"], str):
+                game.lane_configs[idx].destination = cfg["destination"]
+            if "offset_x" in cfg and isinstance(cfg["offset_x"], (int, float)):
+                game.lane_configs[idx].offset_x = max(-20, min(20, int(cfg["offset_x"])))
+            if "offset_y" in cfg and isinstance(cfg["offset_y"], (int, float)):
+                game.lane_configs[idx].offset_y = max(-20, min(20, int(cfg["offset_y"])))
 
     ic = data.get("intersection_configs", {})
     for key, cfg in ic.items():
@@ -101,7 +109,14 @@ def save_config(game: "GameState") -> None:
             for k, v in game.place_configs.items()
         },
         "lane_configs": {
-            str(k): {"speed_limit": v.speed_limit, "lane_type": v.lane_type}
+            str(k): {
+                "speed_limit": v.speed_limit,
+                "lane_type": v.lane_type,
+                "origin": v.origin,
+                "destination": v.destination,
+                "offset_x": v.offset_x,
+                "offset_y": v.offset_y,
+            }
             for k, v in game.lane_configs.items()
         },
         "intersection_configs": {

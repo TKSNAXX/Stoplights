@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from sim.places import PlaceGeometry
+    from sim.places import LaneConfig, PlaceGeometry
 
 
 def geometry_from_place_rects(place_rects: dict[str, dict]) -> dict[str, "PlaceGeometry"]:
@@ -74,13 +74,74 @@ def _intersection_bounds(intersection: dict) -> tuple[int, int, int, int]:
     return (min(xs), max(xs) + 1, min(ys), max(ys) + 1)
 
 
+def _apply_lane_offset(
+    lanes: list[list[tuple[int, int]]],
+    lane_configs: dict[int, "LaneConfig"] | None,
+    base_index: int = 0,
+) -> list[list[tuple[int, int]]]:
+    """Apply offset_x, offset_y from lane_configs to each lane's cells. base_index added to lane index."""
+    if not lane_configs:
+        return lanes
+    result: list[list[tuple[int, int]]] = []
+    for i, lane in enumerate(lanes):
+        cfg = lane_configs.get(base_index + i)
+        dx = cfg.offset_x if cfg else 0
+        dy = cfg.offset_y if cfg else 0
+        if dx == 0 and dy == 0:
+            result.append(lane)
+        else:
+            result.append([(x + dx, y + dy) for x, y in lane])
+    return result
+
+
+# Canonical (origin, destination) for each lane index. Used to derive direction and validate config.
+LANE_ROUTES: list[tuple[str, str]] = [
+    ("Housing", "main"),
+    ("main", "Office"),
+    ("Office", "main"),
+    ("main", "Housing"),
+    ("Park", "main"),
+    ("main", "Park"),
+    ("Shopping", "main"),
+    ("main", "Shopping"),
+    ("Housing", "bypass"),
+    ("bypass", "Park"),
+    ("Park", "bypass"),
+    ("bypass", "Housing"),
+]
+
+
+def build_lanes_from_config(
+    place_rects: dict[str, dict],
+    main_intersection: dict,
+    bypass_center: tuple[float, float],
+    bypass_size: int,
+    lane_configs: dict[int, "LaneConfig"],
+) -> tuple[list[list[tuple[int, int]]], dict]:
+    """
+    Build all lanes from place_rects and intersection geometry. Geometry is derived from
+    lane configs' origin/destination; direction and natural center come from those.
+    Falls back to canonical routes for indices 0-11 when config origin/dest invalid.
+    Returns (lanes, hp_intersection).
+    """
+    main_lanes, grid_w, grid_h = build_lanes_from_positions(
+        main_intersection, place_rects, lane_configs=lane_configs
+    )
+    hp_lanes, hp_intersection = build_housing_park_route(
+        place_rects, bypass_center, size=bypass_size, lane_configs=lane_configs
+    )
+    return main_lanes + hp_lanes, hp_intersection
+
+
 def build_lanes_from_positions(
     intersection: dict,
     place_rects: dict[str, dict],
+    lane_configs: dict[int, "LaneConfig"] | None = None,
 ) -> tuple[list[list[tuple[int, int]]], int, int]:
     """
     Derive lane cells and grid size from intersection and place positions.
     Lanes connect each place's road edge to the intersection approach edge.
+    When lane_configs is provided, applies offset_x/offset_y to each lane.
     Returns (lanes, grid_w, grid_h).
     """
     x_lo, x_hi, y_lo, y_hi = _intersection_bounds(intersection)
@@ -153,6 +214,7 @@ def build_lanes_from_positions(
     grid_w = max(all_x) + 1 if all_x else 32
     grid_h = max(all_y) + 1 if all_y else 36
 
+    lanes = _apply_lane_offset(lanes, lane_configs, base_index=0)
     return (lanes, grid_w, grid_h)
 
 
@@ -214,10 +276,12 @@ def build_housing_park_route(
     place_rects: dict[str, dict],
     bypass_center: tuple[float, float],
     size: int = 4,
+    lane_configs: dict[int, "LaneConfig"] | None = None,
 ) -> tuple[list[list[tuple[int, int]]], dict]:
     """
     Build Housing–Park direct route from place positions and explicit bypass center.
     Junction at bypass_center; lane tracks connect to Housing and Park rects. RHT alignment.
+    When lane_configs is provided, applies offset_x/offset_y to lanes 8-11.
     Returns (hp_lanes, hp_intersection).
     """
     def rect(place: str) -> tuple[int, int, int, int]:
@@ -255,6 +319,7 @@ def build_housing_park_route(
     lane10 = [(hp_ns_x_lo, y) for y in range(park_approach_y, hp_y_hi - 1, -1)]
 
     hp_lanes = [lane8, lane9, lane10, lane11]
+    hp_lanes = _apply_lane_offset(hp_lanes, lane_configs, base_index=8)
     return (hp_lanes, hp_intersection)
 
 

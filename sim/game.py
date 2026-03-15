@@ -36,6 +36,23 @@ class GameState:
         self.spawn_enabled: dict[str, bool] = {p: True for p in SPAWN_PLACES}
         self.place_configs: dict[str, places.PlaceConfig] = {p: places.PlaceConfig() for p in SPAWN_PLACES}
         self.lane_configs: dict[int, places.LaneConfig] = {i: places.LaneConfig() for i in range(12)}
+        _LANE_ORIGIN_DEST: list[tuple[str, str]] = [
+            (places.SOUTH, "main"),
+            ("main", places.NORTH),
+            (places.NORTH, "main"),
+            ("main", places.SOUTH),
+            (places.PARK, "main"),
+            ("main", places.PARK),
+            (places.SHOPPING, "main"),
+            ("main", places.SHOPPING),
+            (places.SOUTH, "bypass"),
+            ("bypass", places.PARK),
+            (places.PARK, "bypass"),
+            ("bypass", places.SOUTH),
+        ]
+        for i, (orig, dest) in enumerate(_LANE_ORIGIN_DEST):
+            self.lane_configs[i].origin = orig
+            self.lane_configs[i].destination = dest
         self.intersection_configs: dict[str, places.IntersectionConfig] = {
             "main": places.IntersectionConfig(intersection_type=places.INTERSECTION_TYPE_X),
             "bypass": places.IntersectionConfig(
@@ -147,7 +164,8 @@ class GameState:
         main_center = (main_cfg.center_x, main_cfg.center_y) if main_cfg else (36.0, 48.0)
         bypass_center = (bypass_cfg.center_x, bypass_cfg.center_y) if bypass_cfg else (64.0, 2.0)
         world.rebuild_world(
-            place_rects, main_center, main_size, bypass_center, bypass_size
+            place_rects, main_center, main_size, bypass_center, bypass_size,
+            lane_configs=self.lane_configs,
         )
 
     def _apply_police_influence(

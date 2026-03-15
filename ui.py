@@ -976,21 +976,74 @@ class PlaceVarsDialog(Dialog):
             self._on_change()
 
 
-class LaneVarsDialog(Dialog):
-    """Dialog for editing lane speed limit and type (not yet wired to car movement)."""
+def _node_options(place_geometry: dict, intersection_configs: dict) -> list[str]:
+    """Combined sorted list of place names and intersection keys for origin/destination selectors."""
+    places = sorted(place_geometry.keys())
+    inters = sorted(intersection_configs.keys())
+    return places + inters
 
-    def __init__(self, x: float, y: float, lane_index: int, lane_config, on_change: Callable[[], None] | None = None):
-        super().__init__(x, y, 220, 130, f"Lane {lane_index}")
+
+class LaneVarsDialog(Dialog):
+    """Dialog for editing lane speed limit, type, origin, destination, and offset."""
+
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        lane_index: int,
+        lane_config,
+        place_geometry: dict,
+        intersection_configs: dict,
+        on_change: Callable[[], None] | None = None,
+    ):
+        super().__init__(x, y, 260, 210, f"Lane {lane_index}")
         self.lane_index = lane_index
         self._config = lane_config
         self._on_change = on_change
+        self._node_opts = _node_options(place_geometry, intersection_configs)
+
         speed_step = self._step_for_speed(lane_config.speed_limit)
         type_step = self._step_for_type(lane_config.lane_type)
-        self._speed_slider = Slider(0, 0, 160, 20, len(LANE_SPEED_VALUES), speed_step, (100, 100, 100), (180, 180, 180))
-        self._type_slider = Slider(0, 0, 160, 20, len(LANE_TYPE_VALUES), type_step, (100, 100, 100), (180, 180, 180))
-        self.widgets = [self._speed_slider, self._type_slider]
+        self._speed_slider = Slider(0, 0, 200, 20, len(LANE_SPEED_VALUES), speed_step, (100, 100, 100), (180, 180, 180))
+        self._type_slider = Slider(0, 0, 200, 20, len(LANE_TYPE_VALUES), type_step, (100, 100, 100), (180, 180, 180))
+        self._origin_slider = Slider(0, 0, 200, 20, max(1, len(self._node_opts)), 0, (100, 100, 100), (180, 180, 180))
+        self._dest_slider = Slider(0, 0, 200, 20, max(1, len(self._node_opts)), 0, (100, 100, 100), (180, 180, 180))
+        def _sync_and_notify(_v: int) -> None:
+            self._sync_from_widgets()
+
+        self._offset_x_box = NumberBox(
+            0, 0, 80, NUMBER_BOX_HEIGHT, getattr(lane_config, "offset_x", 0), -10, 10, 1,
+            on_change=_sync_and_notify,
+        )
+        self._offset_y_box = NumberBox(
+            0, 0, 80, NUMBER_BOX_HEIGHT, getattr(lane_config, "offset_y", 0), -10, 10, 1,
+            on_change=_sync_and_notify,
+        )
+
+        self._origin_step = self._step_for_node(getattr(lane_config, "origin", ""))
+        self._dest_step = self._step_for_node(getattr(lane_config, "destination", ""))
+        self._origin_slider.set_step(self._origin_step)
+        self._dest_slider.set_step(self._dest_step)
+
+        self.widgets = [
+            self._speed_slider,
+            self._type_slider,
+            self._origin_slider,
+            self._dest_slider,
+            self._offset_x_box,
+            self._offset_y_box,
+        ]
         self._speed_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._type_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._origin_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._dest_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._offset_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+
+    def _step_for_node(self, val: str) -> int:
+        try:
+            return self._node_opts.index(val)
+        except (ValueError, IndexError):
+            return 0
 
     def _step_for_speed(self, val: float) -> int:
         best = 0
@@ -1008,40 +1061,66 @@ class LaneVarsDialog(Dialog):
     def _layout_widgets(self) -> None:
         left = self.x + 12
         content_top = self.y - 32
-        self._speed_slider.rect = (left, content_top - 24, 160, 20)
-        self._type_slider.rect = (left, content_top - 52, 160, 20)
+        row = 0
+        self._speed_slider.rect = (left, content_top - 24 - row * 28, 200, 20)
         self._speed_label.x = left
-        self._speed_label.y = content_top - 12
+        self._speed_label.y = content_top - 12 - row * 28
+        row += 1
+        self._type_slider.rect = (left, content_top - 24 - row * 28, 200, 20)
         self._type_label.x = left
-        self._type_label.y = content_top - 40
+        self._type_label.y = content_top - 12 - row * 28
+        row += 1
+        self._origin_slider.rect = (left, content_top - 24 - row * 28, 200, 20)
+        self._origin_label.x = left
+        self._origin_label.y = content_top - 12 - row * 28
+        row += 1
+        self._dest_slider.rect = (left, content_top - 24 - row * 28, 200, 20)
+        self._dest_label.x = left
+        self._dest_label.y = content_top - 12 - row * 28
+        row += 1
+        self._offset_x_box.rect = (left, content_top - 24 - row * 28, 80, NUMBER_BOX_HEIGHT)
+        self._offset_y_box.rect = (left + 95, content_top - 24 - row * 28, 80, NUMBER_BOX_HEIGHT)
+        self._offset_label.x = left
+        self._offset_label.y = content_top - 12 - row * 28
 
     def draw(self) -> None:
         self._layout_widgets()
-        self._speed_label.value = f"Speed limit: {LANE_SPEED_VALUES[self._speed_slider.value]:.2f}x"
+        self._speed_label.value = f"Speed: {LANE_SPEED_VALUES[self._speed_slider.value]:.2f}x"
         self._type_label.value = f"Type: {LANE_TYPE_VALUES[self._type_slider.value]}"
+        self._origin_label.value = f"Origin: {self._node_opts[self._origin_slider.value] if self._node_opts else '-'}"
+        self._dest_label.value = f"Dest: {self._node_opts[self._dest_slider.value] if self._node_opts else '-'}"
+        self._offset_label.value = "Offset X/Y:"
         super().draw()
         self._speed_label.draw()
         self._type_label.draw()
+        self._origin_label.draw()
+        self._dest_label.draw()
+        self._offset_label.draw()
 
     def on_mouse_press(self, x: float, y: float) -> bool:
         self._layout_widgets()
         result = super().on_mouse_press(x, y)
-        self._sync_from_sliders()
+        self._sync_from_widgets()
         return result
 
     def on_mouse_drag(self, x: float, y: float, dx: float, dy: float) -> bool:
         result = super().on_mouse_drag(x, y, dx, dy)
-        self._sync_from_sliders()
+        self._sync_from_widgets()
         return result
 
     def on_mouse_release(self, x: float, y: float) -> bool:
         result = super().on_mouse_release(x, y)
-        self._sync_from_sliders()
+        self._sync_from_widgets()
         return result
 
-    def _sync_from_sliders(self) -> None:
+    def _sync_from_widgets(self) -> None:
         self._config.speed_limit = LANE_SPEED_VALUES[self._speed_slider.value]
         self._config.lane_type = LANE_TYPE_VALUES[self._type_slider.value]
+        if self._node_opts:
+            self._config.origin = self._node_opts[self._origin_slider.value]
+            self._config.destination = self._node_opts[self._dest_slider.value]
+        self._config.offset_x = self._offset_x_box.value
+        self._config.offset_y = self._offset_y_box.value
         if self._on_change:
             self._on_change()
 

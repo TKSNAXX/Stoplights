@@ -660,7 +660,12 @@ class StoplightsWindow(arcade.Window):
                     dlg = LaneVarsDialog(
                         x - 110, y - 70, lane_idx,
                         self.game.lane_configs[lane_idx],
-                        on_change=self._on_config_change,
+                        self.game.place_geometry,
+                        self.game.intersection_configs,
+                        on_change=lambda: (
+                            self.game.rebuild_world_from_config(),
+                            self._on_config_change(),
+                        ),
                     )
                     self._lane_dialogs[lane_idx] = dlg
                     dlg.set_on_close(lambda d: self._dialog_manager.close(d))

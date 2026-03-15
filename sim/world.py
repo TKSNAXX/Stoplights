@@ -4,9 +4,10 @@ Lane and intersection definitions are mutable; rebuilt when intersection size ch
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+from sim import map_data
 from sim.map_data import (
-    build_housing_park_route,
-    build_lanes_from_positions,
     DEFAULT_MAIN_CENTER,
     get_bypass_intersection_center,
     intersection_dict_from_bounds,
@@ -14,6 +15,9 @@ from sim.map_data import (
     bounds_from_center,
 )
 MAP_DATA = load_map_data()
+
+if TYPE_CHECKING:
+    from sim.places import LaneConfig
 
 # Minimum tiles of empty space between any object and the map edge
 MAP_PADDING = 4
@@ -108,10 +112,12 @@ def rebuild_world(
     main_size: int,
     bypass_center: tuple[float, float],
     bypass_size: int,
+    lane_configs: dict[int, "LaneConfig"] | None = None,
 ) -> None:
     """
     Rebuild lanes and intersection geometry from centers and sizes.
     Places and intersections own their positions; lanes are derived.
+    When lane_configs is provided, applies offset to each lane's cells.
     """
     main_size = max(2, min(12, main_size))
     bypass_size = max(2, min(12, bypass_size))
@@ -126,11 +132,13 @@ def rebuild_world(
     x_lo, x_hi, y_lo, y_hi = bounds_from_center(main_cx, main_cy, main_size)
     main_intersection = intersection_dict_from_bounds(x_lo, x_hi, y_lo, y_hi)
 
-    lanes, grid_w, grid_h = build_lanes_from_positions(main_intersection, place_rects)
-    hp_lanes, hp_intersection = build_housing_park_route(place_rects, bypass_center, size=bypass_size)
-    lanes = lanes + hp_lanes
+    lanes, hp_intersection = map_data.build_lanes_from_config(
+        place_rects, main_intersection, bypass_center, bypass_size,
+        lane_configs or {},
+    )
 
-    for lane in hp_lanes:
+    grid_w, grid_h = 32, 36
+    for lane in lanes:
         for cx, cy in lane:
             grid_w = max(grid_w, cx + 1)
             grid_h = max(grid_h, cy + 1)
