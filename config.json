@@ -42,7 +42,7 @@
       ],
       "end_tile": [
         36,
-        81
+        65
       ]
     },
     "2": {
@@ -50,7 +50,7 @@
       "lane_type": "normal",
       "start_tile": [
         35,
-        81
+        65
       ],
       "end_tile": [
         35,
@@ -73,7 +73,7 @@
       "speed_limit": 1.0,
       "lane_type": "passing",
       "start_tile": [
-        61,
+        49,
         48
       ],
       "end_tile": [
@@ -89,7 +89,7 @@
         47
       ],
       "end_tile": [
-        61,
+        49,
         47
       ]
     },
@@ -97,7 +97,7 @@
       "speed_limit": 1.0,
       "lane_type": "normal",
       "start_tile": [
-        5,
+        21,
         47
       ],
       "end_tile": [
@@ -113,7 +113,7 @@
         48
       ],
       "end_tile": [
-        5,
+        21,
         48
       ]
     },
@@ -121,7 +121,7 @@
       "speed_limit": 1.0,
       "lane_type": "normal",
       "start_tile": [
-        39,
+        48,
         1
       ],
       "end_tile": [
@@ -138,7 +138,7 @@
       ],
       "end_tile": [
         64,
-        43
+        33
       ]
     },
     "10": {
@@ -146,7 +146,7 @@
       "lane_type": "normal",
       "start_tile": [
         63,
-        43
+        33
       ],
       "end_tile": [
         63,
@@ -157,11 +157,11 @@
       "speed_limit": 1.0,
       "lane_type": "normal",
       "start_tile": [
-        61,
+        62,
         2
       ],
       "end_tile": [
-        39,
+        48,
         2
       ]
     },
@@ -169,12 +169,48 @@
       "speed_limit": 1.0,
       "lane_type": "normal",
       "start_tile": [
-        4,
-        43
+        19,
+        54
       ],
       "end_tile": [
-        4,
-        39
+        19,
+        66
+      ]
+    },
+    "13": {
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "start_tile": [
+        18,
+        66
+      ],
+      "end_tile": [
+        18,
+        54
+      ]
+    },
+    "14": {
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "start_tile": [
+        21,
+        68
+      ],
+      "end_tile": [
+        27,
+        68
+      ]
+    },
+    "15": {
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "start_tile": [
+        27,
+        69
+      ],
+      "end_tile": [
+        21,
+        69
       ]
     }
   },
@@ -187,41 +223,41 @@
     },
     "bypass": {
       "intersection_type": "corner",
-      "size_cells": 4,
+      "size_cells": 12,
       "center_x": 64,
       "center_y": 2
     },
     "intersection_2": {
-      "intersection_type": "corner",
-      "size_cells": 2,
-      "center_x": 5,
-      "center_y": 38
+      "intersection_type": "x",
+      "size_cells": 4,
+      "center_x": 19,
+      "center_y": 69
     }
   },
   "place_geometry": {
     "Housing": {
-      "center_x": 36,
-      "center_y": 2,
-      "width": 5,
-      "length": 5
+      "center_x": 40,
+      "center_y": 1,
+      "width": 16,
+      "length": 7
     },
     "Office": {
       "center_x": 36,
-      "center_y": 84,
-      "width": 5,
-      "length": 5
+      "center_y": 71,
+      "width": 16,
+      "length": 11
     },
     "Park": {
-      "center_x": 64,
-      "center_y": 46,
-      "width": 5,
-      "length": 5
+      "center_x": 58,
+      "center_y": 42,
+      "width": 16,
+      "length": 16
     },
     "Shopping": {
-      "center_x": 2,
+      "center_x": 17,
       "center_y": 46,
-      "width": 5,
-      "length": 5
+      "width": 8,
+      "length": 16
     }
   }
 }
