@@ -19,19 +19,26 @@ MAP_DATA = load_map_data()
 if TYPE_CHECKING:
     from sim.places import LaneConfig
 
-# Minimum tiles of empty space between any object and the map edge
-MAP_PADDING = 4
-
 
 def _apply_map_padding(
     lanes: list[list[tuple[int, int]]],
     place_rects: dict[str, dict],
     main_intersection: dict,
     hp_intersection: dict,
-) -> tuple[list[list[tuple[int, int]]], dict[str, dict], dict, dict, int, int]:
+    extra_intersection_bounds: dict[str, tuple[int, int, int, int]] | None = None,
+) -> tuple[
+    list[list[tuple[int, int]]],
+    dict[str, dict],
+    dict,
+    dict,
+    dict[str, list[tuple[int, int]]],
+    int,
+    int,
+]:
     """
-    Shift all geometry so there are MAP_PADDING empty cells from any object to the edge.
-    Returns (transformed lanes, place_rects, main_intersection, hp_intersection, grid_w, grid_h).
+    Shift all geometry to 0-based grid (minimal shift, no margin).
+    Returns (transformed lanes, place_rects, main_intersection, hp_intersection,
+             extra_intersection_cells, grid_w, grid_h).
     """
     all_x: list[int] = []
     all_y: list[int] = []
@@ -52,13 +59,31 @@ def _apply_map_padding(
         all_x.append(c[0])
         all_y.append(c[1])
 
+    if extra_intersection_bounds:
+        for key in extra_intersection_bounds:
+            if key in ("main", "bypass"):
+                continue
+            x_lo, x_hi, y_lo, y_hi = extra_intersection_bounds[key]
+            for gx in range(x_lo, x_hi):
+                for gy in range(y_lo, y_hi):
+                    all_x.append(gx)
+                    all_y.append(gy)
+
     if not all_x or not all_y:
-        return lanes, place_rects, main_intersection, hp_intersection, 32, 36
+        return (
+            lanes,
+            place_rects,
+            main_intersection,
+            hp_intersection,
+            {},
+            32,
+            36,
+        )
 
     x_min, x_max = min(all_x), max(all_x)
     y_min, y_max = min(all_y), max(all_y)
-    offset_x = MAP_PADDING - x_min
-    offset_y = MAP_PADDING - y_min
+    offset_x = -x_min
+    offset_y = -y_min
 
     def shift(c: tuple[int, int]) -> tuple[int, int]:
         return (c[0] + offset_x, c[1] + offset_y)
@@ -81,10 +106,23 @@ def _apply_map_padding(
         "slots": [shift(c) for c in hp_intersection.get("slots", [])],
     }
 
-    grid_w = x_max - x_min + 1 + 2 * MAP_PADDING
-    grid_h = y_max - y_min + 1 + 2 * MAP_PADDING
+    new_extra: dict[str, list[tuple[int, int]]] = {}
+    if extra_intersection_bounds:
+        for key in extra_intersection_bounds:
+            if key in ("main", "bypass"):
+                continue
+            x_lo, x_hi, y_lo, y_hi = extra_intersection_bounds[key]
+            cells = [
+                shift((gx, gy))
+                for gx in range(x_lo, x_hi)
+                for gy in range(y_lo, y_hi)
+            ]
+            new_extra[key] = cells
 
-    return new_lanes, new_place_rects, new_main, new_hp, grid_w, grid_h
+    grid_w = x_max - x_min + 1
+    grid_h = y_max - y_min + 1
+
+    return new_lanes, new_place_rects, new_main, new_hp, new_extra, grid_w, grid_h
 
 
 class _WorldState:
@@ -95,11 +133,13 @@ class _WorldState:
         self.lane_meta: list[tuple[str, str, str]] = []  # (direction, traffic_in, traffic_out)
         self.grid_w: int = 32
         self.grid_h: int = 36
+        self._intersection_keys: frozenset[str] = frozenset({"main", "bypass"})
         self._place_rects: dict[str, dict] = {}
         self._main_cells: list[tuple[int, int]] = []
         self._main_slots: list[tuple[int, int]] = []
         self._hp_cells: list[tuple[int, int]] = []
         self._hp_slots: list[tuple[int, int]] = []
+        self._extra_intersection_cells: dict[str, list[tuple[int, int]]] = {}
         self._main_cells_set: frozenset[tuple[int, int]] = frozenset()
         self._hp_cells_set: frozenset[tuple[int, int]] = frozenset()
 
@@ -139,6 +179,10 @@ def rebuild_world(
         lane_configs or {},
         extra_intersection_bounds=extra_intersection_bounds,
     )
+    _state._intersection_keys = (
+        frozenset(extra_intersection_bounds.keys()) if extra_intersection_bounds
+        else frozenset({"main", "bypass"})
+    )
 
     grid_w, grid_h = 32, 36
     for lane in lanes:
@@ -149,8 +193,9 @@ def rebuild_world(
         grid_w = max(grid_w, cell[0] + 1)
         grid_h = max(grid_h, cell[1] + 1)
 
-    lanes, place_rects, main_intersection, hp_intersection, grid_w, grid_h = _apply_map_padding(
-        lanes, place_rects, main_intersection, hp_intersection
+    lanes, place_rects, main_intersection, hp_intersection, extra_cells, grid_w, grid_h = _apply_map_padding(
+        lanes, place_rects, main_intersection, hp_intersection,
+        extra_intersection_bounds=extra_intersection_bounds,
     )
 
     _state.all_lanes.clear()
@@ -163,6 +208,7 @@ def rebuild_world(
     _state._main_slots = [tuple(c) for c in main_intersection["slots"]]
     _state._hp_cells = [tuple(c) for c in hp_intersection["cells"]]
     _state._hp_slots = [tuple(c) for c in hp_intersection["slots"]]
+    _state._extra_intersection_cells = {k: [tuple(c) for c in v] for k, v in extra_cells.items()}
     _state._main_cells_set = frozenset(_state._main_cells)
     _state._hp_cells_set = frozenset(_state._hp_cells)
     _refresh_refs()
@@ -224,12 +270,20 @@ def _refresh_refs() -> None:
 
 
 def get_intersection_at_cell(cell: tuple[int, int]) -> str | None:
-    """Return 'main' if cell in main intersection, 'bypass' if in HP junction, else None."""
+    """Return 'main', 'bypass', or extra intersection key if cell in one, else None."""
     if cell in _state._main_cells_set:
         return "main"
     if cell in _state._hp_cells_set:
         return "bypass"
+    for key, cells in _state._extra_intersection_cells.items():
+        if cell in cells:
+            return key
     return None
+
+
+def get_extra_intersection_cells(key: str) -> list[tuple[int, int]]:
+    """Return cells belonging to the given extra intersection, or empty list if unknown."""
+    return list(_state._extra_intersection_cells.get(key, []))
 
 
 def get_intersection_cells() -> list[tuple[int, int]]:
@@ -240,6 +294,11 @@ def get_intersection_cells() -> list[tuple[int, int]]:
         if c not in seen:
             seen.add(c)
             out.append(c)
+    for cells in _state._extra_intersection_cells.values():
+        for c in cells:
+            if c not in seen:
+                seen.add(c)
+                out.append(c)
     return out
 
 
@@ -300,6 +359,11 @@ def lane_direction(lane_index: int) -> str:
 def get_place_rects() -> dict[str, dict]:
     """Return current place rects (x,y,w,h) from last rebuild."""
     return dict(_state._place_rects)
+
+
+def is_intersection(key: str) -> bool:
+    """True if key is a valid intersection (main, bypass, or extra like intersection_2)."""
+    return key in _state._intersection_keys
 
 
 def get_grid_h() -> int:

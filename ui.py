@@ -1220,7 +1220,7 @@ class AddLaneDialog(Dialog):
     def _direction_text(self) -> str:
         """Return direction string when valid, else 'invalid end lane'."""
         if not self._is_valid_lane():
-            return "invalid end lane"
+            return "invalid end tile"
         start = self._start_compass.value
         end = self._end_compass.value
         if start[0] == end[0]:
@@ -1257,8 +1257,8 @@ class AddLaneDialog(Dialog):
         self._end_label.y = content_top - 40
         self._end_compass.rect = (control_left, content_top - 52, control_width, DROPDOWN_ROW_HEIGHT)
         self._status_label.x = left
-        self._status_label.y = content_top - 64
-        self._commit_btn.rect = (control_left, content_top - 88, 70, 22)
+        self._status_label.y = content_top - 72
+        self._commit_btn.rect = (control_left, content_top - 104, 70, 22)
 
     def draw(self) -> None:
         self._layout_widgets()
@@ -1326,11 +1326,15 @@ class LaneVarsDialog(Dialog):
         self._out_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
 
     def _update_locked_axes(self) -> None:
-        """End moves only along the lane (parallel). Start has full movement."""
+        """End moves only along the lane (parallel). Start has full movement.
+        When end == start, allow any direction so user can change orientation."""
         start = self._start_compass.value
         end = self._end_compass.value
         self._start_compass.locked_axis = None  # Start: full movement
-        if start[0] == end[0]:
+        if start == end:
+            # Same tile: allow any direction to pick new orientation
+            self._end_compass.locked_axis = None
+        elif start[0] == end[0]:
             # N-S lane: End moves N/S only (along lane)
             self._end_compass.locked_axis = "x"  # grey out E/W
         elif start[1] == end[1]:
@@ -1401,16 +1405,16 @@ class LaneVarsDialog(Dialog):
         self._end_label.y = content_top - 12 - row * 28
         self._end_compass.rect = (control_left, content_top - 24 - row * 28, control_width, DROPDOWN_ROW_HEIGHT)
         row += 1
+        # Info block: clear gap below end row, then 20px per line
+        info_top = content_top - 24 - row * 28 - 16
         self._dir_label.x = left
-        self._dir_label.y = content_top - 12 - row * 24
-        row += 1
+        self._dir_label.y = info_top
         self._in_label.x = left
-        self._in_label.y = content_top - 12 - row * 20
-        row += 1
+        self._in_label.y = info_top - 20
         self._out_label.x = left
-        self._out_label.y = content_top - 12 - row * 20
+        self._out_label.y = info_top - 40
         if self._can_remove:
-            self._remove_btn.rect = (left, content_top - 12 - row * 20 - 36, 70, 22)
+            self._remove_btn.rect = (left, info_top - 64, 70, 22)
 
     def draw(self) -> None:
         self._layout_widgets()

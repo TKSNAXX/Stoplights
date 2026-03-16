@@ -21,7 +21,6 @@ from sim.constants import (
 )
 from sim.game import GameState
 from sim import persistence, world
-from sim.map_data import bounds_from_center
 from ui import (
     AddLaneDialog,
     CarDeetsDialog,
@@ -282,14 +281,14 @@ class StoplightsWindow(arcade.Window):
         # Extra intersections (not main/bypass)
         extra_keys = [k for k in self.game.intersection_configs if k not in ("main", "bypass")]
         for key in extra_keys:
-            cfg = self.game.intersection_configs[key]
-            x_lo, x_hi, y_lo, y_hi = bounds_from_center(cfg.center_x, cfg.center_y, cfg.size_cells)
             extra_cells = [
-                (gx, gy) for gx in range(x_lo, x_hi) for gy in range(y_lo, y_hi)
-                if (gx, gy) not in main_inter_cells and (gx, gy) not in bypass_inter_cells
+                c for c in world.get_extra_intersection_cells(key)
+                if c not in main_inter_cells and c not in bypass_inter_cells
             ]
-            use_corner = cfg.intersection_type == places.INTERSECTION_TYPE_CORNER
-            corner_tex = generate_corner_texture(cfg.size_cells) if use_corner else None
+            cfg = self.game.intersection_configs.get(key)
+            use_corner = cfg is not None and cfg.intersection_type == places.INTERSECTION_TYPE_CORNER
+            size_cells = cfg.size_cells if cfg else 4
+            corner_tex = generate_corner_texture(size_cells) if use_corner else None
             for cell in extra_cells:
                 gx, gy = cell
                 sx, sy = self._to_screen(gx, gy, center_x, center_y)
@@ -565,18 +564,7 @@ class StoplightsWindow(arcade.Window):
         center_x, center_y = self._effective_center()
         gx, gy = self._screen_to_grid(sx, sy, center_x, center_y)
         cell = (int(round(gx)), int(round(gy)))
-        result = world.get_intersection_at_cell(cell)
-        if result is not None:
-            return result
-        # Check extra intersections
-        for key in self.game.intersection_configs:
-            if key in ("main", "bypass"):
-                continue
-            cfg = self.game.intersection_configs[key]
-            x_lo, x_hi, y_lo, y_hi = bounds_from_center(cfg.center_x, cfg.center_y, cfg.size_cells)
-            if x_lo <= cell[0] < x_hi and y_lo <= cell[1] < y_hi:
-                return key
-        return None
+        return world.get_intersection_at_cell(cell)
 
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int):
         if button == arcade.MOUSE_BUTTON_LEFT:

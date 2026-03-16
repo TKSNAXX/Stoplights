@@ -79,7 +79,7 @@ ROUTE_HOUSING_PARK = frozenset({(SOUTH, PARK), (PARK, SOUTH)})
 
 
 def out_lane_for_place(place: str, from_intersection: str = "main") -> int | None:
-    """Out-lane that goes to place from the given intersection (main or bypass)."""
+    """Out-lane that goes to place from the given intersection (main, bypass, or extra)."""
     for i in range(len(world.ALL_LANES)):
         if world.lane_traffic_in(i) == from_intersection and world.lane_traffic_out(i) == place:
             return i
@@ -87,13 +87,13 @@ def out_lane_for_place(place: str, from_intersection: str = "main") -> int | Non
 
 
 def in_lane_indices() -> set[int]:
-    """Lanes that approach an intersection (traffic_out is main or bypass)."""
-    return {i for i in range(len(world.ALL_LANES)) if world.lane_traffic_out(i) in ("main", "bypass")}
+    """Lanes that approach an intersection (traffic_out is main, bypass, or any extra intersection)."""
+    return {i for i in range(len(world.ALL_LANES)) if world.is_intersection(world.lane_traffic_out(i))}
 
 
 def out_lane_indices() -> set[int]:
-    """Lanes that leave an intersection (traffic_in is main or bypass)."""
-    return {i for i in range(len(world.ALL_LANES)) if world.lane_traffic_in(i) in ("main", "bypass")}
+    """Lanes that leave an intersection (traffic_in is main, bypass, or any extra intersection)."""
+    return {i for i in range(len(world.ALL_LANES)) if world.is_intersection(world.lane_traffic_in(i))}
 
 # Straight-through at intersection (in_lane, out_lane): N-S arm plus Park↔Shopping cross.
 STRAIGHT_TRANSITIONS = {(0, 1), (2, 3), (4, 7), (6, 5)}
