@@ -1182,6 +1182,94 @@ class CompassSelect:
             txt.draw()
 
 
+class AddLaneDialog(Dialog):
+    """Dialog for adding a new lane. Start/End tiles via CompassSelect, Commit creates the lane."""
+
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        game,
+        on_commit: Callable[[], None] | None = None,
+    ):
+        super().__init__(x, y, 320, 180, "Add Lane")
+        self._game = game
+        self._on_commit = on_commit
+        self._start_tile = (0, 0)
+        self._end_tile = (1, 0)
+        self._start_compass = CompassSelect(
+            0, 0, 220, DROPDOWN_ROW_HEIGHT, self._start_tile,
+            on_change=self._on_start_change,
+        )
+        self._end_compass = CompassSelect(
+            0, 0, 220, DROPDOWN_ROW_HEIGHT, self._end_tile,
+            on_change=self._on_end_change,
+        )
+        self._commit_btn = CommitButton(0, 0, 70, 22, on_click=self._do_commit)
+        self.widgets = [self._start_compass, self._end_compass, self._commit_btn]
+        self._start_label = arcade.Text("Start:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._end_label = arcade.Text("End:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._status_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+
+    def _is_valid_lane(self) -> bool:
+        """True if start and end form an orthogonal lane (same row or same column)."""
+        start = self._start_compass.value
+        end = self._end_compass.value
+        return start[0] == end[0] or start[1] == end[1]
+
+    def _direction_text(self) -> str:
+        """Return direction string when valid, else 'invalid end lane'."""
+        if not self._is_valid_lane():
+            return "invalid end lane"
+        start = self._start_compass.value
+        end = self._end_compass.value
+        if start[0] == end[0]:
+            return "Northbound" if end[1] > start[1] else "Southbound"
+        return "Eastbound" if end[0] > start[0] else "Westbound"
+
+    def _on_start_change(self, new_start: tuple[int, int]) -> None:
+        self._start_tile = new_start
+
+    def _on_end_change(self, _v: tuple[int, int]) -> None:
+        pass
+
+    def _do_commit(self) -> None:
+        if not self._is_valid_lane():
+            return
+        from sim.places import LaneConfig
+        idx = self._game.next_lane_index()
+        start = self._start_compass.value
+        end = self._end_compass.value
+        self._game.lane_configs[idx] = LaneConfig(start_tile=start, end_tile=end)
+        self._game.rebuild_world_from_config()
+        if self._on_commit:
+            self._on_commit()
+
+    def _layout_widgets(self) -> None:
+        left = self.x + 12
+        control_left = left + LANEVARS_CAPTION_WIDTH + LANEVARS_GAP
+        control_width = self.width - 24 - (control_left - self.x)
+        content_top = self.y - 32
+        self._start_label.x = left
+        self._start_label.y = content_top - 12
+        self._start_compass.rect = (control_left, content_top - 24, control_width, DROPDOWN_ROW_HEIGHT)
+        self._end_label.x = left
+        self._end_label.y = content_top - 40
+        self._end_compass.rect = (control_left, content_top - 52, control_width, DROPDOWN_ROW_HEIGHT)
+        self._status_label.x = left
+        self._status_label.y = content_top - 64
+        self._commit_btn.rect = (control_left, content_top - 88, 70, 22)
+
+    def draw(self) -> None:
+        self._layout_widgets()
+        self._status_label.value = f"Direction: {self._direction_text()}"
+        self._status_label.color = (220, 180, 100) if not self._is_valid_lane() else (220, 220, 220)
+        super().draw()
+        self._start_label.draw()
+        self._end_label.draw()
+        self._status_label.draw()
+
+
 class LaneVarsDialog(Dialog):
     """Dialog for editing lane speed/type and start/end tiles."""
 
@@ -1195,11 +1283,16 @@ class LaneVarsDialog(Dialog):
         intersection_configs: dict,
         game=None,
         on_change: Callable[[], None] | None = None,
+        on_remove: Callable[[], None] | None = None,
     ):
-        super().__init__(x, y, 320, 240, f"Lane {lane_index}")
+        self._game = game
+        self._can_remove = lane_index >= 12 and game is not None
+        height = 268 if self._can_remove else 240
+        super().__init__(x, y, 320, height, f"Lane {lane_index}")
         self.lane_index = lane_index
         self._config = lane_config
         self._on_change = on_change
+        self._on_remove = on_remove
 
         speed_step = self._step_for_speed(lane_config.speed_limit)
         type_step = self._step_for_type(lane_config.lane_type)
@@ -1221,6 +1314,9 @@ class LaneVarsDialog(Dialog):
             self._start_compass,
             self._end_compass,
         ]
+        self._remove_btn = RemoveButton(0, 0, 70, 22, on_click=self._do_remove)
+        if self._can_remove:
+            self.widgets.append(self._remove_btn)
         self._speed_label = arcade.Text("Speed:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._type_label = arcade.Text("Type:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._start_label = arcade.Text("Start:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
@@ -1242,6 +1338,13 @@ class LaneVarsDialog(Dialog):
             self._end_compass.locked_axis = "y"  # grey out N/S
         else:
             self._end_compass.locked_axis = None
+
+    def _do_remove(self) -> None:
+        """Delete this lane and call on_remove."""
+        if self._game is not None and self.lane_index in self._game.lane_configs:
+            self._game.delete_lane(self.lane_index)
+        if self._on_remove:
+            self._on_remove()
 
     def _on_start_change(self, new_start: tuple[int, int]) -> None:
         """When Start moves perpendicular, also move End by the same delta to keep lane collinear."""
@@ -1306,6 +1409,8 @@ class LaneVarsDialog(Dialog):
         row += 1
         self._out_label.x = left
         self._out_label.y = content_top - 12 - row * 20
+        if self._can_remove:
+            self._remove_btn.rect = (left, content_top - 12 - row * 20 - 36, 70, 22)
 
     def draw(self) -> None:
         self._layout_widgets()
@@ -1495,7 +1600,7 @@ TOOLBAR_BORDER = (80, 80, 90)
 class Toolbar:
     """
     Vertical bar on the left with square icon buttons.
-    on_press(x, y) returns "settings", "new_intersection", "new_place", or None.
+    on_press(x, y) returns "settings", "new_intersection", "new_place", "new_lane", or None.
     """
 
     def __init__(self, left: float, bottom: float, width: float = TOOLBAR_WIDTH):
@@ -1505,11 +1610,12 @@ class Toolbar:
         self._button_size = TOOLBAR_BUTTON_SIZE
         self._gap = TOOLBAR_GAP
         padding = (width - self._button_size) / 2
-        self._height = 3 * self._button_size + 2 * self._gap + 2 * padding
+        self._height = 4 * self._button_size + 3 * self._gap + 2 * padding
 
         self._settings_icon = arcade.Text("...", 0, 0, color=(220, 220, 220), font_size=16, anchor_x="center", anchor_y="center")
         self._inter_icon = arcade.Text("+", 0, 0, color=(220, 220, 220), font_size=18, anchor_x="center", anchor_y="center")
         self._place_icon = arcade.Text("P", 0, 0, color=(220, 220, 220), font_size=18, anchor_x="center", anchor_y="center")
+        self._lane_icon = arcade.Text("L", 0, 0, color=(220, 220, 220), font_size=18, anchor_x="center", anchor_y="center")
 
     def _button_rects(self) -> list[tuple[float, float, float, float, str]]:
         """Return list of (left, bottom, width, height, action) for each button."""
@@ -1519,6 +1625,7 @@ class Toolbar:
         return [
             (bx, top_btn_bottom, self._button_size, self._button_size, "new_intersection"),
             (bx, top_btn_bottom - self._button_size - self._gap, self._button_size, self._button_size, "new_place"),
+            (bx, top_btn_bottom - 2 * (self._button_size + self._gap), self._button_size, self._button_size, "new_lane"),
             (bx, self.bottom + pad, self._button_size, self._button_size, "settings"),
         ]
 
@@ -1548,6 +1655,9 @@ class Toolbar:
             elif action == "new_intersection":
                 self._inter_icon.x, self._inter_icon.y = cx, cy
                 self._inter_icon.draw()
+            elif action == "new_lane":
+                self._lane_icon.x, self._lane_icon.y = cx, cy
+                self._lane_icon.draw()
             else:
                 self._place_icon.x, self._place_icon.y = cx, cy
                 self._place_icon.draw()

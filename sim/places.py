@@ -80,7 +80,7 @@ ROUTE_HOUSING_PARK = frozenset({(SOUTH, PARK), (PARK, SOUTH)})
 
 def out_lane_for_place(place: str, from_intersection: str = "main") -> int | None:
     """Out-lane that goes to place from the given intersection (main or bypass)."""
-    for i in range(12):
+    for i in range(len(world.ALL_LANES)):
         if world.lane_traffic_in(i) == from_intersection and world.lane_traffic_out(i) == place:
             return i
     return None
@@ -88,12 +88,12 @@ def out_lane_for_place(place: str, from_intersection: str = "main") -> int | Non
 
 def in_lane_indices() -> set[int]:
     """Lanes that approach an intersection (traffic_out is main or bypass)."""
-    return {i for i in range(12) if world.lane_traffic_out(i) in ("main", "bypass")}
+    return {i for i in range(len(world.ALL_LANES)) if world.lane_traffic_out(i) in ("main", "bypass")}
 
 
 def out_lane_indices() -> set[int]:
     """Lanes that leave an intersection (traffic_in is main or bypass)."""
-    return {i for i in range(12) if world.lane_traffic_in(i) in ("main", "bypass")}
+    return {i for i in range(len(world.ALL_LANES)) if world.lane_traffic_in(i) in ("main", "bypass")}
 
 # Straight-through at intersection (in_lane, out_lane): N-S arm plus Park↔Shopping cross.
 STRAIGHT_TRANSITIONS = {(0, 1), (2, 3), (4, 7), (6, 5)}
@@ -135,7 +135,7 @@ def place_bounds(place: str) -> list[tuple[int, int]]:
 def spawn_lanes_for_place(place: str, destination: str | None = None) -> list[int]:
     """Lane indices where a car spawning at this place should start (position 0)."""
     result: list[int] = []
-    for i in range(12):
+    for i in range(len(world.ALL_LANES)):
         if world.lane_traffic_in(i) == place:
             out = world.lane_traffic_out(i)
             if destination is None or out == destination:

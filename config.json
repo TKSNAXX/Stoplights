@@ -164,6 +164,18 @@
         39,
         2
       ]
+    },
+    "12": {
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "start_tile": [
+        3,
+        8
+      ],
+      "end_tile": [
+        3,
+        43
+      ]
     }
   },
   "intersection_configs": {
@@ -178,6 +190,12 @@
       "size_cells": 4,
       "center_x": 64,
       "center_y": 2
+    },
+    "intersection_2": {
+      "intersection_type": "x",
+      "size_cells": 4,
+      "center_x": 7,
+      "center_y": 10
     }
   },
   "place_geometry": {

@@ -23,6 +23,7 @@ from sim.game import GameState
 from sim import persistence, world
 from sim.map_data import bounds_from_center
 from ui import (
+    AddLaneDialog,
     CarDeetsDialog,
     DialogManager,
     IntersectionVarsDialog,
@@ -624,6 +625,19 @@ class StoplightsWindow(arcade.Window):
                 dlg.set_on_close(lambda d: self._dialog_manager.close(d))
                 self._dialog_manager.open(dlg)
                 return
+            if toolbar_action == "new_lane":
+                dlg_x = TOOLBAR_LEFT + 56
+                dlg_y = self.height / 2 + 100
+                dlg = AddLaneDialog(
+                    dlg_x, dlg_y, self.game,
+                    on_commit=lambda: (
+                        self._on_config_change(),
+                        self._dialog_manager.close(dlg),
+                    ),
+                )
+                dlg.set_on_close(lambda d: self._dialog_manager.close(d))
+                self._dialog_manager.open(dlg)
+                return
             place = self._place_at_screen(x, y)
             if place is not None:
                 if place in self._place_dialogs:
@@ -658,7 +672,7 @@ class StoplightsWindow(arcade.Window):
                 self._dialog_manager.open(dlg)
                 return
             lane_idx = self._lane_at_screen(x, y)
-            if lane_idx is not None:
+            if lane_idx is not None and lane_idx in self.game.lane_configs:
                 if lane_idx in self._lane_dialogs:
                     self._dialog_manager.open(self._lane_dialogs[lane_idx])
                 else:
@@ -667,9 +681,16 @@ class StoplightsWindow(arcade.Window):
                         self.game.lane_configs[lane_idx],
                         self.game.place_geometry,
                         self.game.intersection_configs,
+                        game=self.game,
                         on_change=lambda: (
                             self.game.rebuild_world_from_config(),
                             self._on_config_change(),
+                        ),
+                        on_remove=lambda: (
+                            self._on_config_change(),
+                            self._lane_dialogs.pop(lane_idx, None),
+                            self._dialog_manager.close(dlg),
+                            persistence.request_debounced_save(),
                         ),
                     )
                     self._lane_dialogs[lane_idx] = dlg

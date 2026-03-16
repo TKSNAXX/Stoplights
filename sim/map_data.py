@@ -232,6 +232,13 @@ def derive_default_start_end(
     return ((0, 0), (0, 0))
 
 
+def next_lane_index(lane_configs: dict) -> int:
+    """Return next available lane index. max(keys)+1 when non-empty, else 12."""
+    if not lane_configs:
+        return 12
+    return max(lane_configs.keys()) + 1
+
+
 def build_lanes_from_config(
     place_rects: dict[str, dict],
     main_intersection: dict,
@@ -240,25 +247,36 @@ def build_lanes_from_config(
     lane_configs: dict[int, "LaneConfig"],
     extra_intersection_bounds: dict[str, tuple[int, int, int, int]] | None = None,
 ) -> tuple[list[list[tuple[int, int]]], dict, list[tuple[str, str, str]]]:
-    """Build base lanes from explicit start/end tiles. Returns (lanes, hp_intersection, lane_meta)."""
+    """Build lanes from explicit start/end tiles. Returns (lanes, hp_intersection, lane_meta)."""
     hp_intersection = _build_hp_intersection(bypass_center, bypass_size)
     lanes: list[list[tuple[int, int]]] = []
     lane_meta: list[tuple[str, str, str]] = []
-    for lane_idx in range(12):
+    base_indices = list(range(12))
+    extra_indices = sorted(k for k in lane_configs if k >= 12)
+    indices = base_indices + extra_indices
+    for lane_idx in indices:
         cfg = lane_configs.get(lane_idx)
-        if cfg is None:
-            start, end = derive_default_start_end(lane_idx, place_rects, main_intersection, hp_intersection)
+        if lane_idx >= 12 and cfg is None:
+            continue
+        if lane_idx < 12:
+            if cfg is None:
+                start, end = derive_default_start_end(lane_idx, place_rects, main_intersection, hp_intersection)
+            else:
+                start, end = tuple(int(v) for v in cfg.start_tile), tuple(int(v) for v in cfg.end_tile)
+                if not build_lane_cells(start, end):
+                    start, end = derive_default_start_end(lane_idx, place_rects, main_intersection, hp_intersection)
+                    cfg.start_tile = start
+                    cfg.end_tile = end
+            cells = build_lane_cells(start, end)
+            if not cells:
+                start, end = derive_default_start_end(lane_idx, place_rects, main_intersection, hp_intersection)
+                cells = build_lane_cells(start, end)
         else:
             start = tuple(int(v) for v in cfg.start_tile)
             end = tuple(int(v) for v in cfg.end_tile)
-            if not build_lane_cells(start, end):
-                start, end = derive_default_start_end(lane_idx, place_rects, main_intersection, hp_intersection)
-                cfg.start_tile = start
-                cfg.end_tile = end
-        cells = build_lane_cells(start, end)
-        if not cells:
-            start, end = derive_default_start_end(lane_idx, place_rects, main_intersection, hp_intersection)
             cells = build_lane_cells(start, end)
+            if not cells:
+                cells = [start]
         lanes.append(cells)
         lane_meta.append(
             derive_traffic(

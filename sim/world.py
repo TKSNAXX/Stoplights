@@ -312,10 +312,10 @@ def intersection_cell_for_transition(in_lane_index: int, out_lane_index: int) ->
         return _state._hp_slots[0]
     if in_lane_index == 10 and len(_state._hp_slots) > 1:
         return _state._hp_slots[1]
-    idx = in_lane_index // 2
     slots = _state._main_slots
+    idx = in_lane_index // 2
     if idx < 0 or idx >= len(slots):
-        idx = 0
+        return slots[0] if slots else (0, 0)
     return slots[idx]
 
 

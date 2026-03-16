@@ -75,6 +75,20 @@ class GameState:
             "pair_checks": 0,
         }
 
+    def next_lane_index(self) -> int:
+        """Return next available lane index for adding a new lane."""
+        from sim.map_data import next_lane_index as _next
+        return _next(self.lane_configs)
+
+    def delete_lane(self, lane_idx: int) -> None:
+        """Remove lane from configs, remove cars on that lane, rebuild world. Only for extra lanes (12+)."""
+        if lane_idx < 12:
+            return
+        if lane_idx in self.lane_configs:
+            del self.lane_configs[lane_idx]
+        self.cars = [c for c in self.cars if c.lane_index != lane_idx]
+        self.rebuild_world_from_config()
+
     def get_max_impasse_timer(self) -> float | None:
         """Max timer value from _impasse_timers if any exist, else None (debug display)."""
         if not self._impasse_timers:
