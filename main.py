@@ -153,8 +153,8 @@ class StoplightsWindow(arcade.Window):
     def _clamp_camera_bounds(self) -> None:
         """Clamp _cam_x, _cam_y so the map cannot be panned to infinity."""
         z = self._zoom_scale
-        map_w = (world.get_grid_w() + world.get_grid_h() - 2) * TILE_W * z
-        map_h = (world.get_grid_w() + world.get_grid_h() - 2) * TILE_H * z
+        map_w = (world.get_grid_w() + world.get_grid_h() - 2) * TILE_W * z * 1.5
+        map_h = (world.get_grid_w() + world.get_grid_h() - 2) * TILE_H * z * 1.5
         max_cam_x = max(0, map_w / 2 - self.width / 2)
         max_cam_y = max(0, map_h / 2 - self.height / 2)
         self._cam_x = max(-max_cam_x, min(max_cam_x, self._cam_x))
