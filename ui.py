@@ -631,7 +631,7 @@ class RemoveButton:
 
 
 class IntersectionVarsDialog(Dialog):
-    """Dialog for editing intersection type, center, and size. Commit applies all. Remove for extra intersections only."""
+    """Dialog for editing intersection type, center, and size. Changes apply live. Remove for extra intersections only."""
 
     def __init__(
         self,
@@ -644,7 +644,7 @@ class IntersectionVarsDialog(Dialog):
         on_commit: Callable[[], None] | None = None,
         on_remove: Callable[[], None] | None = None,
     ):
-        super().__init__(x, y, 220, 200, f"Intersection: {intersection_key}")
+        super().__init__(x, y, 220, 160, f"Intersection: {intersection_key}")
         self.intersection_key = intersection_key
         self._config = intersection_config
         self._game = game
@@ -665,25 +665,24 @@ class IntersectionVarsDialog(Dialog):
             len(INTERSECTION_TYPE_VALUES), type_step,
             (100, 100, 100), (180, 180, 180),
         )
-        self._cx_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, cx, -100, 200, 1)
-        self._cy_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, cy, -100, 200, 1)
-        self._size_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, size_val, 2, 12, 2)
-        self._commit_btn = CommitButton(0, 0, 70, 22, on_click=self._do_commit)
+        control_width = 140
+        self._center_compass = CompassSelect(
+            0, 0, control_width, DROPDOWN_ROW_HEIGHT, (cx, cy), on_change=lambda _: self._apply_config(),
+        )
+        self._size_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, size_val, 2, 12, 2, on_change=lambda _: self._apply_config(), on_unfocus=self._apply_config)
         self._remove_btn = RemoveButton(0, 0, 70, 22, on_click=self._do_remove)
 
-        self.widgets = [self._type_slider, self._cx_box, self._cy_box, self._size_box, self._commit_btn]
+        self.widgets = [self._type_slider, self._center_compass, self._size_box]
         if self._can_remove:
             self.widgets.append(self._remove_btn)
         self._type_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
-        self._cx_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
-        self._cy_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._center_label = arcade.Text("Center:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._size_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
 
-    def _do_commit(self) -> None:
+    def _apply_config(self) -> None:
         """Apply type, center, size from widgets to config and call on_commit."""
         self._config.intersection_type = INTERSECTION_TYPE_VALUES[self._type_slider.value]
-        self._config.center_x = self._cx_box.value
-        self._config.center_y = self._cy_box.value
+        self._config.center_x, self._config.center_y = self._center_compass.value
         self._config.size_cells = max(2, min(12, self._size_box.value))
         if self._config.size_cells % 2 != 0:
             self._config.size_cells = (self._config.size_cells // 2) * 2
@@ -702,43 +701,43 @@ class IntersectionVarsDialog(Dialog):
         left = self.x + 12
         content_top = self.y - 32
         box_w = 100
+        control_left = left + 70
         self._type_slider.rect = (left, content_top - 24, 160, 20)
-        self._cx_box.rect = (left + 70, content_top - 48, box_w, NUMBER_BOX_HEIGHT)
-        self._cy_box.rect = (left + 70, content_top - 74, box_w, NUMBER_BOX_HEIGHT)
-        self._size_box.rect = (left + 70, content_top - 100, box_w, NUMBER_BOX_HEIGHT)
-        self._commit_btn.rect = (left, content_top - 132, 70, 22)
+        self._center_compass.rect = (control_left, content_top - 48, 140, DROPDOWN_ROW_HEIGHT)
+        self._size_box.rect = (control_left, content_top - 74, box_w, NUMBER_BOX_HEIGHT)
         if self._can_remove:
-            self._remove_btn.rect = (left + 76, content_top - 132, 70, 22)
+            self._remove_btn.rect = (left, content_top - 100, 70, 22)
         self._type_label.x = left
         self._type_label.y = content_top - 12
-        self._cx_label.x = left
-        self._cx_label.y = content_top - 36
-        self._cy_label.x = left
-        self._cy_label.y = content_top - 62
+        self._center_label.x = left
+        self._center_label.y = content_top - 36
         self._size_label.x = left
-        self._size_label.y = content_top - 88
+        self._size_label.y = content_top - 62
 
     def draw(self) -> None:
         self._layout_widgets()
         self._type_label.value = f"Type: {INTERSECTION_TYPE_VALUES[self._type_slider.value]}"
-        self._cx_label.value = "Center X:"
-        self._cy_label.value = "Center Y:"
         self._size_label.value = "Size:"
         super().draw()
         self._type_label.draw()
-        self._cx_label.draw()
-        self._cy_label.draw()
+        self._center_label.draw()
         self._size_label.draw()
 
     def on_mouse_press(self, x: float, y: float) -> bool:
         self._layout_widgets()
-        return super().on_mouse_press(x, y)
+        result = super().on_mouse_press(x, y)
+        self._apply_config()
+        return result
 
     def on_mouse_drag(self, x: float, y: float, dx: float, dy: float) -> bool:
-        return super().on_mouse_drag(x, y, dx, dy)
+        result = super().on_mouse_drag(x, y, dx, dy)
+        self._apply_config()
+        return result
 
     def on_mouse_release(self, x: float, y: float) -> bool:
-        return super().on_mouse_release(x, y)
+        result = super().on_mouse_release(x, y)
+        self._apply_config()
+        return result
 
 
 class NewIntersectionDialog(Dialog):
@@ -752,7 +751,7 @@ class NewIntersectionDialog(Dialog):
         on_commit: Callable[[], None] | None = None,
     ):
         key = _next_intersection_key(game.intersection_configs)
-        super().__init__(x, y, 220, 200, f"New Intersection: {key}")
+        super().__init__(x, y, 220, 174, f"New Intersection: {key}")
         self._game = game
         self._key = key
         self._on_commit = on_commit
@@ -762,23 +761,25 @@ class NewIntersectionDialog(Dialog):
             len(INTERSECTION_TYPE_VALUES), 0,
             (100, 100, 100), (180, 180, 180),
         )
-        self._cx_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, 36, -100, 200, 1)
-        self._cy_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, 48, -100, 200, 1)
+        control_width = 140
+        self._center_compass = CompassSelect(
+            0, 0, control_width, DROPDOWN_ROW_HEIGHT, (36, 48), on_change=None,
+        )
         self._size_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, 4, 2, 12, 2)
         self._commit_btn = CommitButton(0, 0, 70, 22, on_click=self._do_commit)
 
-        self.widgets = [self._type_slider, self._cx_box, self._cy_box, self._size_box, self._commit_btn]
+        self.widgets = [self._type_slider, self._center_compass, self._size_box, self._commit_btn]
         self._type_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
-        self._cx_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
-        self._cy_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._center_label = arcade.Text("Center:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._size_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
 
     def _do_commit(self) -> None:
         from sim import places
+        center_x, center_y = self._center_compass.value
         cfg = places.IntersectionConfig(
             intersection_type=INTERSECTION_TYPE_VALUES[self._type_slider.value],
-            center_x=self._cx_box.value,
-            center_y=self._cy_box.value,
+            center_x=center_x,
+            center_y=center_y,
             size_cells=max(2, min(12, self._size_box.value)),
         )
         if cfg.size_cells % 2 != 0:
@@ -792,30 +793,25 @@ class NewIntersectionDialog(Dialog):
         left = self.x + 12
         content_top = self.y - 32
         box_w = 100
+        control_left = left + 70
         self._type_slider.rect = (left, content_top - 24, 160, 20)
-        self._cx_box.rect = (left + 70, content_top - 48, box_w, NUMBER_BOX_HEIGHT)
-        self._cy_box.rect = (left + 70, content_top - 74, box_w, NUMBER_BOX_HEIGHT)
-        self._size_box.rect = (left + 70, content_top - 100, box_w, NUMBER_BOX_HEIGHT)
-        self._commit_btn.rect = (left, content_top - 132, 70, 22)
+        self._center_compass.rect = (control_left, content_top - 48, 140, DROPDOWN_ROW_HEIGHT)
+        self._size_box.rect = (control_left, content_top - 74, box_w, NUMBER_BOX_HEIGHT)
+        self._commit_btn.rect = (left, content_top - 106, 70, 22)
         self._type_label.x = left
         self._type_label.y = content_top - 12
-        self._cx_label.x = left
-        self._cx_label.y = content_top - 36
-        self._cy_label.x = left
-        self._cy_label.y = content_top - 62
+        self._center_label.x = left
+        self._center_label.y = content_top - 36
         self._size_label.x = left
-        self._size_label.y = content_top - 88
+        self._size_label.y = content_top - 62
 
     def draw(self) -> None:
         self._layout_widgets()
         self._type_label.value = f"Type: {INTERSECTION_TYPE_VALUES[self._type_slider.value]}"
-        self._cx_label.value = "Center X:"
-        self._cy_label.value = "Center Y:"
         self._size_label.value = "Size:"
         super().draw()
         self._type_label.draw()
-        self._cx_label.draw()
-        self._cy_label.draw()
+        self._center_label.draw()
         self._size_label.draw()
 
     def on_mouse_press(self, x: float, y: float) -> bool:
@@ -834,31 +830,33 @@ class NewPlaceDialog(Dialog):
         on_commit: Callable[[], None] | None = None,
     ):
         name = _next_place_name(game.place_geometry)
-        super().__init__(x, y, 220, 200, f"New Place: {name}")
+        super().__init__(x, y, 220, 174, f"New Place: {name}")
         self._game = game
         self._name = name
         self._on_commit = on_commit
 
-        self._cx_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, 20, -100, 200, 1)
-        self._cy_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, 20, -100, 200, 1)
+        control_width = 140
+        self._center_compass = CompassSelect(
+            0, 0, control_width, DROPDOWN_ROW_HEIGHT, (20, 20), on_change=None,
+        )
         self._w_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, 5, 1, 16, 1)
         self._l_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, 5, 1, 16, 1)
         self._commit_btn = CommitButton(0, 0, 70, 22, on_click=self._do_commit)
 
-        self.widgets = [self._cx_box, self._cy_box, self._w_box, self._l_box, self._commit_btn]
-        self._cx_label = arcade.Text("Center X:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
-        self._cy_label = arcade.Text("Center Y:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self.widgets = [self._center_compass, self._w_box, self._l_box, self._commit_btn]
+        self._center_label = arcade.Text("Center:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._w_label = arcade.Text("Width:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._l_label = arcade.Text("Length:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
 
     def _do_commit(self) -> None:
         from sim import places
         from sim.places import PLACE_SIZE_MIN, PLACE_SIZE_MAX
+        center_x, center_y = self._center_compass.value
         w = max(PLACE_SIZE_MIN, min(PLACE_SIZE_MAX, self._w_box.value))
         l = max(PLACE_SIZE_MIN, min(PLACE_SIZE_MAX, self._l_box.value))
         g = places.PlaceGeometry(
-            center_x=self._cx_box.value,
-            center_y=self._cy_box.value,
+            center_x=center_x,
+            center_y=center_y,
             width=w,
             length=l,
         )
@@ -872,25 +870,22 @@ class NewPlaceDialog(Dialog):
         left = self.x + 12
         content_top = self.y - 32
         box_w = 100
-        self._cx_box.rect = (left + 70, content_top - 24, box_w, NUMBER_BOX_HEIGHT)
-        self._cy_box.rect = (left + 70, content_top - 50, box_w, NUMBER_BOX_HEIGHT)
-        self._w_box.rect = (left + 70, content_top - 76, box_w, NUMBER_BOX_HEIGHT)
-        self._l_box.rect = (left + 70, content_top - 102, box_w, NUMBER_BOX_HEIGHT)
-        self._commit_btn.rect = (left, content_top - 134, 70, 22)
-        self._cx_label.x = left
-        self._cx_label.y = content_top - 12
-        self._cy_label.x = left
-        self._cy_label.y = content_top - 38
+        control_left = left + 70
+        self._center_compass.rect = (control_left, content_top - 24, 140, DROPDOWN_ROW_HEIGHT)
+        self._w_box.rect = (control_left, content_top - 50, box_w, NUMBER_BOX_HEIGHT)
+        self._l_box.rect = (control_left, content_top - 76, box_w, NUMBER_BOX_HEIGHT)
+        self._commit_btn.rect = (left, content_top - 108, 70, 22)
+        self._center_label.x = left
+        self._center_label.y = content_top - 12
         self._w_label.x = left
-        self._w_label.y = content_top - 64
+        self._w_label.y = content_top - 38
         self._l_label.x = left
-        self._l_label.y = content_top - 90
+        self._l_label.y = content_top - 64
 
     def draw(self) -> None:
         self._layout_widgets()
         super().draw()
-        self._cx_label.draw()
-        self._cy_label.draw()
+        self._center_label.draw()
         self._w_label.draw()
         self._l_label.draw()
 
@@ -930,7 +925,7 @@ def _next_place_name(place_geometry: dict) -> str:
 
 
 class PlaceVarsDialog(Dialog):
-    """Dialog for editing place spawn, attract, and geometry. Geometry requires Commit. Remove for extra places only."""
+    """Dialog for editing place spawn, attract, and geometry. Changes apply live. Remove for extra places only."""
 
     def __init__(
         self,
@@ -944,7 +939,7 @@ class PlaceVarsDialog(Dialog):
         on_commit: Callable[[], None] | None = None,
         on_remove: Callable[[], None] | None = None,
     ):
-        super().__init__(x, y, 240, 260, f"Place: {place}")
+        super().__init__(x, y, 240, 212, f"Place: {place}")
         self.place = place
         self._config = place_config
         self._place_geometry = place_geometry
@@ -965,35 +960,35 @@ class PlaceVarsDialog(Dialog):
             cx, cy, w, l = g.center_x, g.center_y, g.width, g.length
         else:
             cx, cy, w, l = 0, 0, 5, 5
-        self._cx_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, cx, -100, 200, 1)
-        self._cy_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, cy, -100, 200, 1)
-        self._w_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, w, 1, 16, 1)
-        self._l_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, l, 1, 16, 1)
-        self._commit_btn = CommitButton(0, 0, 70, 22, on_click=self._do_commit)
+        control_width = 140
+        self._center_compass = CompassSelect(
+            0, 0, control_width, DROPDOWN_ROW_HEIGHT, (cx, cy), on_change=lambda _: self._apply_geometry(),
+        )
+        self._w_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, w, 1, 16, 1, on_change=lambda _: self._apply_geometry(), on_unfocus=self._apply_geometry)
+        self._l_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, l, 1, 16, 1, on_change=lambda _: self._apply_geometry(), on_unfocus=self._apply_geometry)
         self._remove_btn = RemoveButton(0, 0, 70, 22, on_click=self._do_remove)
 
         self.widgets = [
             self._spawn_slider, self._attract_slider,
-            self._cx_box, self._cy_box, self._w_box, self._l_box,
-            self._commit_btn,
+            self._center_compass, self._w_box, self._l_box,
         ]
         if self._can_remove:
             self.widgets.append(self._remove_btn)
         self._spawn_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._attract_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
-        self._cx_label = arcade.Text("Center X:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
-        self._cy_label = arcade.Text("Center Y:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._center_label = arcade.Text("Center:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._w_label = arcade.Text("Width:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._l_label = arcade.Text("Length:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
 
-    def _do_commit(self) -> None:
-        """Apply geometry from NumberBoxes and call on_commit."""
+    def _apply_geometry(self) -> None:
+        """Apply geometry from CompassSelect and NumberBoxes, call on_commit."""
         from sim.places import PlaceGeometry, PLACE_SIZE_MIN, PLACE_SIZE_MAX
+        center_x, center_y = self._center_compass.value
         w = max(PLACE_SIZE_MIN, min(PLACE_SIZE_MAX, self._w_box.value))
         l = max(PLACE_SIZE_MIN, min(PLACE_SIZE_MAX, self._l_box.value))
         self._place_geometry[self.place] = PlaceGeometry(
-            center_x=self._cx_box.value,
-            center_y=self._cy_box.value,
+            center_x=center_x,
+            center_y=center_y,
             width=w,
             length=l,
         )
@@ -1029,27 +1024,24 @@ class PlaceVarsDialog(Dialog):
         left = self.x + 12
         content_top = self.y - 32
         box_w = 100
+        control_left = left + 70
         self._spawn_slider.rect = (left, content_top - 24, 160, 20)
         self._attract_slider.rect = (left, content_top - 52, 160, 20)
-        self._cx_box.rect = (left + 70, content_top - 78, box_w, NUMBER_BOX_HEIGHT)
-        self._cy_box.rect = (left + 70, content_top - 104, box_w, NUMBER_BOX_HEIGHT)
-        self._w_box.rect = (left + 70, content_top - 130, box_w, NUMBER_BOX_HEIGHT)
-        self._l_box.rect = (left + 70, content_top - 156, box_w, NUMBER_BOX_HEIGHT)
-        self._commit_btn.rect = (left, content_top - 188, 70, 22)
+        self._center_compass.rect = (control_left, content_top - 78, 140, DROPDOWN_ROW_HEIGHT)
+        self._w_box.rect = (control_left, content_top - 104, box_w, NUMBER_BOX_HEIGHT)
+        self._l_box.rect = (control_left, content_top - 130, box_w, NUMBER_BOX_HEIGHT)
         if self._can_remove:
-            self._remove_btn.rect = (left + 76, content_top - 188, 70, 22)
+            self._remove_btn.rect = (left, content_top - 162, 70, 22)
         self._spawn_label.x = left
         self._spawn_label.y = content_top - 12
         self._attract_label.x = left
         self._attract_label.y = content_top - 40
-        self._cx_label.x = left
-        self._cx_label.y = content_top - 66
-        self._cy_label.x = left
-        self._cy_label.y = content_top - 92
+        self._center_label.x = left
+        self._center_label.y = content_top - 66
         self._w_label.x = left
-        self._w_label.y = content_top - 118
+        self._w_label.y = content_top - 92
         self._l_label.x = left
-        self._l_label.y = content_top - 144
+        self._l_label.y = content_top - 118
 
     def draw(self) -> None:
         self._layout_widgets()
@@ -1058,8 +1050,7 @@ class PlaceVarsDialog(Dialog):
         super().draw()
         self._spawn_label.draw()
         self._attract_label.draw()
-        self._cx_label.draw()
-        self._cy_label.draw()
+        self._center_label.draw()
         self._w_label.draw()
         self._l_label.draw()
 
