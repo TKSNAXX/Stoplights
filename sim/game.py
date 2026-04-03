@@ -258,6 +258,36 @@ class GameState:
             extra_intersection_bounds=extra_intersection_bounds,
             template_metadata=self.template_metadata,
         )
+        self._refresh_spawn_places_from_world()
+
+    def _refresh_spawn_places_from_world(self) -> None:
+        """Recompute spawn origins from places that currently have outbound lanes."""
+        ordered_candidates: list[str] = []
+        seen: set[str] = set()
+
+        # Keep template order first when still present/spawnable.
+        for p in self.spawn_places:
+            if p in seen:
+                continue
+            ordered_candidates.append(p)
+            seen.add(p)
+        # Include all known places/configs so newly added places are considered.
+        for p in sorted(set(self.place_geometry) | set(self.place_configs)):
+            if p in seen:
+                continue
+            ordered_candidates.append(p)
+            seen.add(p)
+
+        spawnable = tuple(
+            p for p in ordered_candidates
+            if any(world.lane_traffic_in(i) == p for i in range(world.lane_count()))
+        )
+        self.spawn_places = spawnable
+
+        # Normalize per-origin state maps to current spawn origin set.
+        self.spawn_enabled = {p: self.spawn_enabled.get(p, True) for p in self.spawn_places}
+        self.spawn_timers = {p: self.spawn_timers.get(p, random.uniform(0, self.spawn_interval)) for p in self.spawn_places}
+        self.origin_spawn_counts = {p: self.origin_spawn_counts.get(p, 0) for p in self.spawn_places}
 
     def can_remove_lane(self, lane_index: int) -> bool:
         return lane_index >= self.base_lane_count
