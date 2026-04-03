@@ -677,7 +677,7 @@ class IntersectionVarsDialog(Dialog):
         self._on_change = on_change
         self._on_commit = on_commit
         self._on_remove = on_remove
-        self._can_remove = intersection_key not in ("main", "bypass") and game is not None
+        self._can_remove = bool(game is not None and hasattr(game, "can_remove_intersection") and game.can_remove_intersection(intersection_key))
 
         type_step = INTERSECTION_TYPE_VALUES.index(
             getattr(intersection_config, "intersection_type", "x")
@@ -973,8 +973,7 @@ class PlaceVarsDialog(Dialog):
         self._on_change = on_change
         self._on_commit = on_commit
         self._on_remove = on_remove
-        from sim import places as sim_places
-        self._can_remove = place not in sim_places.PLACES and game is not None
+        self._can_remove = bool(game is not None and hasattr(game, "can_remove_place") and game.can_remove_place(place))
 
         spawn_step = self._step_for_spawn(place_config.spawn_interval)
         attract_step = self._step_for_attract(place_config.attract_weight)
@@ -1418,7 +1417,7 @@ class LaneVarsDialog(Dialog):
         on_remove: Callable[[], None] | None = None,
     ):
         self._game = game
-        self._can_remove = lane_index >= 12 and game is not None
+        self._can_remove = bool(game is not None and hasattr(game, "can_remove_lane") and game.can_remove_lane(lane_index))
         height = 268 if self._can_remove else 240
         super().__init__(x, y, 320, height, f"Lane {lane_index}")
         self.lane_index = lane_index

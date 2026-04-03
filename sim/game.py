@@ -15,7 +15,9 @@ from sim.map_data import (
     bounds_from_center,
     derive_default_start_end,
     geometry_from_place_rects,
+    get_template_metadata,
     intersection_dict_from_bounds,
+    next_lane_index_with_base,
     place_rects_from_geometry,
 )
 from sim import world
@@ -27,7 +29,7 @@ from sim.visibility import build_poses, nearby_indices, rebuild_spatial_buckets_
 # Spawn: one car every N seconds per place (with jitter)
 SPAWN_INTERVAL = 2.0
 
-# Housing, Office, Park, and Shopping spawn.
+# Legacy fallback spawn places; runtime now prefers template metadata.
 SPAWN_PLACES = (places.SOUTH, places.NORTH, places.PARK, places.SHOPPING)
 
 # Run car movement only every Nth tick.
@@ -39,11 +41,17 @@ SPATIAL_QUERY_RADIUS_CELLS = int(math.ceil(VIS_ZONE_LENGTH_CELLS))
 
 class GameState:
     def __init__(self):
+        self.template_metadata = get_template_metadata(MAP_DATA)
+        self.base_lane_count: int = int(self.template_metadata.get("base_lane_count", 12))
+        self.core_intersection_ids: set[str] = set(self.template_metadata.get("core_intersection_ids", ["main", "bypass"]))
+        self.protected_place_ids: set[str] = set(self.template_metadata.get("protected_place_ids", list(SPAWN_PLACES)))
+        self.spawn_places: tuple[str, ...] = tuple(self.template_metadata.get("spawn_place_ids", list(SPAWN_PLACES)))
+
         self.cars: list[cars.Car] = []
         self.spawn_interval: float = SPAWN_INTERVAL  # fallback; per-place overridden by place_configs
-        self.spawn_enabled: dict[str, bool] = {p: True for p in SPAWN_PLACES}
-        self.place_configs: dict[str, places.PlaceConfig] = {p: places.PlaceConfig() for p in SPAWN_PLACES}
-        self.lane_configs: dict[int, places.LaneConfig] = {i: places.LaneConfig() for i in range(12)}
+        self.spawn_enabled: dict[str, bool] = {p: True for p in self.spawn_places}
+        self.place_configs: dict[str, places.PlaceConfig] = {p: places.PlaceConfig() for p in self.spawn_places}
+        self.lane_configs: dict[int, places.LaneConfig] = {i: places.LaneConfig() for i in range(self.base_lane_count)}
         self.intersection_configs: dict[str, places.IntersectionConfig] = {
             "main": places.IntersectionConfig(intersection_type=places.INTERSECTION_TYPE_X),
             "bypass": places.IntersectionConfig(
@@ -58,14 +66,21 @@ class GameState:
         default_place_rects = MAP_DATA.get("place_rects", {})
         self.place_geometry = geometry_from_place_rects(default_place_rects)
         self._apply_default_lane_tiles()
-        self.spawn_timers: dict[str, float] = {p: random.uniform(0, self.spawn_interval) for p in SPAWN_PLACES}
+        self.spawn_timers: dict[str, float] = {p: random.uniform(0, self.spawn_interval) for p in self.spawn_places}
         self._accumulated_time = 0.0
         self._tick_count = 0
         self.movement_every_n_ticks: int = MOVEMENT_EVERY_N_TICKS  # mutable; set by speed slider
         self._impasse_timers: dict[tuple[int, int], float] = {}  # (id_lo, id_hi) -> seconds mutual near
         self.police_list = [
-            cop.PoliceCar(deploy_lane=7, return_lane=7, red_trigger=10),  # Shopping
-            cop.PoliceCar(deploy_lane=5, return_lane=5, red_trigger=20),  # Park
+            cop.PoliceCar(
+                deploy_lane=int(cfg.get("deploy_lane", 7)),
+                return_lane=int(cfg.get("return_lane", int(cfg.get("deploy_lane", 7)))),
+                red_trigger=int(cfg.get("red_trigger", 10)),
+            )
+            for cfg in self.template_metadata.get("police_routes", [])
+        ] or [
+            cop.PoliceCar(deploy_lane=7, return_lane=7, red_trigger=10),
+            cop.PoliceCar(deploy_lane=5, return_lane=5, red_trigger=20),
         ]
         self._spatial_buckets: dict[tuple[int, int], list[int]] = {}
         self._perf_stats: dict[str, float | int] = {
@@ -79,12 +94,11 @@ class GameState:
 
     def next_lane_index(self) -> int:
         """Return next available lane index for adding a new lane."""
-        from sim.map_data import next_lane_index as _next
-        return _next(self.lane_configs)
+        return next_lane_index_with_base(self.lane_configs, self.base_lane_count)
 
     def delete_lane(self, lane_idx: int) -> None:
-        """Remove lane from configs, remove cars on that lane, rebuild world. Only for extra lanes (12+)."""
-        if lane_idx < 12:
+        """Remove lane from configs, remove cars on that lane, rebuild world. Only for non-core lanes."""
+        if lane_idx < self.base_lane_count:
             return
         if lane_idx in self.lane_configs:
             del self.lane_configs[lane_idx]
@@ -113,17 +127,17 @@ class GameState:
         default_place_rects = MAP_DATA.get("place_rects", {})
         default_geometry = geometry_from_place_rects(default_place_rects)
         # Ensure core places exist in place_geometry
-        for p in SPAWN_PLACES:
+        for p in self.protected_place_ids:
             if p not in self.place_geometry:
                 self.place_geometry[p] = default_geometry.get(p, places.PlaceGeometry(center_x=36, center_y=48, width=5, length=5))
         # Ensure core place_configs exist
-        for p in SPAWN_PLACES:
+        for p in self.spawn_places:
             if p not in self.place_configs:
                 self.place_configs[p] = places.PlaceConfig()
         # Ensure main and bypass intersections exist
-        if "main" not in self.intersection_configs:
+        if "main" in self.core_intersection_ids and "main" not in self.intersection_configs:
             self.intersection_configs["main"] = places.IntersectionConfig(intersection_type=places.INTERSECTION_TYPE_X)
-        if "bypass" not in self.intersection_configs:
+        if "bypass" in self.core_intersection_ids and "bypass" not in self.intersection_configs:
             self.intersection_configs["bypass"] = places.IntersectionConfig(
                 intersection_type=places.INTERSECTION_TYPE_CORNER,
                 center_x=places.BYPASS_DEFAULT_CENTER[0],
@@ -131,12 +145,12 @@ class GameState:
             )
         # Prune place_configs and spawn_timers for deleted places
         for key in list(self.place_configs):
-            if key not in self.place_geometry and key not in SPAWN_PLACES:
+            if key not in self.place_geometry and key not in self.spawn_places:
                 del self.place_configs[key]
         for key in list(self.spawn_timers):
             if key not in self.place_configs:
                 del self.spawn_timers[key]
-        for p in SPAWN_PLACES:
+        for p in self.spawn_places:
             if p not in self.spawn_timers:
                 self.spawn_timers[p] = random.uniform(0, self.spawn_interval)
 
@@ -148,7 +162,7 @@ class GameState:
         self.cars.clear()
         default_rects = MAP_DATA.get("place_rects", {})
         self.place_geometry = geometry_from_place_rects(default_rects)
-        self.place_configs = {p: places.PlaceConfig() for p in SPAWN_PLACES}
+        self.place_configs = {p: places.PlaceConfig() for p in self.spawn_places}
         self.intersection_configs = {
             "main": places.IntersectionConfig(intersection_type=places.INTERSECTION_TYPE_X),
             "bypass": places.IntersectionConfig(
@@ -157,17 +171,18 @@ class GameState:
                 center_y=places.BYPASS_DEFAULT_CENTER[1],
             ),
         }
-        self.spawn_timers = {p: 0.0 for p in SPAWN_PLACES}
+        self.spawn_timers = {p: 0.0 for p in self.spawn_places}
         self._impasse_timers.clear()
-        # Reset lane_configs to core 0-11 only
-        self.lane_configs = {i: places.LaneConfig() for i in range(12)}
+        # Reset lane_configs to core lanes only
+        self.lane_configs = {i: places.LaneConfig() for i in range(self.base_lane_count)}
         for i in (4, 7):
-            self.lane_configs[i].lane_type = places.LANE_TYPE_PASSING
+            if i in self.lane_configs:
+                self.lane_configs[i].lane_type = places.LANE_TYPE_PASSING
         self._apply_default_lane_tiles()
         self.rebuild_world_from_config()
 
     def _apply_default_lane_tiles(self) -> None:
-        """Ensure lane 0-11 have start/end tiles derived from default geometry."""
+        """Ensure core lanes have start/end tiles derived from template/default geometry."""
         place_rects = place_rects_from_geometry(self.place_geometry)
         main_cfg = self.intersection_configs.get("main")
         bypass_cfg = self.intersection_configs.get("bypass")
@@ -178,12 +193,18 @@ class GameState:
         mx_lo, mx_hi, my_lo, my_hi = bounds_from_center(main_center[0], main_center[1], main_size)
         main_intersection = intersection_dict_from_bounds(mx_lo, mx_hi, my_lo, my_hi)
         hp_intersection = build_bypass_intersection(bypass_center, bypass_size)
-        for lane_idx in range(12):
+        for lane_idx in range(self.base_lane_count):
             cfg = self.lane_configs.get(lane_idx)
             if cfg is None:
                 continue
             if cfg.start_tile == (0, 0) and cfg.end_tile == (0, 0):
-                start, end = derive_default_start_end(lane_idx, place_rects, main_intersection, hp_intersection)
+                start, end = derive_default_start_end(
+                    lane_idx,
+                    place_rects,
+                    main_intersection,
+                    hp_intersection,
+                    template_metadata=self.template_metadata,
+                )
                 cfg.start_tile = start
                 cfg.end_tile = end
 
@@ -227,7 +248,17 @@ class GameState:
             place_rects, main_center, main_size, bypass_center, bypass_size,
             lane_configs=self.lane_configs,
             extra_intersection_bounds=extra_intersection_bounds,
+            template_metadata=self.template_metadata,
         )
+
+    def can_remove_lane(self, lane_index: int) -> bool:
+        return lane_index >= self.base_lane_count
+
+    def can_remove_place(self, place_key: str) -> bool:
+        return place_key not in self.protected_place_ids
+
+    def can_remove_intersection(self, intersection_key: str) -> bool:
+        return intersection_key not in self.core_intersection_ids
 
     def _apply_police_influence(
         self,
@@ -332,7 +363,7 @@ class GameState:
 
         update_spawns(
             dt,
-            SPAWN_PLACES,
+            self.spawn_places,
             self.spawn_enabled,
             self.spawn_timers,
             self.place_configs,

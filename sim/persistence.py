@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 SAVE_FILENAME = "config.json"
 DEBOUNCE_SEC = 1.5
+SCHEMA_VERSION = 2
 
 _save_timer: float = 0.0
 
@@ -85,6 +86,9 @@ def load_config(game: "GameState", window=None) -> None:
                 ex, ey = cfg["end_tile"]
                 if isinstance(ex, (int, float)) and isinstance(ey, (int, float)):
                     game.lane_configs[idx].end_tile = (int(ex), int(ey))
+            if bool(cfg.get("use_template_endpoints", False)):
+                game.lane_configs[idx].start_tile = (0, 0)
+                game.lane_configs[idx].end_tile = (0, 0)
             if "start_tile" not in cfg or "end_tile" not in cfg:
                 # Legacy migration path: keep safe defaults from GameState initialization.
                 pass
@@ -126,6 +130,7 @@ def save_config(game: "GameState", window=None) -> None:
     """Serialize configs to JSON and write to disk. If window provided, also save user_settings."""
     path = get_save_path()
     data = {
+        "schema_version": SCHEMA_VERSION,
         "user_settings": _user_settings_dict(window) if window is not None else {},
         "place_configs": {
             k: {"spawn_interval": v.spawn_interval, "attract_weight": v.attract_weight}
@@ -137,6 +142,7 @@ def save_config(game: "GameState", window=None) -> None:
                 "lane_type": v.lane_type,
                 "start_tile": [int(v.start_tile[0]), int(v.start_tile[1])],
                 "end_tile": [int(v.end_tile[0]), int(v.end_tile[1])],
+                "use_template_endpoints": bool(v.start_tile == (0, 0) and v.end_tile == (0, 0)),
             }
             for k, v in game.lane_configs.items()
         },

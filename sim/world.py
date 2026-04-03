@@ -155,6 +155,7 @@ def rebuild_world(
     bypass_size: int,
     lane_configs: dict[int, "LaneConfig"] | None = None,
     extra_intersection_bounds: dict[str, tuple[int, int, int, int]] | None = None,
+    template_metadata: dict | None = None,
 ) -> None:
     """
     Rebuild lanes and intersection geometry from centers and sizes.
@@ -178,6 +179,7 @@ def rebuild_world(
         place_rects, main_intersection, bypass_center, bypass_size,
         lane_configs or {},
         extra_intersection_bounds=extra_intersection_bounds,
+        template_metadata=template_metadata,
     )
     _state._intersection_keys = (
         frozenset(extra_intersection_bounds.keys()) if extra_intersection_bounds
@@ -284,6 +286,32 @@ def get_intersection_at_cell(cell: tuple[int, int]) -> str | None:
 def get_extra_intersection_cells(key: str) -> list[tuple[int, int]]:
     """Return cells belonging to the given extra intersection, or empty list if unknown."""
     return list(_state._extra_intersection_cells.get(key, []))
+
+
+def get_intersection_keys() -> list[str]:
+    """Return all known intersection keys in stable order."""
+    keys = []
+    for k in ("main", "bypass"):
+        if k in _state._intersection_keys:
+            keys.append(k)
+    for k in sorted(_state._intersection_keys):
+        if k not in ("main", "bypass"):
+            keys.append(k)
+    return keys
+
+
+def get_intersection_cells_by_key(key: str) -> list[tuple[int, int]]:
+    """Return cells for an intersection key."""
+    if key == "main":
+        return list(_state._main_cells)
+    if key == "bypass":
+        return list(_state._hp_cells)
+    return list(_state._extra_intersection_cells.get(key, []))
+
+
+def get_intersection_cells_map() -> dict[str, list[tuple[int, int]]]:
+    """Return {intersection_key: cells} for all intersections."""
+    return {k: get_intersection_cells_by_key(k) for k in get_intersection_keys()}
 
 
 def get_intersection_cells() -> list[tuple[int, int]]:

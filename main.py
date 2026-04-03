@@ -61,7 +61,9 @@ EDGE_PAN_MARGIN = 48
 def _car_direction_index(car) -> int:
     if getattr(car, "pose_dir_index_8", None) is not None:
         return int(car.pose_dir_index_8) % 8
-    return LANE_TO_DIRECTION_INDEX[min(max(0, car.lane_index), 7)]
+    d = world.lane_direction(getattr(car, "lane_index", -1))
+    direction_map = {"N": 0, "E": 2, "S": 4, "W": 6}
+    return direction_map.get(d, 0)
 
 
 class StoplightsWindow(arcade.Window):
@@ -80,7 +82,7 @@ class StoplightsWindow(arcade.Window):
         self._place_texts: dict[str, arcade.Text] = {}
         self._cardinal_texts: dict[str, arcade.Text] = {}
 
-        for place in places.PLACES:
+        for place in self.game.spawn_places:
             self._place_texts[place] = arcade.Text(place, 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE, anchor_x="center", anchor_y="center")
         self._cardinal_texts = {
             "N": arcade.Text("N", 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE, anchor_x="center", anchor_y="bottom"),
@@ -258,24 +260,12 @@ class StoplightsWindow(arcade.Window):
             "road_w_pass": self._tile_set.get("road_w_pass"),
         }
         road_cross_tex = self._tile_set.get("road_cross")
-        main_inter_cells = set(world.get_main_intersection_cells())
-        bypass_inter_cells = set(world.get_bypass_intersection_cells())
-        main_use_corner = (
-            self.game.intersection_configs.get("main")
-            and self.game.intersection_configs["main"].intersection_type == places.INTERSECTION_TYPE_CORNER
-        )
-        bypass_use_corner = (
-            self.game.intersection_configs.get("bypass")
-            and self.game.intersection_configs["bypass"].intersection_type == places.INTERSECTION_TYPE_CORNER
-        )
-        main_cfg = self.game.intersection_configs.get("main")
-        bypass_cfg = self.game.intersection_configs.get("bypass")
-        main_corner_tex = generate_corner_texture(main_cfg.size_cells if main_cfg else 4) if main_use_corner else None
-        bypass_corner_tex = generate_corner_texture(bypass_cfg.size_cells if bypass_cfg else 4) if bypass_use_corner else None
+        intersection_cells_map = world.get_intersection_cells_map()
+        all_inter_cells = {c for cells in intersection_cells_map.values() for c in cells}
         for gy in range(world.get_grid_h()):
             for gx in range(world.get_grid_w()):
                 cell = (gx, gy)
-                if cell in main_inter_cells or cell in bypass_inter_cells:
+                if cell in all_inter_cells:
                     tex = grass_tex  # always grass under intersections; overlay drawn below
                 elif cell in lane_cell_to_road:
                     rt = lane_cell_to_road[cell]
@@ -286,32 +276,12 @@ class StoplightsWindow(arcade.Window):
                     tex = grass_tex
                 self._append_sprite_at(tex, gx, gy, center_x, center_y)
 
-        self._overlay_intersection(
-            list(main_inter_cells), main_use_corner, main_corner_tex, road_cross_tex, center_x, center_y
-        )
-        self._overlay_intersection(
-            list(bypass_inter_cells), bypass_use_corner, bypass_corner_tex, road_cross_tex, center_x, center_y
-        )
-
-        # Extra intersections (not main/bypass)
-        extra_keys = [k for k in self.game.intersection_configs if k not in ("main", "bypass")]
-        for key in extra_keys:
-            extra_cells = [
-                c for c in world.get_extra_intersection_cells(key)
-                if c not in main_inter_cells and c not in bypass_inter_cells
-            ]
+        for key, cells in intersection_cells_map.items():
             cfg = self.game.intersection_configs.get(key)
             use_corner = cfg is not None and cfg.intersection_type == places.INTERSECTION_TYPE_CORNER
             size_cells = cfg.size_cells if cfg else 4
             corner_tex = generate_corner_texture(size_cells) if use_corner else None
-            for cell in extra_cells:
-                gx, gy = cell
-                self._append_sprite_at(grass_tex, gx, gy, center_x, center_y)
-                if use_corner and corner_tex is not None:
-                    continue  # drawn as single centered sprite below
-                self._append_sprite_at(road_cross_tex, gx, gy, center_x, center_y)
-            if use_corner and corner_tex is not None and extra_cells:
-                self._append_centered_sprite_for_cells(corner_tex, extra_cells, center_x, center_y)
+            self._overlay_intersection(cells, use_corner, corner_tex, road_cross_tex, center_x, center_y)
 
         self._update_text_positions(center_x, center_y)
 

@@ -3,12 +3,58 @@ Serializable map data with optional JSON override.
 """
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from sim.places import LaneConfig, PlaceGeometry
+
+DEFAULT_TEMPLATE: dict = {
+    "base_lane_count": 12,
+    "core_intersection_ids": ["main", "bypass"],
+    "protected_place_ids": ["Housing", "Office", "Park", "Shopping"],
+    "spawn_place_ids": ["Housing", "Office", "Park", "Shopping"],
+    "secondary_intersection_id": "bypass",
+    "route_pairs_via_secondary": [["Housing", "Park"], ["Park", "Housing"]],
+    "police_routes": [
+        {"deploy_lane": 7, "return_lane": 7, "red_trigger": 10},
+        {"deploy_lane": 5, "return_lane": 5, "red_trigger": 20},
+    ],
+    "default_lane_endpoints": [],
+}
+
+
+def get_template_metadata(map_data: dict | None = None) -> dict:
+    """Return normalized template metadata merged with defaults."""
+    data = map_data if map_data is not None else MAP_DATA
+    template = copy.deepcopy(DEFAULT_TEMPLATE)
+    loaded = data.get("template", {}) if isinstance(data, dict) else {}
+    if isinstance(loaded, dict):
+        template.update(loaded)
+    # Derive spawn/core place ids from place_rects when not provided.
+    if not template.get("spawn_place_ids"):
+        template["spawn_place_ids"] = sorted((data.get("place_rects") or {}).keys())
+    if not template.get("protected_place_ids"):
+        template["protected_place_ids"] = list(template["spawn_place_ids"])
+    # Normalize base lane count.
+    try:
+        template["base_lane_count"] = max(0, int(template.get("base_lane_count", 12)))
+    except (TypeError, ValueError):
+        template["base_lane_count"] = 12
+    # Derive default lane endpoints from lanes if absent.
+    default_eps = template.get("default_lane_endpoints")
+    if not isinstance(default_eps, list) or not default_eps:
+        lanes = data.get("lanes", []) if isinstance(data, dict) else []
+        endpoints: list[list[list[int]]] = []
+        for lane in lanes[: template["base_lane_count"]]:
+            if lane:
+                s = lane[0]
+                e = lane[-1]
+                endpoints.append([[int(s[0]), int(s[1])], [int(e[0]), int(e[1])]])
+        template["default_lane_endpoints"] = endpoints
+    return template
 
 
 def geometry_from_place_rects(place_rects: dict[str, dict]) -> dict[str, "PlaceGeometry"]:
@@ -189,8 +235,22 @@ def derive_default_start_end(
     place_rects: dict[str, dict],
     main_intersection: dict,
     hp_intersection: dict,
+    template_metadata: dict | None = None,
 ) -> tuple[tuple[int, int], tuple[int, int]]:
-    """Derive the default start/end endpoints from legacy base-lane geometry."""
+    """Derive default start/end endpoints from template metadata, then legacy fallback."""
+    tm = template_metadata or {}
+    lane_defaults = tm.get("default_lane_endpoints", [])
+    if isinstance(lane_defaults, list) and 0 <= lane_idx < len(lane_defaults):
+        item = lane_defaults[lane_idx]
+        if isinstance(item, (list, tuple)) and len(item) == 2:
+            try:
+                s = (int(item[0][0]), int(item[0][1]))
+                e = (int(item[1][0]), int(item[1][1]))
+                return (s, e)
+            except (TypeError, ValueError, IndexError):
+                pass
+
+    # Legacy fallback for old saves/templates without metadata.
     x_lo, x_hi, y_lo, y_hi = _intersection_bounds(main_intersection)
     ns_x_lo, ns_x_hi = _centered_tracks(x_lo, x_hi)
     ew_y_lo, ew_y_hi = _centered_tracks(y_lo, y_hi)
@@ -233,9 +293,14 @@ def derive_default_start_end(
 
 
 def next_lane_index(lane_configs: dict) -> int:
-    """Return next available lane index. max(keys)+1 when non-empty, else 12."""
+    """Return next available lane index. max(keys)+1 when non-empty, else base count."""
+    return next_lane_index_with_base(lane_configs, 12)
+
+
+def next_lane_index_with_base(lane_configs: dict, base_lane_count: int) -> int:
+    """Return next available lane index with explicit base lane count."""
     if not lane_configs:
-        return 12
+        return max(0, int(base_lane_count))
     return max(lane_configs.keys()) + 1
 
 
@@ -246,30 +311,39 @@ def build_lanes_from_config(
     bypass_size: int,
     lane_configs: dict[int, "LaneConfig"],
     extra_intersection_bounds: dict[str, tuple[int, int, int, int]] | None = None,
+    template_metadata: dict | None = None,
 ) -> tuple[list[list[tuple[int, int]]], dict, list[tuple[str, str, str]]]:
     """Build lanes from explicit start/end tiles. Returns (lanes, hp_intersection, lane_meta)."""
+    tm = template_metadata or {}
+    base_lane_count = max(0, int(tm.get("base_lane_count", 12)))
     hp_intersection = build_bypass_intersection(bypass_center, bypass_size)
     lanes: list[list[tuple[int, int]]] = []
     lane_meta: list[tuple[str, str, str]] = []
-    base_indices = list(range(12))
-    extra_indices = sorted(k for k in lane_configs if k >= 12)
+    base_indices = list(range(base_lane_count))
+    extra_indices = sorted(k for k in lane_configs if k >= base_lane_count)
     indices = base_indices + extra_indices
     for lane_idx in indices:
         cfg = lane_configs.get(lane_idx)
-        if lane_idx >= 12 and cfg is None:
+        if lane_idx >= base_lane_count and cfg is None:
             continue
-        if lane_idx < 12:
+        if lane_idx < base_lane_count:
             if cfg is None:
-                start, end = derive_default_start_end(lane_idx, place_rects, main_intersection, hp_intersection)
+                start, end = derive_default_start_end(
+                    lane_idx, place_rects, main_intersection, hp_intersection, template_metadata=tm
+                )
             else:
                 start, end = tuple(int(v) for v in cfg.start_tile), tuple(int(v) for v in cfg.end_tile)
                 if not build_lane_cells(start, end):
-                    start, end = derive_default_start_end(lane_idx, place_rects, main_intersection, hp_intersection)
+                    start, end = derive_default_start_end(
+                        lane_idx, place_rects, main_intersection, hp_intersection, template_metadata=tm
+                    )
                     cfg.start_tile = start
                     cfg.end_tile = end
             cells = build_lane_cells(start, end)
             if not cells:
-                start, end = derive_default_start_end(lane_idx, place_rects, main_intersection, hp_intersection)
+                start, end = derive_default_start_end(
+                    lane_idx, place_rects, main_intersection, hp_intersection, template_metadata=tm
+                )
                 cells = build_lane_cells(start, end)
         else:
             start = tuple(int(v) for v in cfg.start_tile)
@@ -373,12 +447,18 @@ def _default_map() -> dict:
         grid_w = max(grid_w, cell[0] + 1)
         grid_h = max(grid_h, cell[1] + 1)
 
+    default_lane_endpoints = []
+    for lane in lanes[: DEFAULT_TEMPLATE["base_lane_count"]]:
+        if lane:
+            default_lane_endpoints.append([[int(lane[0][0]), int(lane[0][1])], [int(lane[-1][0]), int(lane[-1][1])]])
+
     return {
         "grid": {"width": grid_w, "height": grid_h},
         "intersection": intersection,
         "hp_intersection": hp_intersection,
         "lanes": lanes,
         "place_rects": place_rects,
+        "template": {**DEFAULT_TEMPLATE, "default_lane_endpoints": default_lane_endpoints},
     }
 
 
@@ -400,12 +480,14 @@ def load_map_data() -> dict:
     merged["intersection"] = {**default["intersection"], **loaded.get("intersection", {})}
     merged["hp_intersection"] = merged.get("hp_intersection") or default.get("hp_intersection", {})
     merged["place_rects"] = {**default["place_rects"], **loaded.get("place_rects", {})}
+    merged["template"] = {**default.get("template", {}), **loaded.get("template", {})}
     if "lanes" not in loaded:
         place_rects = merged["place_rects"]
         intersection = merged["intersection"]
         bypass_center = get_bypass_intersection_center(place_rects)
+        tm = get_template_metadata(merged)
         lanes, hp_intersection, _lane_meta = build_lanes_from_config(
-            place_rects, intersection, bypass_center, 4, {}
+            place_rects, intersection, bypass_center, 4, {}, template_metadata=tm
         )
         merged["lanes"] = lanes
         merged["hp_intersection"] = hp_intersection

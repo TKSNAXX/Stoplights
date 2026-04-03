@@ -7,7 +7,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
-from sim.places import PLACES, spawn_lanes_for_place
+from sim.places import spawn_lanes_for_place
 from sim import world
 
 # Palette of RGB tuples for random car colors (distinct, visible on dark background).
@@ -75,7 +75,7 @@ class Car:
 def spawn_car(origin: str, destination: str | None = None, attract_weights: dict[str, float] | None = None) -> Car:
     """Create a car at the start of a lane leaving origin. destination defaults to weighted random other place."""
     if destination is None or destination == origin:
-        others = [p for p in PLACES if p != origin]
+        others = [p for p in world.get_place_rects().keys() if p != origin]
         if not others:
             destination = origin
         elif attract_weights:

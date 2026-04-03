@@ -7,6 +7,7 @@ from __future__ import annotations
 import dataclasses
 
 from sim import world
+from sim.map_data import MAP_DATA, get_template_metadata
 
 @dataclasses.dataclass
 class PlaceConfig:
@@ -74,8 +75,13 @@ SHOPPING = "Shopping"
 
 PLACES = (SOUTH, NORTH, PARK, SHOPPING)
 
-# Housing-Park direct route: lanes 8-11, own junction.
-ROUTE_HOUSING_PARK = frozenset({(SOUTH, PARK), (PARK, SOUTH)})
+_TEMPLATE = get_template_metadata(MAP_DATA)
+_SECONDARY_INTERSECTION_ID = str(_TEMPLATE.get("secondary_intersection_id", "bypass"))
+ROUTE_VIA_SECONDARY = frozenset(
+    (str(pair[0]), str(pair[1]))
+    for pair in _TEMPLATE.get("route_pairs_via_secondary", [])
+    if isinstance(pair, (list, tuple)) and len(pair) == 2
+)
 
 
 def out_lane_for_place(place: str, from_intersection: str = "main") -> int | None:
@@ -140,8 +146,6 @@ def spawn_lanes_for_place(place: str, destination: str | None = None) -> list[in
             out = world.lane_traffic_out(i)
             if destination is None or out == destination:
                 result.append(i)
-            elif destination is not None and (place, destination) in ROUTE_HOUSING_PARK and out == "bypass":
+            elif destination is not None and (place, destination) in ROUTE_VIA_SECONDARY and out == _SECONDARY_INTERSECTION_ID:
                 result.append(i)
-    if not result and destination is not None and (place, destination) in ROUTE_HOUSING_PARK:
-        return [8] if place == SOUTH else [10]
     return result if result else [0]
