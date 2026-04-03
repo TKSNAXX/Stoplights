@@ -88,6 +88,9 @@ ROUTE_VIA_SECONDARY = frozenset(
 
 def out_lane_for_place(place: str, from_intersection: str = "main") -> int | None:
     """Out-lane that goes to place from the given intersection (main, bypass, or extra)."""
+    lane = choose_next_lane_from_node(from_intersection, place)
+    if lane is not None:
+        return lane
     for i in range(world.lane_count()):
         if world.lane_traffic_in(i) == from_intersection and world.lane_traffic_out(i) == place:
             return i
@@ -201,6 +204,25 @@ def destination_reachable_from_node(start_node: str, destination: str) -> bool:
         return True
     graph = _lane_graph()
     return _bfs_distance(start_node, destination, graph) is not None
+
+
+def choose_next_lane_from_node(from_node: str, destination: str) -> int | None:
+    """Choose an outbound lane from any node toward destination via shortest next-hop."""
+    outgoing = [i for i in range(world.lane_count()) if world.lane_traffic_in(i) == from_node]
+    if not outgoing:
+        return None
+
+    direct = [i for i in outgoing if world.lane_traffic_out(i) == destination]
+    if direct:
+        return random.choice(direct)
+
+    graph = _lane_graph()
+    next_hops = _best_next_hops(from_node, destination, graph)
+    if next_hops:
+        routed = [i for i in outgoing if world.lane_traffic_out(i) in next_hops]
+        if routed:
+            return random.choice(routed)
+    return random.choice(outgoing)
 
 
 def _lane_graph() -> dict[str, set[str]]:

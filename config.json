@@ -19,6 +19,10 @@
     "Shopping": {
       "spawn_interval": 2.0,
       "attract_weight": 1.0
+    },
+    "Place 1": {
+      "spawn_interval": 2.0,
+      "attract_weight": 1.0
     }
   },
   "lane_configs": {
@@ -229,6 +233,32 @@
         69
       ],
       "use_template_endpoints": false
+    },
+    "16": {
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "start_tile": [
+        18,
+        73
+      ],
+      "end_tile": [
+        18,
+        71
+      ],
+      "use_template_endpoints": false
+    },
+    "17": {
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "start_tile": [
+        19,
+        71
+      ],
+      "end_tile": [
+        19,
+        73
+      ],
+      "use_template_endpoints": false
     }
   },
   "intersection_configs": {
@@ -275,6 +305,12 @@
       "center_y": 46,
       "width": 8,
       "length": 16
+    },
+    "Place 1": {
+      "center_x": 19,
+      "center_y": 76,
+      "width": 5,
+      "length": 5
     }
   },
   "spawn_balance": {
