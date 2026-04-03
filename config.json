@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "user_settings": {
     "edge_pan_enabled": false
   },
@@ -169,7 +169,7 @@
       "speed_limit": 1.0,
       "lane_type": "normal",
       "start_tile": [
-        62,
+        61,
         2
       ],
       "end_tile": [
@@ -239,8 +239,8 @@
       "center_y": 48
     },
     "bypass": {
-      "intersection_type": "corner",
-      "size_cells": 12,
+      "intersection_type": "x",
+      "size_cells": 4,
       "center_x": 64,
       "center_y": 2
     },
@@ -276,5 +276,9 @@
       "width": 8,
       "length": 16
     }
+  },
+  "spawn_balance": {
+    "origin_spawn_balance_coeff": 1.0,
+    "out_lane_balance_coeff": 1.0
   }
 }

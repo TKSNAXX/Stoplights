@@ -46,6 +46,8 @@ class GameState:
         self.core_intersection_ids: set[str] = set(self.template_metadata.get("core_intersection_ids", ["main", "bypass"]))
         self.protected_place_ids: set[str] = set(self.template_metadata.get("protected_place_ids", list(SPAWN_PLACES)))
         self.spawn_places: tuple[str, ...] = tuple(self.template_metadata.get("spawn_place_ids", list(SPAWN_PLACES)))
+        self.origin_spawn_balance_coeff: float = float(self.template_metadata.get("origin_spawn_balance_coeff", 1.0))
+        self.out_lane_balance_coeff: float = float(self.template_metadata.get("out_lane_balance_coeff", 1.0))
 
         self.cars: list[cars.Car] = []
         self.spawn_interval: float = SPAWN_INTERVAL  # fallback; per-place overridden by place_configs
@@ -67,6 +69,8 @@ class GameState:
         self.place_geometry = geometry_from_place_rects(default_place_rects)
         self._apply_default_lane_tiles()
         self.spawn_timers: dict[str, float] = {p: random.uniform(0, self.spawn_interval) for p in self.spawn_places}
+        self.origin_spawn_counts: dict[str, int] = {p: 0 for p in self.spawn_places}
+        self.lane_spawn_counts: dict[tuple[str, int], int] = {}
         self._accumulated_time = 0.0
         self._tick_count = 0
         self.movement_every_n_ticks: int = MOVEMENT_EVERY_N_TICKS  # mutable; set by speed slider
@@ -153,6 +157,8 @@ class GameState:
         for p in self.spawn_places:
             if p not in self.spawn_timers:
                 self.spawn_timers[p] = random.uniform(0, self.spawn_interval)
+            if p not in self.origin_spawn_counts:
+                self.origin_spawn_counts[p] = 0
 
     def reset_to_defaults(self) -> None:
         """
@@ -172,6 +178,8 @@ class GameState:
             ),
         }
         self.spawn_timers = {p: 0.0 for p in self.spawn_places}
+        self.origin_spawn_counts = {p: 0 for p in self.spawn_places}
+        self.lane_spawn_counts.clear()
         self._impasse_timers.clear()
         # Reset lane_configs to core lanes only
         self.lane_configs = {i: places.LaneConfig() for i in range(self.base_lane_count)}
@@ -368,6 +376,10 @@ class GameState:
             self.spawn_timers,
             self.place_configs,
             self.cars,
+            origin_spawn_counts=self.origin_spawn_counts,
+            lane_spawn_counts=self.lane_spawn_counts,
+            origin_spawn_balance_coeff=self.origin_spawn_balance_coeff,
+            out_lane_balance_coeff=self.out_lane_balance_coeff,
         )
 
         speed = 1.0 / max(1e-6, base_duration)  # cells per second

@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 SAVE_FILENAME = "config.json"
 DEBOUNCE_SEC = 1.5
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _save_timer: float = 0.0
 
@@ -125,6 +125,13 @@ def load_config(game: "GameState", window=None) -> None:
             if key not in game.place_configs:
                 game.place_configs[key] = places.PlaceConfig()
 
+    sb = data.get("spawn_balance", {})
+    if isinstance(sb, dict):
+        if "origin_spawn_balance_coeff" in sb and isinstance(sb["origin_spawn_balance_coeff"], (int, float)):
+            game.origin_spawn_balance_coeff = max(0.0, float(sb["origin_spawn_balance_coeff"]))
+        if "out_lane_balance_coeff" in sb and isinstance(sb["out_lane_balance_coeff"], (int, float)):
+            game.out_lane_balance_coeff = max(0.0, float(sb["out_lane_balance_coeff"]))
+
 
 def save_config(game: "GameState", window=None) -> None:
     """Serialize configs to JSON and write to disk. If window provided, also save user_settings."""
@@ -158,6 +165,10 @@ def save_config(game: "GameState", window=None) -> None:
         "place_geometry": {
             k: {"center_x": g.center_x, "center_y": g.center_y, "width": g.width, "length": g.length}
             for k, g in game.place_geometry.items()
+        },
+        "spawn_balance": {
+            "origin_spawn_balance_coeff": float(getattr(game, "origin_spawn_balance_coeff", 0.0)),
+            "out_lane_balance_coeff": float(getattr(game, "out_lane_balance_coeff", 0.0)),
         },
     }
     try:

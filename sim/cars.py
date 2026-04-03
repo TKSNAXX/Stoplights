@@ -7,7 +7,8 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
-from sim.places import spawn_lanes_for_place
+from sim import places
+from sim.places import choose_spawn_lane
 from sim import world
 
 # Palette of RGB tuples for random car colors (distinct, visible on dark background).
@@ -72,19 +73,48 @@ class Car:
         return world.get_lane_cells(self.lane_index)
 
 
-def spawn_car(origin: str, destination: str | None = None, attract_weights: dict[str, float] | None = None) -> Car:
+def spawn_car(
+    origin: str,
+    destination: str | None = None,
+    attract_weights: dict[str, float] | None = None,
+    lane_usage_counts: dict[tuple[str, int], int] | None = None,
+    out_lane_balance_coeff: float = 0.0,
+) -> Car:
     """Create a car at the start of a lane leaving origin. destination defaults to weighted random other place."""
+    lane_index: int | None = None
     if destination is None or destination == origin:
+        lane_index = choose_spawn_lane(
+            origin,
+            None,
+            lane_usage_counts=lane_usage_counts,
+            out_lane_balance_coeff=out_lane_balance_coeff,
+        )
         others = [p for p in world.get_place_rects().keys() if p != origin]
         if not others:
             destination = origin
-        elif attract_weights:
-            weights = [attract_weights.get(p, 1.0) for p in others]
-            destination = random.choices(others, weights=weights, k=1)[0]
         else:
-            destination = random.choice(others)
-    lanes = spawn_lanes_for_place(origin, destination)
-    lane_index = lanes[0] if lanes else 0
+            reachable = others
+            if lane_index is not None:
+                lane_out = world.lane_traffic_out(lane_index)
+                if lane_out:
+                    lane_reachable = [p for p in others if places.destination_reachable_from_node(lane_out, p)]
+                    if lane_reachable:
+                        reachable = lane_reachable
+            if attract_weights:
+                weights = [attract_weights.get(p, 1.0) for p in reachable]
+                destination = random.choices(reachable, weights=weights, k=1)[0]
+            else:
+                destination = random.choice(reachable)
+    if lane_index is None:
+        lane_index = choose_spawn_lane(
+            origin,
+            destination,
+            lane_usage_counts=lane_usage_counts,
+            out_lane_balance_coeff=out_lane_balance_coeff,
+        )
+    if lane_index is None:
+        fallback = [i for i in range(world.lane_count()) if world.lane_traffic_in(i) == origin]
+        lane_index = random.choice(fallback) if fallback else 0
     color = random.choice(_CAR_COLOR_PALETTE)
     base_speed_multiplier = random.uniform(0.6, 1.2)
     return Car(origin=origin, destination=destination, lane_index=lane_index, position_in_lane=0, color=color, base_speed_multiplier=base_speed_multiplier)

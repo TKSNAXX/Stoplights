@@ -22,6 +22,8 @@ DEFAULT_TEMPLATE: dict = {
         {"deploy_lane": 7, "return_lane": 7, "red_trigger": 10},
         {"deploy_lane": 5, "return_lane": 5, "red_trigger": 20},
     ],
+    "origin_spawn_balance_coeff": 1.0,
+    "out_lane_balance_coeff": 1.0,
     "default_lane_endpoints": [],
 }
 
@@ -43,6 +45,14 @@ def get_template_metadata(map_data: dict | None = None) -> dict:
         template["base_lane_count"] = max(0, int(template.get("base_lane_count", 12)))
     except (TypeError, ValueError):
         template["base_lane_count"] = 12
+    try:
+        template["origin_spawn_balance_coeff"] = max(0.0, float(template.get("origin_spawn_balance_coeff", 1.0)))
+    except (TypeError, ValueError):
+        template["origin_spawn_balance_coeff"] = 1.0
+    try:
+        template["out_lane_balance_coeff"] = max(0.0, float(template.get("out_lane_balance_coeff", 1.0)))
+    except (TypeError, ValueError):
+        template["out_lane_balance_coeff"] = 1.0
     # Derive default lane endpoints from lanes if absent.
     default_eps = template.get("default_lane_endpoints")
     if not isinstance(default_eps, list) or not default_eps:

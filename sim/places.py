@@ -5,6 +5,8 @@ Four places: Housing (south), Office (north), Park (east), Shopping (west). Two-
 from __future__ import annotations
 
 import dataclasses
+import random
+from collections import deque
 
 from sim import world
 from sim.map_data import MAP_DATA, get_template_metadata
@@ -140,12 +142,115 @@ def place_bounds(place: str) -> list[tuple[int, int]]:
 
 def spawn_lanes_for_place(place: str, destination: str | None = None) -> list[int]:
     """Lane indices where a car spawning at this place should start (position 0)."""
-    result: list[int] = []
+    outgoing: list[int] = []
     for i in range(world.lane_count()):
         if world.lane_traffic_in(i) == place:
+            outgoing.append(i)
             out = world.lane_traffic_out(i)
             if destination is None or out == destination:
-                result.append(i)
+                continue
             elif destination is not None and (place, destination) in ROUTE_VIA_SECONDARY and out == _SECONDARY_INTERSECTION_ID:
-                result.append(i)
-    return result if result else [0]
+                continue
+    if destination is None or not outgoing:
+        return outgoing
+
+    direct = [i for i in outgoing if world.lane_traffic_out(i) == destination]
+    if direct:
+        return direct
+
+    graph = _lane_graph()
+    next_hops = _best_next_hops(place, destination, graph)
+    if next_hops:
+        via = [i for i in outgoing if world.lane_traffic_out(i) in next_hops]
+        if via:
+            return via
+
+    via_secondary = [
+        i
+        for i in outgoing
+        if (place, destination) in ROUTE_VIA_SECONDARY and world.lane_traffic_out(i) == _SECONDARY_INTERSECTION_ID
+    ]
+    if via_secondary:
+        return via_secondary
+    return outgoing
+
+
+def choose_spawn_lane(
+    place: str,
+    destination: str | None = None,
+    lane_usage_counts: dict[tuple[str, int], int] | None = None,
+    out_lane_balance_coeff: float = 0.0,
+) -> int | None:
+    """Choose one spawn lane for place/destination with optional balancing."""
+    candidates = spawn_lanes_for_place(place, destination)
+    if not candidates:
+        return None
+    if not lane_usage_counts or out_lane_balance_coeff <= 0.0:
+        return random.choice(candidates)
+    max_use = max(lane_usage_counts.get((place, lane), 0) for lane in candidates)
+    weights = [
+        1.0 + out_lane_balance_coeff * (max_use - lane_usage_counts.get((place, lane), 0))
+        for lane in candidates
+    ]
+    return random.choices(candidates, weights=weights, k=1)[0]
+
+
+def destination_reachable_from_node(start_node: str, destination: str) -> bool:
+    """True when destination can be reached from start_node in lane graph."""
+    if start_node == destination:
+        return True
+    graph = _lane_graph()
+    return _bfs_distance(start_node, destination, graph) is not None
+
+
+def _lane_graph() -> dict[str, set[str]]:
+    """Build object-level directed graph from lane traffic metadata."""
+    graph: dict[str, set[str]] = {}
+    for i in range(world.lane_count()):
+        src = world.lane_traffic_in(i)
+        dst = world.lane_traffic_out(i)
+        if not src or not dst:
+            continue
+        graph.setdefault(src, set()).add(dst)
+    return graph
+
+
+def _best_next_hops(start: str, destination: str, graph: dict[str, set[str]]) -> set[str]:
+    """Return next-hop nodes from start that lie on shortest graph paths to destination."""
+    neighbors = graph.get(start, set())
+    if not neighbors:
+        return set()
+    if destination in neighbors:
+        return {destination}
+
+    best_hops: set[str] = set()
+    best_dist: int | None = None
+    for hop in neighbors:
+        dist = _bfs_distance(hop, destination, graph)
+        if dist is None:
+            continue
+        total = dist + 1
+        if best_dist is None or total < best_dist:
+            best_dist = total
+            best_hops = {hop}
+        elif total == best_dist:
+            best_hops.add(hop)
+    return best_hops
+
+
+def _bfs_distance(start: str, destination: str, graph: dict[str, set[str]]) -> int | None:
+    """Shortest path edge count from start to destination, or None if unreachable."""
+    if start == destination:
+        return 0
+    q: deque[tuple[str, int]] = deque([(start, 0)])
+    seen = {start}
+    while q:
+        node, dist = q.popleft()
+        for nxt in graph.get(node, ()):
+            if nxt == destination:
+                return dist + 1
+            if nxt in seen:
+                continue
+            seen.add(nxt)
+            q.append((nxt, dist + 1))
+    return None
