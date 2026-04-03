@@ -11,9 +11,11 @@ from sim import cars, cop, places
 from sim.constants import POLICE_PRIORITY_SCALE, VIS_ZONE_LENGTH_CELLS, VIS_ZONE_WIDTH_CELLS
 from sim.map_data import (
     MAP_DATA,
+    build_bypass_intersection,
     bounds_from_center,
     derive_default_start_end,
     geometry_from_place_rects,
+    intersection_dict_from_bounds,
     place_rects_from_geometry,
 )
 from sim import world
@@ -164,13 +166,6 @@ class GameState:
         self._apply_default_lane_tiles()
         self.rebuild_world_from_config()
 
-    def _build_hp_intersection(self, bypass_center: tuple[float, float], bypass_size: int) -> dict:
-        x_lo, x_hi, y_lo, y_hi = bounds_from_center(bypass_center[0], bypass_center[1], bypass_size)
-        cells = [(x, y) for x in range(x_lo, x_hi) for y in range(y_lo, y_hi)]
-        cx = (x_lo + x_hi - 1) / 2
-        slots = [(int(cx), y_lo), (int(cx), y_hi - 1)]
-        return {"x_lo": x_lo, "x_hi": x_hi, "y_lo": y_lo, "y_hi": y_hi, "cells": cells, "slots": slots}
-
     def _apply_default_lane_tiles(self) -> None:
         """Ensure lane 0-11 have start/end tiles derived from default geometry."""
         place_rects = place_rects_from_geometry(self.place_geometry)
@@ -181,14 +176,8 @@ class GameState:
         main_center = (main_cfg.center_x, main_cfg.center_y) if main_cfg else (36.0, 48.0)
         bypass_center = (bypass_cfg.center_x, bypass_cfg.center_y) if bypass_cfg else (64.0, 2.0)
         mx_lo, mx_hi, my_lo, my_hi = bounds_from_center(main_center[0], main_center[1], main_size)
-        main_intersection = {
-            "x_lo": mx_lo,
-            "x_hi": mx_hi,
-            "y_lo": my_lo,
-            "y_hi": my_hi,
-            "cells": [(x, y) for x in range(mx_lo, mx_hi) for y in range(my_lo, my_hi)],
-        }
-        hp_intersection = self._build_hp_intersection(bypass_center, bypass_size)
+        main_intersection = intersection_dict_from_bounds(mx_lo, mx_hi, my_lo, my_hi)
+        hp_intersection = build_bypass_intersection(bypass_center, bypass_size)
         for lane_idx in range(12):
             cfg = self.lane_configs.get(lane_idx)
             if cfg is None:

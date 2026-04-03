@@ -8,7 +8,7 @@ import random
 from dataclasses import dataclass
 
 from sim.places import PLACES, spawn_lanes_for_place
-from sim.world import ALL_LANES
+from sim import world
 
 # Palette of RGB tuples for random car colors (distinct, visible on dark background).
 _CAR_COLOR_PALETTE: tuple[tuple[int, int, int], ...] = (
@@ -68,8 +68,8 @@ class Car:
             return None
         return lane[self.position_in_lane]
 
-    def get_lane(self) -> list[tuple[int, int]]:
-        return ALL_LANES[self.lane_index] if 0 <= self.lane_index < len(ALL_LANES) else []
+    def get_lane(self) -> tuple[tuple[int, int], ...]:
+        return world.get_lane_cells(self.lane_index)
 
 
 def spawn_car(origin: str, destination: str | None = None, attract_weights: dict[str, float] | None = None) -> Car:

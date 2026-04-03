@@ -7,7 +7,7 @@ from __future__ import annotations
 import math
 
 from sim.places import STRAIGHT_TRANSITIONS
-from sim.world import ALL_LANES
+from sim import world
 
 # Sample step for path length integral and tangent epsilon
 _PATH_LENGTH_SAMPLES = 32
@@ -16,7 +16,7 @@ _TANGENT_EPS = 1e-4
 
 def _inbound_tangent(lane_index: int) -> tuple[float, float]:
     """Unit tangent at the end of the lane (direction into the intersection)."""
-    lane = ALL_LANES[lane_index] if 0 <= lane_index < len(ALL_LANES) else []
+    lane = world.get_lane_cells(lane_index)
     if not lane or len(lane) < 2:
         return (0.0, 0.0)
     dx = float(lane[-1][0] - lane[-2][0])
@@ -29,7 +29,7 @@ def _inbound_tangent(lane_index: int) -> tuple[float, float]:
 
 def _outbound_tangent(lane_index: int) -> tuple[float, float]:
     """Unit tangent at the start of the lane (direction out of the intersection)."""
-    lane = ALL_LANES[lane_index] if 0 <= lane_index < len(ALL_LANES) else []
+    lane = world.get_lane_cells(lane_index)
     if not lane or len(lane) < 2:
         return (0.0, 0.0)
     dx = float(lane[1][0] - lane[0][0])
@@ -135,12 +135,14 @@ def path_position(in_lane_index: int, out_lane_index: int, t: float) -> tuple[fl
     Turn: circular arc when valid; cubic-tangent fallback for wide/invalid arc fits.
     """
     t = max(0.0, min(1.0, t))
-    if in_lane_index < 0 or in_lane_index >= len(ALL_LANES) or not ALL_LANES[in_lane_index]:
+    in_lane = world.get_lane_cells(in_lane_index)
+    if not in_lane:
         return (0.0, 0.0)
-    if out_lane_index < 0 or out_lane_index >= len(ALL_LANES) or not ALL_LANES[out_lane_index]:
+    out_lane = world.get_lane_cells(out_lane_index)
+    if not out_lane:
         return (0.0, 0.0)
-    start = (float(ALL_LANES[in_lane_index][-1][0]), float(ALL_LANES[in_lane_index][-1][1]))
-    end = (float(ALL_LANES[out_lane_index][0][0]), float(ALL_LANES[out_lane_index][0][1]))
+    start = (float(in_lane[-1][0]), float(in_lane[-1][1]))
+    end = (float(out_lane[0][0]), float(out_lane[0][1]))
     if is_straight_path(in_lane_index, out_lane_index):
         return (start[0] + t * (end[0] - start[0]), start[1] + t * (end[1] - start[1]))
     tin = _inbound_tangent(in_lane_index)
@@ -200,9 +202,7 @@ def path_direction_index_8(in_lane_index: int, out_lane_index: int, t: float) ->
 def lane_segment_position(lane_index: int, from_pos: int, to_pos: int, t: float) -> tuple[float, float]:
     """Continuous position on a lane segment between two lane cell indices."""
     t = max(0.0, min(1.0, t))
-    if lane_index < 0 or lane_index >= len(ALL_LANES):
-        return (0.0, 0.0)
-    lane = ALL_LANES[lane_index]
+    lane = world.get_lane_cells(lane_index)
     if not lane:
         return (0.0, 0.0)
     if from_pos < 0 or from_pos >= len(lane) or to_pos < 0 or to_pos >= len(lane):
@@ -214,9 +214,7 @@ def lane_segment_position(lane_index: int, from_pos: int, to_pos: int, t: float)
 
 def lane_segment_tangent(lane_index: int, from_pos: int, to_pos: int) -> tuple[float, float]:
     """Unit tangent of a lane segment between two lane cell indices."""
-    if lane_index < 0 or lane_index >= len(ALL_LANES):
-        return (0.0, 0.0)
-    lane = ALL_LANES[lane_index]
+    lane = world.get_lane_cells(lane_index)
     if not lane:
         return (0.0, 0.0)
     if from_pos < 0 or from_pos >= len(lane) or to_pos < 0 or to_pos >= len(lane):

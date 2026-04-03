@@ -356,6 +356,18 @@ def lane_direction(lane_index: int) -> str:
     return ""
 
 
+def lane_count() -> int:
+    """Return number of lanes in current world."""
+    return len(_state.all_lanes)
+
+
+def get_lane_cells(lane_index: int) -> tuple[tuple[int, int], ...]:
+    """Read-only lane cell sequence for a lane index; empty tuple if out of range."""
+    if 0 <= lane_index < len(_state.all_lanes):
+        return tuple(_state.all_lanes[lane_index])
+    return ()
+
+
 def get_place_rects() -> dict[str, dict]:
     """Return current place rects (x,y,w,h) from last rebuild."""
     return dict(_state._place_rects)

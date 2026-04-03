@@ -142,7 +142,7 @@
       ]
     },
     "10": {
-      "speed_limit": 1.0,
+      "speed_limit": 0.5,
       "lane_type": "normal",
       "start_tile": [
         63,

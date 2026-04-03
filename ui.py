@@ -4,7 +4,7 @@ Screen space: x right, y up. Rect is (left, bottom, width, height).
 """
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Protocol, runtime_checkable
 
 import arcade
 import math
@@ -15,6 +15,22 @@ from sim.constants import TILE_H, TILE_W
 
 NUMBER_BOX_HEIGHT = 22
 NUMBER_BOX_ARROW_SIZE = 14
+
+
+@runtime_checkable
+class FocusableWidget(Protocol):
+    """Widget that can receive keyboard focus and key presses."""
+
+    def set_focus(self, focused: bool) -> None: ...
+
+    def on_key_press(self, key: int) -> bool: ...
+
+
+@runtime_checkable
+class ExpandedHitWidget(Protocol):
+    """Widget that may capture clicks outside its base rect."""
+
+    def expanded_contains(self, x: float, y: float) -> bool: ...
 
 
 class NumberBox:
@@ -272,6 +288,14 @@ class Dropdown:
                 return True
         return False
 
+    @property
+    def is_open(self) -> bool:
+        return self._open
+
+    def expanded_contains(self, x: float, y: float) -> bool:
+        """Public expanded hit area (includes open list rows)."""
+        return self.contains(x, y)
+
     def set_value(self, index: int) -> None:
         idx = max(0, min(index, len(self.options) - 1))
         if idx != self.value:
@@ -349,7 +373,7 @@ class Dialog:
         self.widgets: list = []
         self._dragging = False
         self._drag_start: tuple[float, float] | None = None
-        self._on_close: callable | None = None
+        self._on_close: Callable | None = None
         self._dialog_manager: DialogManager | None = None
 
     def set_dialog_manager(self, manager: "DialogManager") -> None:
@@ -376,7 +400,7 @@ class Dialog:
         if self.contains(x, y):
             return True
         for w in self.widgets:
-            if isinstance(w, Dropdown) and getattr(w, "_open", False) and w.contains(x, y):
+            if isinstance(w, ExpandedHitWidget) and w.expanded_contains(x, y):
                 return True
         return False
 
@@ -436,8 +460,8 @@ class Dialog:
                 self._dialog_manager.set_focused_widget(None)
             return True
         for w in self.widgets:
-            if hasattr(w, "on_press") and w.on_press(x, y):
-                if self._dialog_manager and hasattr(w, "set_focus"):
+            if w.on_press(x, y):
+                if self._dialog_manager and isinstance(w, FocusableWidget):
                     self._dialog_manager.set_focused_widget(w)
                 return True
         if self._dialog_manager:
@@ -450,7 +474,7 @@ class Dialog:
             self.y = y + self._drag_start[1]
             return True
         for w in self.widgets:
-            if hasattr(w, "on_drag") and w.on_drag(x):
+            if w.on_drag(x):
                 return True
         return False
 
@@ -460,7 +484,7 @@ class Dialog:
             self._drag_start = None
             return True
         for w in self.widgets:
-            if hasattr(w, "on_release") and w.on_release():
+            if w.on_release():
                 return True
         return False
 
@@ -470,17 +494,17 @@ class DialogManager:
 
     def __init__(self, get_window_size: Callable[[], tuple[float, float]] | None = None):
         self._dialogs: list[Dialog] = []
-        self._focused_widget: NumberBox | None = None
+        self._focused_widget: FocusableWidget | None = None
         self._get_window_size = get_window_size
 
-    def set_focused_widget(self, widget: NumberBox | None) -> None:
-        if self._focused_widget is not None and hasattr(self._focused_widget, "set_focus"):
+    def set_focused_widget(self, widget: FocusableWidget | None) -> None:
+        if self._focused_widget is not None:
             self._focused_widget.set_focus(False)
         self._focused_widget = widget
-        if widget is not None and hasattr(widget, "set_focus"):
+        if widget is not None:
             widget.set_focus(True)
 
-    def get_focused_widget(self) -> NumberBox | None:
+    def get_focused_widget(self) -> FocusableWidget | None:
         return self._focused_widget
 
     def open(self, dialog: Dialog) -> None:

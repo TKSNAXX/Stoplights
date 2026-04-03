@@ -187,7 +187,8 @@ class StoplightsWindow(arcade.Window):
 
     def _build_lane_cell_to_road(self) -> dict[tuple[int, int], str]:
         lane_cell_to_road: dict[tuple[int, int], str] = {}
-        for lane_index, lane in enumerate(world.ALL_LANES):
+        for lane_index in range(world.lane_count()):
+            lane = world.get_lane_cells(lane_index)
             road_type = self._lane_road_type(lane_index)
             for gx, gy in lane:
                 lane_cell_to_road[(gx, gy)] = road_type
@@ -351,7 +352,7 @@ class StoplightsWindow(arcade.Window):
 
     def on_key_press(self, key: int, modifiers: int) -> None:
         fw = self._dialog_manager.get_focused_widget()
-        if fw is not None and hasattr(fw, "on_key_press"):
+        if fw is not None:
             if fw.on_key_press(key):
                 if key in (arcade.key.RETURN, arcade.key.TAB):
                     self._dialog_manager.set_focused_widget(None)
@@ -553,7 +554,8 @@ class StoplightsWindow(arcade.Window):
         cell = (int(round(gx)), int(round(gy)))
         if world.get_intersection_at_cell(cell) is not None:
             return None
-        for i, lane in enumerate(world.ALL_LANES):
+        for i in range(world.lane_count()):
+            lane = world.get_lane_cells(i)
             if cell in lane:
                 return i
         return None

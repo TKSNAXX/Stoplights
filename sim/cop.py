@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from sim.constants import POLICE_PRIORITY_SCALE, POLICE_SPEED
 from sim.movement import pose_for_lane_position
-from sim.world import ALL_LANES
+from sim import world
 
 RED_ZERO_DURATION = 2.0
 
@@ -40,13 +40,13 @@ class PoliceCar:
 
     def _lane_len(self, lane_idx: int | None = None) -> int:
         idx = lane_idx if lane_idx is not None else self._current_lane()
-        lane = ALL_LANES[idx] if idx < len(ALL_LANES) else []
+        lane = world.get_lane_cells(idx)
         return len(lane) if lane else 0
 
     def get_pose(self) -> tuple[float, float, int]:
         """Return (gx, gy, dir_index_8) for rendering and detection."""
         lane_idx = self._current_lane()
-        lane = ALL_LANES[lane_idx] if lane_idx < len(ALL_LANES) else []
+        lane = world.get_lane_cells(lane_idx)
         if not lane:
             return (0.0, 0.0, 0)
         return pose_for_lane_position(lane_idx, self.lane_pos, self.direction)

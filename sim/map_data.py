@@ -169,7 +169,7 @@ def derive_traffic(
     return (direction, traffic_in, traffic_out)
 
 
-def _build_hp_intersection(bypass_center: tuple[float, float], size: int) -> dict:
+def build_bypass_intersection(bypass_center: tuple[float, float], size: int) -> dict:
     hp_x_lo, hp_x_hi, hp_y_lo, hp_y_hi = bounds_from_center(bypass_center[0], bypass_center[1], size)
     hp_cells = [(x, y) for x in range(hp_x_lo, hp_x_hi) for y in range(hp_y_lo, hp_y_hi)]
     cx = (hp_x_lo + hp_x_hi - 1) / 2
@@ -248,7 +248,7 @@ def build_lanes_from_config(
     extra_intersection_bounds: dict[str, tuple[int, int, int, int]] | None = None,
 ) -> tuple[list[list[tuple[int, int]]], dict, list[tuple[str, str, str]]]:
     """Build lanes from explicit start/end tiles. Returns (lanes, hp_intersection, lane_meta)."""
-    hp_intersection = _build_hp_intersection(bypass_center, bypass_size)
+    hp_intersection = build_bypass_intersection(bypass_center, bypass_size)
     lanes: list[list[tuple[int, int]]] = []
     lane_meta: list[tuple[str, str, str]] = []
     base_indices = list(range(12))

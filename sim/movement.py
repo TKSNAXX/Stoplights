@@ -12,12 +12,12 @@ from sim.paths import (
     path_position,
     path_tangent,
 )
-from sim.world import ALL_LANES, intersection_cell_for_transition
+from sim.world import intersection_cell_for_transition
 
 
 def pose_for_lane_position(lane_idx: int, lane_pos: float, direction: int = 1) -> tuple[float, float, int]:
     """Shared lane pose computation for any lane-following actor."""
-    lane = ALL_LANES[lane_idx] if 0 <= lane_idx < len(ALL_LANES) else []
+    lane = world.get_lane_cells(lane_idx)
     if not lane:
         return (0.0, 0.0, 0)
     lane_len = len(lane)
