@@ -130,8 +130,10 @@ class StoplightsWindow(arcade.Window):
         """Force tile cache rebuild on next draw (e.g. when lane config changes)."""
         self._cached_center = None
 
-    def _on_config_change(self) -> None:
-        """Invalidate draw cache and schedule debounced config save."""
+    def _on_config_change(self, rebuild_world: bool = False) -> None:
+        """Handle config changes consistently: optional world rebuild, cache invalidate, save."""
+        if rebuild_world:
+            self.game.rebuild_world_from_config()
         self._invalidate_draw_cache()
         persistence.request_debounced_save()
 
@@ -166,32 +168,80 @@ class StoplightsWindow(arcade.Window):
     def _screen_to_grid(self, sx: float, sy: float, center_x: float, center_y: float) -> tuple[float, float]:
         return screen_to_grid(sx, sy, center_x, center_y, world.get_grid_w(), world.get_grid_h(), self._zoom_scale)
 
+    def _lane_road_type(self, lane_index: int) -> str:
+        """Return texture key for lane base tile (normal/passing)."""
+        direction = world.lane_direction(lane_index)
+        if direction == "N":
+            base = "road_n"
+        elif direction == "S":
+            base = "road_s"
+        elif direction == "E":
+            base = "road_e"
+        elif direction == "W":
+            base = "road_w"
+        else:
+            base = "road_n"
+        cfg = self.game.lane_configs.get(lane_index)
+        suffix = "_pass" if cfg and cfg.lane_type == places.LANE_TYPE_PASSING else ""
+        return base + suffix if self._tile_set.get(base + suffix) else base
+
+    def _build_lane_cell_to_road(self) -> dict[tuple[int, int], str]:
+        lane_cell_to_road: dict[tuple[int, int], str] = {}
+        for lane_index, lane in enumerate(world.ALL_LANES):
+            road_type = self._lane_road_type(lane_index)
+            for gx, gy in lane:
+                lane_cell_to_road[(gx, gy)] = road_type
+        return lane_cell_to_road
+
+    def _collect_place_cells(self) -> set[tuple[int, int]]:
+        place_cells: set[tuple[int, int]] = set()
+        for place in world.get_place_rects():
+            place_cells.update(places.place_bounds(place))
+        return place_cells
+
+    def _append_sprite_at(self, tex: arcade.Texture | None, gx: float, gy: float, center_x: float, center_y: float) -> None:
+        if tex is None or self._tile_sprite_list is None:
+            return
+        sx, sy = self._to_screen(gx, gy, center_x, center_y)
+        spr = arcade.Sprite(tex, scale=self._zoom_scale)
+        spr.center_x, spr.center_y = sx, sy
+        self._tile_sprite_list.append(spr)
+        self._tile_cells.append((gx, gy))
+
+    def _append_centered_sprite_for_cells(
+        self,
+        tex: arcade.Texture | None,
+        cells: list[tuple[int, int]],
+        center_x: float,
+        center_y: float,
+    ) -> None:
+        if tex is None or not cells:
+            return
+        cx = sum(c[0] for c in cells) / len(cells)
+        cy = sum(c[1] for c in cells) / len(cells)
+        self._append_sprite_at(tex, cx, cy, center_x, center_y)
+
+    def _overlay_intersection(
+        self,
+        cells: list[tuple[int, int]],
+        use_corner: bool,
+        corner_tex: arcade.Texture | None,
+        road_cross_tex: arcade.Texture | None,
+        center_x: float,
+        center_y: float,
+    ) -> None:
+        if use_corner:
+            self._append_centered_sprite_for_cells(corner_tex, cells, center_x, center_y)
+            return
+        for gx, gy in cells:
+            self._append_sprite_at(road_cross_tex, gx, gy, center_x, center_y)
+
     def _rebuild_static_draw_cache(self, center_x: float, center_y: float) -> None:
         self._cached_center = (center_x, center_y, self._zoom_scale)
         self._tile_cells.clear()
 
-        lane_cell_to_road: dict[tuple[int, int], str] = {}
-        for lane_index, lane in enumerate(world.ALL_LANES):
-            direction = world.lane_direction(lane_index)
-            if direction == "N":
-                base = "road_n"
-            elif direction == "S":
-                base = "road_s"
-            elif direction == "E":
-                base = "road_e"
-            elif direction == "W":
-                base = "road_w"
-            else:
-                base = "road_n"
-            cfg = self.game.lane_configs.get(lane_index)
-            suffix = "_pass" if cfg and cfg.lane_type == places.LANE_TYPE_PASSING else ""
-            road_type = base + suffix if self._tile_set.get(base + suffix) else base
-            for gx, gy in lane:
-                lane_cell_to_road[(gx, gy)] = road_type
-
-        place_cells: set[tuple[int, int]] = set()
-        for place in world.get_place_rects():
-            place_cells.update(places.place_bounds(place))
+        lane_cell_to_road = self._build_lane_cell_to_road()
+        place_cells = self._collect_place_cells()
 
         self._tile_sprite_list = arcade.SpriteList()
         grass_tex = self._tile_set.get("grass")
@@ -233,50 +283,14 @@ class StoplightsWindow(arcade.Window):
                     tex = place_zone_tex
                 else:
                     tex = grass_tex
-                if tex is not None:
-                    sx, sy = self._to_screen(gx, gy, center_x, center_y)
-                    spr = arcade.Sprite(tex, scale=self._zoom_scale)
-                    spr.center_x, spr.center_y = sx, sy
-                    self._tile_sprite_list.append(spr)
-                    self._tile_cells.append((gx, gy))
+                self._append_sprite_at(tex, gx, gy, center_x, center_y)
 
-        if not main_use_corner and road_cross_tex is not None and main_inter_cells:
-            for cell in main_inter_cells:
-                gx, gy = cell
-                sx, sy = self._to_screen(gx, gy, center_x, center_y)
-                spr = arcade.Sprite(road_cross_tex, scale=self._zoom_scale)
-                spr.center_x, spr.center_y = sx, sy
-                self._tile_sprite_list.append(spr)
-                self._tile_cells.append((gx, gy))
-
-        if not bypass_use_corner and road_cross_tex is not None and bypass_inter_cells:
-            for cell in bypass_inter_cells:
-                gx, gy = cell
-                sx, sy = self._to_screen(gx, gy, center_x, center_y)
-                spr = arcade.Sprite(road_cross_tex, scale=self._zoom_scale)
-                spr.center_x, spr.center_y = sx, sy
-                self._tile_sprite_list.append(spr)
-                self._tile_cells.append((gx, gy))
-
-        if main_use_corner and main_corner_tex is not None and main_inter_cells:
-            main_cells = list(main_inter_cells)
-            cx = sum(c[0] for c in main_cells) / len(main_cells)
-            cy = sum(c[1] for c in main_cells) / len(main_cells)
-            sx, sy = self._to_screen(cx, cy, center_x, center_y)
-            spr = arcade.Sprite(main_corner_tex, scale=self._zoom_scale)
-            spr.center_x, spr.center_y = sx, sy
-            self._tile_sprite_list.append(spr)
-            self._tile_cells.append((cx, cy))
-
-        if bypass_use_corner and bypass_corner_tex is not None and bypass_inter_cells:
-            bypass_cells = list(bypass_inter_cells)
-            cx = sum(c[0] for c in bypass_cells) / len(bypass_cells)
-            cy = sum(c[1] for c in bypass_cells) / len(bypass_cells)
-            sx, sy = self._to_screen(cx, cy, center_x, center_y)
-            spr = arcade.Sprite(bypass_corner_tex, scale=self._zoom_scale)
-            spr.center_x, spr.center_y = sx, sy
-            self._tile_sprite_list.append(spr)
-            self._tile_cells.append((cx, cy))
+        self._overlay_intersection(
+            list(main_inter_cells), main_use_corner, main_corner_tex, road_cross_tex, center_x, center_y
+        )
+        self._overlay_intersection(
+            list(bypass_inter_cells), bypass_use_corner, bypass_corner_tex, road_cross_tex, center_x, center_y
+        )
 
         # Extra intersections (not main/bypass)
         extra_keys = [k for k in self.game.intersection_configs if k not in ("main", "bypass")]
@@ -291,27 +305,12 @@ class StoplightsWindow(arcade.Window):
             corner_tex = generate_corner_texture(size_cells) if use_corner else None
             for cell in extra_cells:
                 gx, gy = cell
-                sx, sy = self._to_screen(gx, gy, center_x, center_y)
-                if grass_tex is not None:
-                    spr = arcade.Sprite(grass_tex, scale=self._zoom_scale)
-                    spr.center_x, spr.center_y = sx, sy
-                    self._tile_sprite_list.append(spr)
-                    self._tile_cells.append((gx, gy))
+                self._append_sprite_at(grass_tex, gx, gy, center_x, center_y)
                 if use_corner and corner_tex is not None:
                     continue  # drawn as single centered sprite below
-                if not use_corner and road_cross_tex is not None:
-                    spr = arcade.Sprite(road_cross_tex, scale=self._zoom_scale)
-                    spr.center_x, spr.center_y = sx, sy
-                    self._tile_sprite_list.append(spr)
-                    self._tile_cells.append((gx, gy))
+                self._append_sprite_at(road_cross_tex, gx, gy, center_x, center_y)
             if use_corner and corner_tex is not None and extra_cells:
-                cx = sum(c[0] for c in extra_cells) / len(extra_cells)
-                cy = sum(c[1] for c in extra_cells) / len(extra_cells)
-                sx, sy = self._to_screen(cx, cy, center_x, center_y)
-                spr = arcade.Sprite(corner_tex, scale=self._zoom_scale)
-                spr.center_x, spr.center_y = sx, sy
-                self._tile_sprite_list.append(spr)
-                self._tile_cells.append((cx, cy))
+                self._append_centered_sprite_for_cells(corner_tex, extra_cells, center_x, center_y)
 
         self._update_text_positions(center_x, center_y)
 
@@ -637,16 +636,11 @@ class StoplightsWindow(arcade.Window):
                         self.game.place_geometry,
                         game=self.game,
                         on_change=self._on_config_change,
-                        on_commit=lambda: (
-                            self.game.rebuild_world_from_config(),
-                            self._invalidate_draw_cache(),
-                            persistence.request_debounced_save(),
-                        ),
+                        on_commit=lambda: self._on_config_change(rebuild_world=True),
                         on_remove=lambda: (
                             self._on_config_change(),
                             self._place_dialogs.pop(place, None),
                             self._dialog_manager.close(dlg),
-                            persistence.request_debounced_save(),
                         ),
                     )
                     self._place_dialogs[place] = dlg
@@ -670,15 +664,11 @@ class StoplightsWindow(arcade.Window):
                         self.game.place_geometry,
                         self.game.intersection_configs,
                         game=self.game,
-                        on_change=lambda: (
-                            self.game.rebuild_world_from_config(),
-                            self._on_config_change(),
-                        ),
+                        on_change=lambda: self._on_config_change(rebuild_world=True),
                         on_remove=lambda: (
                             self._on_config_change(),
                             self._lane_dialogs.pop(lane_idx, None),
                             self._dialog_manager.close(dlg),
-                            persistence.request_debounced_save(),
                         ),
                     )
                     self._lane_dialogs[lane_idx] = dlg
@@ -694,16 +684,11 @@ class StoplightsWindow(arcade.Window):
                         x - 110, y - 50, inter_key,
                         self.game.intersection_configs[inter_key],
                         game=self.game,
-                        on_commit=lambda: (
-                            self.game.rebuild_world_from_config(),
-                            self._invalidate_draw_cache(),
-                            persistence.request_debounced_save(),
-                        ),
+                        on_commit=lambda: self._on_config_change(rebuild_world=True),
                         on_remove=lambda: (
                             self._on_config_change(),
                             self._intersection_dialogs.pop(inter_key, None),
                             self._dialog_manager.close(dlg),
-                            persistence.request_debounced_save(),
                         ),
                     )
                     self._intersection_dialogs[inter_key] = dlg
