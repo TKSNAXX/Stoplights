@@ -113,9 +113,26 @@ STRAIGHT_TRANSITIONS = {(0, 1), (2, 3), (4, 7), (6, 5)}
 U_TURN_TRANSITIONS = {(0, 3), (2, 1), (4, 5), (6, 7)}
 
 
+def is_uturn_transition(in_lane_index: int, out_lane_index: int) -> bool:
+    """
+    True if this (approach_lane, exit_lane) pair is a geometric U-turn at an intersection.
+    Semantic rule: outbound goes back toward the same place the approach lane came from.
+    Legacy main map pairs are also covered via U_TURN_TRANSITIONS.
+    """
+    if (in_lane_index, out_lane_index) in U_TURN_TRANSITIONS:
+        return True
+    src = world.lane_traffic_in(in_lane_index)
+    dst = world.lane_traffic_out(out_lane_index)
+    if not src or not dst or src != dst:
+        return False
+    if world.is_intersection(src) or world.is_intersection(dst):
+        return False
+    return True
+
+
 def is_valid_intersection_path(in_lane_index: int, out_lane_index: int) -> bool:
     """True if this (in, out) pair is a valid path to draw (not a U-turn)."""
-    return (in_lane_index, out_lane_index) not in U_TURN_TRANSITIONS
+    return not is_uturn_transition(in_lane_index, out_lane_index)
 
 
 def is_turn_at_intersection(in_lane_index: int, out_lane_index: int) -> bool:
@@ -206,23 +223,39 @@ def destination_reachable_from_node(start_node: str, destination: str) -> bool:
     return _bfs_distance(start_node, destination, graph) is not None
 
 
-def choose_next_lane_from_node(from_node: str, destination: str) -> int | None:
+def _candidates_without_uturn(inbound_lane_index: int | None, candidates: list[int]) -> list[int]:
+    """Prefer lanes that are not U-turns from inbound; if all are U-turns, keep full list."""
+    if inbound_lane_index is None or not candidates:
+        return candidates
+    good = [c for c in candidates if not is_uturn_transition(inbound_lane_index, c)]
+    return good if good else candidates
+
+
+def choose_next_lane_from_node(
+    from_node: str,
+    destination: str,
+    inbound_lane_index: int | None = None,
+) -> int | None:
     """Choose an outbound lane from any node toward destination via shortest next-hop."""
     outgoing = [i for i in range(world.lane_count()) if world.lane_traffic_in(i) == from_node]
     if not outgoing:
         return None
 
     direct = [i for i in outgoing if world.lane_traffic_out(i) == destination]
-    if direct:
-        return random.choice(direct)
+    direct_pick = _candidates_without_uturn(inbound_lane_index, direct)
+    if direct_pick:
+        return random.choice(direct_pick)
 
     graph = _lane_graph()
     next_hops = _best_next_hops(from_node, destination, graph)
     if next_hops:
         routed = [i for i in outgoing if world.lane_traffic_out(i) in next_hops]
-        if routed:
-            return random.choice(routed)
-    return random.choice(outgoing)
+        routed_pick = _candidates_without_uturn(inbound_lane_index, routed)
+        if routed_pick:
+            return random.choice(routed_pick)
+
+    fallback = _candidates_without_uturn(inbound_lane_index, outgoing)
+    return random.choice(fallback) if fallback else None
 
 
 def _lane_graph() -> dict[str, set[str]]:

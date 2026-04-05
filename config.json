@@ -23,6 +23,10 @@
     "Place 1": {
       "spawn_interval": 2.0,
       "attract_weight": 1.0
+    },
+    "Place 2": {
+      "spawn_interval": 2.0,
+      "attract_weight": 1.0
     }
   },
   "lane_configs": {
@@ -35,7 +39,7 @@
       ],
       "end_tile": [
         36,
-        44
+        26
       ],
       "use_template_endpoints": false
     },
@@ -70,7 +74,7 @@
       "lane_type": "normal",
       "start_tile": [
         35,
-        44
+        26
       ],
       "end_tile": [
         35,
@@ -259,6 +263,58 @@
         73
       ],
       "use_template_endpoints": false
+    },
+    "18": {
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "start_tile": [
+        36,
+        28
+      ],
+      "end_tile": [
+        36,
+        44
+      ],
+      "use_template_endpoints": false
+    },
+    "19": {
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "start_tile": [
+        35,
+        44
+      ],
+      "end_tile": [
+        35,
+        29
+      ],
+      "use_template_endpoints": false
+    },
+    "20": {
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "start_tile": [
+        38,
+        28
+      ],
+      "end_tile": [
+        37,
+        28
+      ],
+      "use_template_endpoints": false
+    },
+    "21": {
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "start_tile": [
+        37,
+        27
+      ],
+      "end_tile": [
+        38,
+        27
+      ],
+      "use_template_endpoints": false
     }
   },
   "intersection_configs": {
@@ -279,6 +335,18 @@
       "size_cells": 4,
       "center_x": 19,
       "center_y": 69
+    },
+    "intersection_3": {
+      "intersection_type": "x",
+      "size_cells": 4,
+      "center_x": 36,
+      "center_y": 48
+    },
+    "intersection_4": {
+      "intersection_type": "x",
+      "size_cells": 2,
+      "center_x": 36,
+      "center_y": 28
     }
   },
   "place_geometry": {
@@ -311,6 +379,12 @@
       "center_y": 76,
       "width": 5,
       "length": 5
+    },
+    "Place 2": {
+      "center_x": 40,
+      "center_y": 28,
+      "width": 2,
+      "length": 2
     }
   },
   "spawn_balance": {

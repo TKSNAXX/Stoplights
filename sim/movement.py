@@ -71,7 +71,9 @@ def start_lane_segment(car: cars.Car, start_time: float, speed: float, start_pos
 def start_path_segment(car: cars.Car, start_time: float, speed: float) -> bool:
     """Start path through intersection: find out-lane from this intersection to destination."""
     from_intersection = world.lane_traffic_out(car.lane_index)
-    out_lane_idx = places.choose_next_lane_from_node(from_intersection, car.destination)
+    out_lane_idx = places.choose_next_lane_from_node(
+        from_intersection, car.destination, inbound_lane_index=car.lane_index
+    )
     if out_lane_idx is None:
         return False
     car.intersection_cell = intersection_cell_for_transition(car.lane_index, out_lane_idx)
