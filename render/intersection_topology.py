@@ -184,9 +184,63 @@ def corner_quadrant_for_sides(active: frozenset[Cardinal]) -> int:
 
 
 def straight_axis_for_sides(active: frozenset[Cardinal]) -> StraightAxis:
-    """N+S -> ns, E+W -> ew; else default ns."""
+    """N+S -> ns, E+W -> ew; else default ns (ambiguous; prefer straight_axis_for_intersection)."""
     if active == frozenset({"N", "S"}):
         return "ns"
     if active == frozenset({"E", "W"}):
         return "ew"
     return "ns"
+
+
+def straight_axis_for_intersection(
+    intersection_key: str,
+    cells: list[tuple[int, int]],
+    active: frozenset[Cardinal],
+) -> StraightAxis:
+    """
+    Through axis for straight overlay. Pure N+S / E+W use that axis; otherwise prefer **lane
+    travel direction** (N/S-bound lanes vs E/W-bound) among lanes incident to this intersection.
+    Edge-based crossing counts can skew E/W on symmetric maps; direction counts match road run.
+    Tie -> ns.
+    """
+    if active == frozenset({"N", "S"}):
+        return "ns"
+    if active == frozenset({"E", "W"}):
+        return "ew"
+    score_ns = 0
+    score_ew = 0
+    for i in range(world.lane_count()):
+        tin = world.lane_traffic_in(i)
+        tout = world.lane_traffic_out(i)
+        if intersection_key not in (tin, tout):
+            continue
+        d = world.lane_direction(i)
+        if d in ("N", "S"):
+            score_ns += 1
+        elif d in ("E", "W"):
+            score_ew += 1
+    if score_ew > score_ns:
+        return "ew"
+    return "ns"
+
+
+def straight_cross_cap_cells(cells: list[tuple[int, int]], axis: StraightAxis) -> set[tuple[int, int]]:
+    """
+    Perimeter cells one step outside the block on cross arms only, centre-two positions.
+    For ns through: west/east of bounds; for ew through: south/north.
+    """
+    x_lo, x_hi, y_lo, y_hi = _bounds_from_cells(cells)
+    if x_hi <= x_lo or y_hi <= y_lo:
+        return set()
+    mx0, mx1 = _middle_two_indices(x_lo, x_hi)
+    my0, my1 = _middle_two_indices(y_lo, y_hi)
+    caps: set[tuple[int, int]] = set()
+    if axis == "ns":
+        for y in (my0, my1):
+            caps.add((x_lo - 1, y))
+            caps.add((x_hi, y))
+    else:
+        for x in (mx0, mx1):
+            caps.add((x, y_lo - 1))
+            caps.add((x, y_hi))
+    return caps

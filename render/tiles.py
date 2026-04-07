@@ -106,7 +106,7 @@ class TileSet:
 
 _corner_texture_cache: dict[tuple[int, int], arcade.Texture] = {}
 _straight_texture_cache: dict[tuple[int, str, int], arcade.Texture] = {}
-_STRAIGHT_TEX_REV = 2
+_STRAIGHT_TEX_REV = 11
 
 
 def generate_corner_texture(cells: int, quadrant: int = 0) -> arcade.Texture | None:

@@ -343,7 +343,7 @@
       "center_y": 48
     },
     "intersection_4": {
-      "intersection_type": "x",
+      "intersection_type": "straight",
       "size_cells": 2,
       "center_x": 36,
       "center_y": 28

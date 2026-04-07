@@ -12,7 +12,7 @@ from render.sprites import CarSpritePool, load_car_textures
 from render.intersection_topology import (
     classify_intersection_sides,
     corner_quadrant_for_sides,
-    straight_axis_for_sides,
+    straight_axis_for_intersection,
 )
 from render.tiles import TileSet, generate_corner_texture, generate_straight_texture
 from sim import places
@@ -290,7 +290,7 @@ class StoplightsWindow(arcade.Window):
                 q = corner_quadrant_for_sides(active)
                 centered_tex = generate_corner_texture(size_cells, quadrant=q)
             elif itype == places.INTERSECTION_TYPE_STRAIGHT:
-                ax = straight_axis_for_sides(active)
+                ax = straight_axis_for_intersection(key, cells, active)
                 centered_tex = generate_straight_texture(size_cells, axis=ax)
             self._overlay_intersection(cells, centered_tex, road_cross_tex, center_x, center_y)
 

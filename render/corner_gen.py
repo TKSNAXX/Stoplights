@@ -19,6 +19,8 @@ WHITE = (220, 220, 220)
 
 # Base band radii for 4-cell corner (128x128). Offset by (cells-4)*16 for others.
 # Band width stays 2px; distance to inner corner +32px per 2-cell step.
+# Straight-through uses same yellow thickness as scripts/generate_ortho_tiles.py (2px);
+# outer white is 1px so it matches corner/road weight after iso (2px yellow reads similar to road).
 _CORNER_BANDS_BASE = [
     (ROAD_GREY, 95, 97),
     (WHITE, 93, 95),
@@ -100,11 +102,11 @@ def make_corner(cells: int = 4, quadrant: int = 0):
 
 def make_straight_through(cells: int = 4, axis: str = "ns"):
     """
-    Ortho patch: flat ROAD_GREY with a single dual carriageway through the centre two tiles.
+    Ortho patch for straight-through intersections: grey only on the dual-carriageway band (two ortho
+    cells); outside stays transparent so the iso sprite does not paint a full diamond over grass.
 
-    One double-yellow median between directions, yellow outer edges, white centreline in each lane
-    (avoids four parallel yellows from drawing two independent lane strips).
-    axis 'ns' = travel N–S (markings run vertically); 'ew' = travel E–W (markings horizontal).
+    Yellow median: two 1px lines (same stroke as outer white); exactly 6 grey px between them (split-4 and split+3).
+    axis 'ns' = through traffic N–S → horizontal ortho stripes (like road_n/road_s); 'ew' = through E–W → vertical (like road_e/road_w).
     """
     if Image is None or ImageDraw is None:
         raise RuntimeError("Pillow required: pip install Pillow")
@@ -114,7 +116,7 @@ def make_straight_through(cells: int = 4, axis: str = "ns"):
         cells = (cells // 2) * 2
 
     size = cells * ORTHO_TILE_SIZE
-    img = Image.new("RGBA", (size, size), (*ROAD_GREY, 255))
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
     t = ORTHO_TILE_SIZE
@@ -122,38 +124,39 @@ def make_straight_through(cells: int = 4, axis: str = "ns"):
     c1 = (cells // 2) * t
     xa, xb = c0, c1 + t
 
-    def v_line(x0: int, x1: int) -> None:
-        draw.rectangle((x0, 0, x1, size), fill=(*YELLOW, 255))
+    # Road pavement: central two ortho cells only (not the full patch — avoids oversized grey diamond).
+    if axis == "ns":
+        draw.rectangle((0, c0, size, c1 + t), fill=(*ROAD_GREY, 255))
+    else:
+        draw.rectangle((c0, 0, c1 + t, size), fill=(*ROAD_GREY, 255))
+    # Outer white column matches generate_ortho_tiles WHITE_LO (28) on the right-hand tile.
+    white_outer_right = c1 + 28
 
-    def v_white(x0: int, x1: int) -> None:
-        draw.rectangle((x0, 0, x1, size), fill=(*WHITE, 255))
+    def v_white_outer_1px(x: int) -> None:
+        draw.rectangle((x, 0, x + 1, size), fill=(*WHITE, 255))
 
-    def h_line(y0: int, y1: int) -> None:
-        draw.rectangle((0, y0, size, y1), fill=(*YELLOW, 255))
+    def v_yellow_1px(x: int) -> None:
+        draw.rectangle((x, 0, x + 1, size), fill=(*YELLOW, 255))
 
-    def h_white(y0: int, y1: int) -> None:
-        draw.rectangle((0, y0, size, y1), fill=(*WHITE, 255))
+    def h_white_outer_1px(y: int) -> None:
+        draw.rectangle((0, y, size, y + 1), fill=(*WHITE, 255))
 
-    if axis == "ew":
+    def h_yellow_1px(y: int) -> None:
+        draw.rectangle((0, y, size, y + 1), fill=(*YELLOW, 255))
+
+    if axis == "ns":
         ya, yb = c0, c1 + t
         split = c1
-        h_line(ya + 2, ya + 4)
-        h_line(yb - 4, yb - 2)
-        h_line(split - 2, split)
-        h_line(split + 1, split + 3)
-        mid0 = ya + t // 2
-        mid1 = c1 + t // 2
-        h_white(mid0 - 1, mid0 + 1)
-        h_white(mid1 - 1, mid1 + 1)
+        white_outer_bottom = c1 + 28
+        h_white_outer_1px(ya + 2)
+        h_white_outer_1px(white_outer_bottom)
+        h_yellow_1px(split - 4)
+        h_yellow_1px(split + 3)
     else:
-        v_line(xa + 2, xa + 4)
-        v_line(xb - 4, xb - 2)
+        v_white_outer_1px(xa + 2)
+        v_white_outer_1px(white_outer_right)
         split = c1
-        v_line(split - 2, split)
-        v_line(split + 1, split + 3)
-        mid0 = xa + t // 2
-        mid1 = c1 + t // 2
-        v_white(mid0 - 1, mid0 + 1)
-        v_white(mid1 - 1, mid1 + 1)
+        v_yellow_1px(split - 4)
+        v_yellow_1px(split + 3)
 
     return img
