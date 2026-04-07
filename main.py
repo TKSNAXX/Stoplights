@@ -9,7 +9,12 @@ import arcade
 from render.camera import grid_to_screen, screen_to_grid
 from render.debug import visibility_fan_vertices
 from render.sprites import CarSpritePool, load_car_textures
-from render.tiles import TileSet, generate_corner_texture
+from render.intersection_topology import (
+    classify_intersection_sides,
+    corner_quadrant_for_sides,
+    straight_axis_for_sides,
+)
+from render.tiles import TileSet, generate_corner_texture, generate_straight_texture
 from sim import places
 from sim.constants import (
     CAR_DEFAULT,
@@ -227,14 +232,13 @@ class StoplightsWindow(arcade.Window):
     def _overlay_intersection(
         self,
         cells: list[tuple[int, int]],
-        use_corner: bool,
-        corner_tex: arcade.Texture | None,
+        centered_overlay_tex: arcade.Texture | None,
         road_cross_tex: arcade.Texture | None,
         center_x: float,
         center_y: float,
     ) -> None:
-        if use_corner:
-            self._append_centered_sprite_for_cells(corner_tex, cells, center_x, center_y)
+        if centered_overlay_tex is not None:
+            self._append_centered_sprite_for_cells(centered_overlay_tex, cells, center_x, center_y)
             return
         for gx, gy in cells:
             self._append_sprite_at(road_cross_tex, gx, gy, center_x, center_y)
@@ -278,10 +282,17 @@ class StoplightsWindow(arcade.Window):
 
         for key, cells in intersection_cells_map.items():
             cfg = self.game.intersection_configs.get(key)
-            use_corner = cfg is not None and cfg.intersection_type == places.INTERSECTION_TYPE_CORNER
+            itype = cfg.intersection_type if cfg else places.INTERSECTION_TYPE_X
             size_cells = cfg.size_cells if cfg else 4
-            corner_tex = generate_corner_texture(size_cells) if use_corner else None
-            self._overlay_intersection(cells, use_corner, corner_tex, road_cross_tex, center_x, center_y)
+            active, _, _ = classify_intersection_sides(key, cells)
+            centered_tex: arcade.Texture | None = None
+            if itype == places.INTERSECTION_TYPE_CORNER:
+                q = corner_quadrant_for_sides(active)
+                centered_tex = generate_corner_texture(size_cells, quadrant=q)
+            elif itype == places.INTERSECTION_TYPE_STRAIGHT:
+                ax = straight_axis_for_sides(active)
+                centered_tex = generate_straight_texture(size_cells, axis=ax)
+            self._overlay_intersection(cells, centered_tex, road_cross_tex, center_x, center_y)
 
         self._update_text_positions(center_x, center_y)
 

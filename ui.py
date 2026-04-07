@@ -315,18 +315,21 @@ class Dropdown:
                             color=(180, 180, 180), font_size=9, anchor_x="center", anchor_y="center")
         arrow.draw()
 
-        if self._open and len(self.options) > 0:
-            list_top = bottom + height
-            for i, opt in enumerate(self.options):
-                row_bottom = list_top - (i + 1) * DROPDOWN_ROW_HEIGHT
-                row_top = row_bottom + DROPDOWN_ROW_HEIGHT
-                rect_filled(left, row_bottom, width, DROPDOWN_ROW_HEIGHT, (55, 55, 65))
-                rect_outline(left, row_bottom, width, DROPDOWN_ROW_HEIGHT, (80, 80, 95), 1)
-                if i == self.value:
-                    rect_filled(left + 1, row_bottom + 1, width - 2, DROPDOWN_ROW_HEIGHT - 2, (90, 90, 110))
-                item_text = arcade.Text(opt, left + 6, row_bottom + DROPDOWN_ROW_HEIGHT / 2,
-                                        color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
-                item_text.draw()
+    def draw_expanded_list(self) -> None:
+        """Draw open option rows on top of sibling widgets; Dialog calls this after all widget.draw()."""
+        if not self._open or not self.options:
+            return
+        left, bottom, width, height = self.rect
+        list_top = bottom + height
+        for i, opt in enumerate(self.options):
+            row_bottom = list_top - (i + 1) * DROPDOWN_ROW_HEIGHT
+            rect_filled(left, row_bottom, width, DROPDOWN_ROW_HEIGHT, (55, 55, 65))
+            rect_outline(left, row_bottom, width, DROPDOWN_ROW_HEIGHT, (80, 80, 95), 1)
+            if i == self.value:
+                rect_filled(left + 1, row_bottom + 1, width - 2, DROPDOWN_ROW_HEIGHT - 2, (90, 90, 110))
+            item_text = arcade.Text(opt, left + 6, row_bottom + DROPDOWN_ROW_HEIGHT / 2,
+                                    color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+            item_text.draw()
 
     def on_press(self, x: float, y: float) -> bool:
         if not self.contains(x, y):
@@ -443,6 +446,9 @@ class Dialog:
         x_text.draw()
         for w in self.widgets:
             w.draw()
+        for w in self.widgets:
+            if isinstance(w, Dropdown) and w.is_open:
+                w.draw_expanded_list()
 
     def on_mouse_press(self, x: float, y: float) -> bool:
         if not self.extended_contains(x, y) or not self.visible:
@@ -582,8 +588,15 @@ PLACE_ATTRACT_VALUES = (0.2, 0.5, 1.0, 2.0, 5.0)
 LANE_SPEED_VALUES = (0.5, 0.75, 1.0, 1.25, 1.5)
 # Lane type: normal, passing (more types in future)
 LANE_TYPE_VALUES = ("normal", "passing")
-# Intersection type: x (cross), corner
-INTERSECTION_TYPE_VALUES = ("x", "corner")
+# Intersection type: x (cross), corner, straight (dual lane through)
+INTERSECTION_TYPE_VALUES = ("x", "corner", "straight")
+
+
+def _intersection_type_index(intersection_type: str) -> int:
+    try:
+        return INTERSECTION_TYPE_VALUES.index(intersection_type)
+    except ValueError:
+        return 0
 # Intersection size: 2, 4, 6, 8, 10, 12 cells
 INTERSECTION_SIZE_VALUES = (2, 4, 6, 8, 10, 12)
 
@@ -679,17 +692,16 @@ class IntersectionVarsDialog(Dialog):
         self._on_remove = on_remove
         self._can_remove = bool(game is not None and hasattr(game, "can_remove_intersection") and game.can_remove_intersection(intersection_key))
 
-        type_step = INTERSECTION_TYPE_VALUES.index(
-            getattr(intersection_config, "intersection_type", "x")
-        )
+        type_idx = _intersection_type_index(getattr(intersection_config, "intersection_type", "x"))
         cx = getattr(intersection_config, "center_x", 18)
         cy = getattr(intersection_config, "center_y", 24)
         size_val = getattr(intersection_config, "size_cells", 4)
 
-        self._type_slider = Slider(
-            0, 0, 160, 20,
-            len(INTERSECTION_TYPE_VALUES), type_step,
-            (100, 100, 100), (180, 180, 180),
+        self._type_dropdown = Dropdown(
+            0, 0, 140, DROPDOWN_ROW_HEIGHT,
+            list(INTERSECTION_TYPE_VALUES),
+            initial_index=type_idx,
+            on_change=lambda _: self._apply_config(),
         )
         control_width = 140
         self._center_compass = CompassSelect(
@@ -698,7 +710,7 @@ class IntersectionVarsDialog(Dialog):
         self._size_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, size_val, 2, 12, 2, on_change=lambda _: self._apply_config(), on_unfocus=self._apply_config)
         self._remove_btn = RemoveButton(0, 0, 70, 22, on_click=self._do_remove)
 
-        self.widgets = [self._type_slider, self._center_compass, self._size_box]
+        self.widgets = [self._type_dropdown, self._center_compass, self._size_box]
         if self._can_remove:
             self.widgets.append(self._remove_btn)
         self._type_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
@@ -707,7 +719,7 @@ class IntersectionVarsDialog(Dialog):
 
     def _apply_config(self) -> None:
         """Apply type, center, size from widgets to config and call on_commit."""
-        self._config.intersection_type = INTERSECTION_TYPE_VALUES[self._type_slider.value]
+        self._config.intersection_type = INTERSECTION_TYPE_VALUES[self._type_dropdown.value]
         self._config.center_x, self._config.center_y = self._center_compass.value
         self._config.size_cells = max(2, min(12, self._size_box.value))
         if self._config.size_cells % 2 != 0:
@@ -728,7 +740,7 @@ class IntersectionVarsDialog(Dialog):
         content_top = self.y - 32
         box_w = 100
         control_left = left + 70
-        self._type_slider.rect = (left, content_top - 24, 160, 20)
+        self._type_dropdown.rect = (control_left, content_top - 24, 140, DROPDOWN_ROW_HEIGHT)
         self._center_compass.rect = (control_left, content_top - 48, 140, DROPDOWN_ROW_HEIGHT)
         self._size_box.rect = (control_left, content_top - 74, box_w, NUMBER_BOX_HEIGHT)
         if self._can_remove:
@@ -742,7 +754,7 @@ class IntersectionVarsDialog(Dialog):
 
     def draw(self) -> None:
         self._layout_widgets()
-        self._type_label.value = f"Type: {INTERSECTION_TYPE_VALUES[self._type_slider.value]}"
+        self._type_label.value = f"Type: {INTERSECTION_TYPE_VALUES[self._type_dropdown.value]}"
         self._size_label.value = "Size:"
         super().draw()
         self._type_label.draw()
@@ -782,10 +794,11 @@ class NewIntersectionDialog(Dialog):
         self._key = key
         self._on_commit = on_commit
 
-        self._type_slider = Slider(
-            0, 0, 160, 20,
-            len(INTERSECTION_TYPE_VALUES), 0,
-            (100, 100, 100), (180, 180, 180),
+        self._type_dropdown = Dropdown(
+            0, 0, 140, DROPDOWN_ROW_HEIGHT,
+            list(INTERSECTION_TYPE_VALUES),
+            initial_index=0,
+            on_change=None,
         )
         control_width = 140
         self._center_compass = CompassSelect(
@@ -794,7 +807,7 @@ class NewIntersectionDialog(Dialog):
         self._size_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, 4, 2, 12, 2)
         self._commit_btn = CommitButton(0, 0, 70, 22, on_click=self._do_commit)
 
-        self.widgets = [self._type_slider, self._center_compass, self._size_box, self._commit_btn]
+        self.widgets = [self._type_dropdown, self._center_compass, self._size_box, self._commit_btn]
         self._type_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._center_label = arcade.Text("Center:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._size_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
@@ -803,7 +816,7 @@ class NewIntersectionDialog(Dialog):
         from sim import places
         center_x, center_y = self._center_compass.value
         cfg = places.IntersectionConfig(
-            intersection_type=INTERSECTION_TYPE_VALUES[self._type_slider.value],
+            intersection_type=INTERSECTION_TYPE_VALUES[self._type_dropdown.value],
             center_x=center_x,
             center_y=center_y,
             size_cells=max(2, min(12, self._size_box.value)),
@@ -820,7 +833,7 @@ class NewIntersectionDialog(Dialog):
         content_top = self.y - 32
         box_w = 100
         control_left = left + 70
-        self._type_slider.rect = (left, content_top - 24, 160, 20)
+        self._type_dropdown.rect = (control_left, content_top - 24, 140, DROPDOWN_ROW_HEIGHT)
         self._center_compass.rect = (control_left, content_top - 48, 140, DROPDOWN_ROW_HEIGHT)
         self._size_box.rect = (control_left, content_top - 74, box_w, NUMBER_BOX_HEIGHT)
         self._commit_btn.rect = (left, content_top - 106, 70, 22)
@@ -833,7 +846,7 @@ class NewIntersectionDialog(Dialog):
 
     def draw(self) -> None:
         self._layout_widgets()
-        self._type_label.value = f"Type: {INTERSECTION_TYPE_VALUES[self._type_slider.value]}"
+        self._type_label.value = f"Type: {INTERSECTION_TYPE_VALUES[self._type_dropdown.value]}"
         self._size_label.value = "Size:"
         super().draw()
         self._type_label.draw()

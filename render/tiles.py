@@ -14,7 +14,7 @@ except ImportError:
 
 from sim.constants import ORTHO_TILE_SIZE
 
-from render.corner_gen import make_corner
+from render.corner_gen import make_corner, make_straight_through
 
 
 # Affine coeffs for inverse: iso dest (x,y) -> ortho source (a*x+b*y+c, d*x+e*y+f)
@@ -104,12 +104,14 @@ class TileSet:
         return len(self._textures)
 
 
-_corner_texture_cache: dict[int, arcade.Texture] = {}
+_corner_texture_cache: dict[tuple[int, int], arcade.Texture] = {}
+_straight_texture_cache: dict[tuple[int, str, int], arcade.Texture] = {}
+_STRAIGHT_TEX_REV = 2
 
 
-def generate_corner_texture(cells: int) -> arcade.Texture | None:
+def generate_corner_texture(cells: int, quadrant: int = 0) -> arcade.Texture | None:
     """
-    Generate corner texture for given cell count. Cached by cells.
+    Generate corner texture for given cell count and quadrant 0..3. Cached by (cells, quadrant).
     Returns None if Pillow unavailable.
     """
     if Image is None:
@@ -117,13 +119,36 @@ def generate_corner_texture(cells: int) -> arcade.Texture | None:
     cells = max(2, min(12, cells))
     if cells % 2 != 0:
         cells = (cells // 2) * 2
-    if cells in _corner_texture_cache:
-        return _corner_texture_cache[cells]
+    q = quadrant % 4
+    key = (cells, q)
+    if key in _corner_texture_cache:
+        return _corner_texture_cache[key]
     try:
-        ortho_img = make_corner(cells)
+        ortho_img = make_corner(cells, quadrant=q)
         iso_img = ortho_to_iso_large(ortho_img, cells=cells)
-        tex = arcade.Texture(iso_img, name=f"corner_{cells}")
-        _corner_texture_cache[cells] = tex
+        tex = arcade.Texture(iso_img, name=f"corner_{cells}_q{q}")
+        _corner_texture_cache[key] = tex
+        return tex
+    except Exception:
+        return None
+
+
+def generate_straight_texture(cells: int, axis: str = "ns") -> arcade.Texture | None:
+    """Straight-through overlay: dual centre lanes on grey. Cached by (cells, axis)."""
+    if Image is None:
+        return None
+    cells = max(2, min(12, cells))
+    if cells % 2 != 0:
+        cells = (cells // 2) * 2
+    ax = axis if axis in ("ns", "ew") else "ns"
+    key = (cells, ax, _STRAIGHT_TEX_REV)
+    if key in _straight_texture_cache:
+        return _straight_texture_cache[key]
+    try:
+        ortho_img = make_straight_through(cells, axis=ax)
+        iso_img = ortho_to_iso_large(ortho_img, cells=cells)
+        tex = arcade.Texture(iso_img, name=f"straight_{cells}_{ax}_r{_STRAIGHT_TEX_REV}")
+        _straight_texture_cache[key] = tex
         return tex
     except Exception:
         return None

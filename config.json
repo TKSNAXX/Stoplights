@@ -325,13 +325,13 @@
       "center_y": 48
     },
     "bypass": {
-      "intersection_type": "x",
+      "intersection_type": "corner",
       "size_cells": 4,
       "center_x": 64,
       "center_y": 2
     },
     "intersection_2": {
-      "intersection_type": "x",
+      "intersection_type": "straight",
       "size_cells": 4,
       "center_x": 19,
       "center_y": 69
