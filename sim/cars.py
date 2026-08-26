@@ -113,8 +113,8 @@ def spawn_car(
             out_lane_balance_coeff=out_lane_balance_coeff,
         )
     if lane_index is None:
-        fallback = [i for i in range(world.lane_count()) if world.lane_traffic_in(i) == origin]
-        lane_index = random.choice(fallback) if fallback else 0
+        fallback = [i for i in world.lane_ids() if world.lane_traffic_in(i) == origin]
+        lane_index = random.choice(fallback) if fallback else (world.lane_ids()[0] if world.lane_ids() else 0)
     color = random.choice(_CAR_COLOR_PALETTE)
     base_speed_multiplier = random.uniform(0.6, 1.2)
     return Car(origin=origin, destination=destination, lane_index=lane_index, position_in_lane=0, color=color, base_speed_multiplier=base_speed_multiplier)

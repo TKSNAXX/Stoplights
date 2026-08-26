@@ -1,0 +1,158 @@
+{
+  "schema_version": 4,
+  "places": {
+    "Housing": {
+      "center_x": 36,
+      "center_y": 2,
+      "width": 5,
+      "length": 5,
+      "spawn_interval": 2.0,
+      "attract_weight": 1.0,
+      "protected": true
+    },
+    "Office": {
+      "center_x": 36,
+      "center_y": 84,
+      "width": 5,
+      "length": 5,
+      "spawn_interval": 2.0,
+      "attract_weight": 1.0,
+      "protected": true
+    },
+    "Park": {
+      "center_x": 64,
+      "center_y": 46,
+      "width": 5,
+      "length": 5,
+      "spawn_interval": 2.0,
+      "attract_weight": 1.0,
+      "protected": true
+    },
+    "Shopping": {
+      "center_x": 2,
+      "center_y": 46,
+      "width": 5,
+      "length": 5,
+      "spawn_interval": 2.0,
+      "attract_weight": 1.0,
+      "protected": true
+    }
+  },
+  "intersections": {
+    "main": {
+      "type": "x",
+      "center_x": 36,
+      "center_y": 48,
+      "size_cells": 4,
+      "protected": true
+    },
+    "bypass": {
+      "type": "corner",
+      "center_x": 64,
+      "center_y": 2,
+      "size_cells": 4,
+      "protected": true
+    }
+  },
+  "lanes": {
+    "0": {
+      "start_tile": [36, 5],
+      "end_tile": [36, 45],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": true
+    },
+    "1": {
+      "start_tile": [36, 50],
+      "end_tile": [36, 81],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": true
+    },
+    "2": {
+      "start_tile": [35, 81],
+      "end_tile": [35, 50],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": true
+    },
+    "3": {
+      "start_tile": [35, 45],
+      "end_tile": [35, 5],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": true
+    },
+    "4": {
+      "start_tile": [61, 48],
+      "end_tile": [38, 48],
+      "speed_limit": 1.0,
+      "lane_type": "passing",
+      "protected": true
+    },
+    "5": {
+      "start_tile": [38, 47],
+      "end_tile": [61, 47],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": true
+    },
+    "6": {
+      "start_tile": [5, 47],
+      "end_tile": [33, 47],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": true
+    },
+    "7": {
+      "start_tile": [33, 48],
+      "end_tile": [5, 48],
+      "speed_limit": 1.0,
+      "lane_type": "passing",
+      "protected": true
+    },
+    "8": {
+      "start_tile": [39, 1],
+      "end_tile": [61, 1],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": true
+    },
+    "9": {
+      "start_tile": [64, 4],
+      "end_tile": [64, 43],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": true
+    },
+    "10": {
+      "start_tile": [63, 43],
+      "end_tile": [63, 4],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": true
+    },
+    "11": {
+      "start_tile": [61, 2],
+      "end_tile": [39, 2],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": true
+    }
+  },
+  "police": [
+    {"deploy_lane": 7, "return_lane": 7, "red_trigger": 10},
+    {"deploy_lane": 5, "return_lane": 5, "red_trigger": 20}
+  ],
+  "route_hints": [
+    ["Housing", "Park", "bypass"],
+    ["Park", "Housing", "bypass"]
+  ],
+  "spawn_balance": {
+    "origin_spawn_balance_coeff": 1.0,
+    "out_lane_balance_coeff": 1.0
+  },
+  "user_settings": {
+    "edge_pan_enabled": true
+  }
+}

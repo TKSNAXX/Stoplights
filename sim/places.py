@@ -1,6 +1,8 @@
 """
-Place definitions and spawn points.
-Four places: Housing (south), Office (north), Park (east), Shopping (west). Two-way roads with midway intersection; all spawn.
+Place, intersection, and lane configs plus graph routing.
+
+Routing uses traffic_in/traffic_out and optional scenario route_hints.
+No hardcoded first-map lane index tables.
 """
 from __future__ import annotations
 
@@ -9,7 +11,16 @@ import random
 from collections import deque
 
 from sim import world
-from sim.map_data import MAP_DATA, get_template_metadata
+
+# Optional documentation aliases for the default scenario place names.
+# Not used for control flow.
+HOUSING = "Housing"
+OFFICE = "Office"
+PARK = "Park"
+SHOPPING = "Shopping"
+SOUTH = HOUSING
+NORTH = OFFICE
+
 
 @dataclasses.dataclass
 class PlaceConfig:
@@ -25,11 +36,11 @@ class PlaceGeometry:
     center_y: int = 0
     width: int = 5
     length: int = 5
+    protected: bool = False
 
 
 PLACE_SIZE_MIN = 1
 PLACE_SIZE_MAX = 16
-
 
 LANE_TYPE_NORMAL = "normal"
 LANE_TYPE_PASSING = "passing"
@@ -40,88 +51,72 @@ INTERSECTION_TYPE_CORNER = "corner"
 INTERSECTION_TYPE_STRAIGHT = "straight"
 INTERSECTION_TYPES = (INTERSECTION_TYPE_X, INTERSECTION_TYPE_CORNER, INTERSECTION_TYPE_STRAIGHT)
 
-# Intersection size: even cells only, 2–12. Default 4.
 INTERSECTION_SIZE_MIN = 2
 INTERSECTION_SIZE_MAX = 12
 INTERSECTION_SIZE_DEFAULT = 4
 INTERSECTION_SIZE_VALUES = (2, 4, 6, 8, 10, 12)
 
+# Module-level route hints from the active scenario: (origin, dest, via_node).
+_route_hints: list[tuple[str, str, str]] = []
 
-# Default bypass center (corner of Housing east + Park south from default map, 2x scale)
-BYPASS_DEFAULT_CENTER = (64, 2)
+
+def set_route_hints(hints: list[tuple[str, str, str]] | None) -> None:
+    """Install route hints from the active scenario (empty clears)."""
+    global _route_hints
+    _route_hints = list(hints or [])
+
+
+def get_route_hints() -> list[tuple[str, str, str]]:
+    return list(_route_hints)
 
 
 @dataclasses.dataclass
 class IntersectionConfig:
-    """Per-intersection type, center, and size. Intersections are a general map entity with movable centers."""
+    """Per-intersection type, center, and size."""
     intersection_type: str = INTERSECTION_TYPE_X
     size_cells: int = INTERSECTION_SIZE_DEFAULT
     center_x: int = 36
     center_y: int = 48
+    protected: bool = False
 
 
 @dataclasses.dataclass
 class LaneConfig:
-    """Per-lane configuration. speed_limit not yet wired to car movement. lane_type selects sprite (normal vs passing).
-    Lanes are defined by start and end tiles. Direction and traffic in/out are derived at build time."""
+    """Per-lane configuration. Direction and traffic in/out are derived at build time."""
     speed_limit: float = 1.0
     lane_type: str = LANE_TYPE_NORMAL
     start_tile: tuple[int, int] = (0, 0)
     end_tile: tuple[int, int] = (0, 0)
+    protected: bool = False
 
 
-# Place names: south = Housing, north = Office, east = Park, west = Shopping
-SOUTH = "Housing"
-NORTH = "Office"
-PARK = "Park"
-SHOPPING = "Shopping"
-
-PLACES = (SOUTH, NORTH, PARK, SHOPPING)
-
-_TEMPLATE = get_template_metadata(MAP_DATA)
-_SECONDARY_INTERSECTION_ID = str(_TEMPLATE.get("secondary_intersection_id", "bypass"))
-ROUTE_VIA_SECONDARY = frozenset(
-    (str(pair[0]), str(pair[1]))
-    for pair in _TEMPLATE.get("route_pairs_via_secondary", [])
-    if isinstance(pair, (list, tuple)) and len(pair) == 2
-)
-
-
-def out_lane_for_place(place: str, from_intersection: str = "main") -> int | None:
-    """Out-lane that goes to place from the given intersection (main, bypass, or extra)."""
-    lane = choose_next_lane_from_node(from_intersection, place)
-    if lane is not None:
-        return lane
-    for i in range(world.lane_count()):
-        if world.lane_traffic_in(i) == from_intersection and world.lane_traffic_out(i) == place:
-            return i
+def out_lane_for_place(place: str, from_intersection: str | None = None) -> int | None:
+    """Out-lane that goes to place from the given intersection (or any if None)."""
+    if from_intersection is not None:
+        lane = choose_next_lane_from_node(from_intersection, place)
+        if lane is not None:
+            return lane
+    for i in world.lane_ids():
+        if world.is_intersection(world.lane_traffic_in(i)) and world.lane_traffic_out(i) == place:
+            if from_intersection is None or world.lane_traffic_in(i) == from_intersection:
+                return i
     return None
 
 
 def in_lane_indices() -> set[int]:
-    """Lanes that approach an intersection (traffic_out is main, bypass, or any extra intersection)."""
-    return {i for i in range(world.lane_count()) if world.is_intersection(world.lane_traffic_out(i))}
+    """Lanes that approach an intersection."""
+    return {i for i in world.lane_ids() if world.is_intersection(world.lane_traffic_out(i))}
 
 
 def out_lane_indices() -> set[int]:
-    """Lanes that leave an intersection (traffic_in is main, bypass, or any extra intersection)."""
-    return {i for i in range(world.lane_count()) if world.is_intersection(world.lane_traffic_in(i))}
-
-# Straight-through at intersection (in_lane, out_lane): N-S arm plus Park↔Shopping cross.
-STRAIGHT_TRANSITIONS = {(0, 1), (2, 3), (4, 7), (6, 5)}
-
-# U-turn at intersection: return to same arm (do not draw as valid path).
-U_TURN_TRANSITIONS = {(0, 3), (2, 1), (4, 5), (6, 7)}
+    """Lanes that leave an intersection."""
+    return {i for i in world.lane_ids() if world.is_intersection(world.lane_traffic_in(i))}
 
 
 def is_uturn_transition(in_lane_index: int, out_lane_index: int) -> bool:
     """
-    True if this (approach_lane, exit_lane) pair is a geometric U-turn at an intersection.
-    Semantic rule: outbound goes back toward the same place the approach lane came from.
-    Legacy main map pairs are also covered via U_TURN_TRANSITIONS.
+    True if outbound goes back toward the same place the approach came from.
     """
-    if (in_lane_index, out_lane_index) in U_TURN_TRANSITIONS:
-        return True
     src = world.lane_traffic_in(in_lane_index)
     dst = world.lane_traffic_out(out_lane_index)
     if not src or not dst or src != dst:
@@ -132,17 +127,14 @@ def is_uturn_transition(in_lane_index: int, out_lane_index: int) -> bool:
 
 
 def is_valid_intersection_path(in_lane_index: int, out_lane_index: int) -> bool:
-    """True if this (in, out) pair is a valid path to draw (not a U-turn)."""
     return not is_uturn_transition(in_lane_index, out_lane_index)
 
 
 def is_turn_at_intersection(in_lane_index: int, out_lane_index: int) -> bool:
-    """True if this in→out transition at the intersection is a turn (different arm), not straight."""
-    return (in_lane_index, out_lane_index) not in STRAIGHT_TRANSITIONS
+    """True if in→out is a turn (not straight-through by tangent)."""
+    from sim.paths import is_straight_path
 
-# For display: upward = lighter grey, downward = darker grey. Park/Shopping: upper strip = downward, lower = upward.
-LANE_UPWARD_INDICES = {0, 1, 5, 6}
-LANE_DOWNWARD_INDICES = {2, 3, 4, 7}
+    return not is_straight_path(in_lane_index, out_lane_index)
 
 
 def place_bounds(place: str) -> list[tuple[int, int]]:
@@ -154,24 +146,21 @@ def place_bounds(place: str) -> list[tuple[int, int]]:
     y0 = int(rect.get("y", 0))
     w = int(rect.get("w", 0))
     h = int(rect.get("h", 0))
-    if place == NORTH and y0 < 0:
-        y0 = world.get_grid_h() + y0
     if w <= 0 or h <= 0:
         return []
     return [(x, y) for x in range(x0, x0 + w) for y in range(y0, y0 + h)]
 
 
+def _hint_via(origin: str, destination: str) -> str | None:
+    for a, b, via in _route_hints:
+        if a == origin and b == destination:
+            return via
+    return None
+
+
 def spawn_lanes_for_place(place: str, destination: str | None = None) -> list[int]:
     """Lane indices where a car spawning at this place should start (position 0)."""
-    outgoing: list[int] = []
-    for i in range(world.lane_count()):
-        if world.lane_traffic_in(i) == place:
-            outgoing.append(i)
-            out = world.lane_traffic_out(i)
-            if destination is None or out == destination:
-                continue
-            elif destination is not None and (place, destination) in ROUTE_VIA_SECONDARY and out == _SECONDARY_INTERSECTION_ID:
-                continue
+    outgoing = [i for i in world.lane_ids() if world.lane_traffic_in(i) == place]
     if destination is None or not outgoing:
         return outgoing
 
@@ -181,18 +170,15 @@ def spawn_lanes_for_place(place: str, destination: str | None = None) -> list[in
 
     graph = _lane_graph()
     next_hops = _best_next_hops(place, destination, graph)
+    via = _hint_via(place, destination)
+    if via is not None and via in next_hops:
+        hinted = [i for i in outgoing if world.lane_traffic_out(i) == via]
+        if hinted:
+            return hinted
     if next_hops:
-        via = [i for i in outgoing if world.lane_traffic_out(i) in next_hops]
-        if via:
-            return via
-
-    via_secondary = [
-        i
-        for i in outgoing
-        if (place, destination) in ROUTE_VIA_SECONDARY and world.lane_traffic_out(i) == _SECONDARY_INTERSECTION_ID
-    ]
-    if via_secondary:
-        return via_secondary
+        routed = [i for i in outgoing if world.lane_traffic_out(i) in next_hops]
+        if routed:
+            return routed
     return outgoing
 
 
@@ -202,7 +188,6 @@ def choose_spawn_lane(
     lane_usage_counts: dict[tuple[str, int], int] | None = None,
     out_lane_balance_coeff: float = 0.0,
 ) -> int | None:
-    """Choose one spawn lane for place/destination with optional balancing."""
     candidates = spawn_lanes_for_place(place, destination)
     if not candidates:
         return None
@@ -217,7 +202,6 @@ def choose_spawn_lane(
 
 
 def destination_reachable_from_node(start_node: str, destination: str) -> bool:
-    """True when destination can be reached from start_node in lane graph."""
     if start_node == destination:
         return True
     graph = _lane_graph()
@@ -225,7 +209,6 @@ def destination_reachable_from_node(start_node: str, destination: str) -> bool:
 
 
 def _candidates_without_uturn(inbound_lane_index: int | None, candidates: list[int]) -> list[int]:
-    """Prefer lanes that are not U-turns from inbound; if all are U-turns, keep full list."""
     if inbound_lane_index is None or not candidates:
         return candidates
     good = [c for c in candidates if not is_uturn_transition(inbound_lane_index, c)]
@@ -237,8 +220,7 @@ def choose_next_lane_from_node(
     destination: str,
     inbound_lane_index: int | None = None,
 ) -> int | None:
-    """Choose an outbound lane from any node toward destination via shortest next-hop."""
-    outgoing = [i for i in range(world.lane_count()) if world.lane_traffic_in(i) == from_node]
+    outgoing = [i for i in world.lane_ids() if world.lane_traffic_in(i) == from_node]
     if not outgoing:
         return None
 
@@ -249,6 +231,12 @@ def choose_next_lane_from_node(
 
     graph = _lane_graph()
     next_hops = _best_next_hops(from_node, destination, graph)
+    via = _hint_via(from_node, destination)
+    if via is not None and via in next_hops:
+        hinted = [i for i in outgoing if world.lane_traffic_out(i) == via]
+        hinted_pick = _candidates_without_uturn(inbound_lane_index, hinted)
+        if hinted_pick:
+            return random.choice(hinted_pick)
     if next_hops:
         routed = [i for i in outgoing if world.lane_traffic_out(i) in next_hops]
         routed_pick = _candidates_without_uturn(inbound_lane_index, routed)
@@ -260,9 +248,8 @@ def choose_next_lane_from_node(
 
 
 def _lane_graph() -> dict[str, set[str]]:
-    """Build object-level directed graph from lane traffic metadata."""
     graph: dict[str, set[str]] = {}
-    for i in range(world.lane_count()):
+    for i in world.lane_ids():
         src = world.lane_traffic_in(i)
         dst = world.lane_traffic_out(i)
         if not src or not dst:
@@ -272,7 +259,6 @@ def _lane_graph() -> dict[str, set[str]]:
 
 
 def _best_next_hops(start: str, destination: str, graph: dict[str, set[str]]) -> set[str]:
-    """Return next-hop nodes from start that lie on shortest graph paths to destination."""
     neighbors = graph.get(start, set())
     if not neighbors:
         return set()
@@ -295,7 +281,6 @@ def _best_next_hops(start: str, destination: str, graph: dict[str, set[str]]) ->
 
 
 def _bfs_distance(start: str, destination: str, graph: dict[str, set[str]]) -> int | None:
-    """Shortest path edge count from start to destination, or None if unreachable."""
     if start == destination:
         return 0
     q: deque[tuple[str, int]] = deque([(start, 0)])

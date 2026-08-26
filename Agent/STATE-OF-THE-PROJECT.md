@@ -1,0 +1,148 @@
+# Stoplights — State of the Project
+
+**As of:** 2026-08-25 (universal map model)  
+**Status:** Playable prototype / in-game editor-lite. Not a shippable game.  
+**Stack:** Python 3 + Arcade (`arcade>=2.6.0`). Entry point: `python main.py` from `Stoplights/`.
+
+This is the current-state snapshot. Read it first. The other Agent files are supporting material, not all of it still true.
+
+| File | Role |
+|------|------|
+| **This file** | What exists, what works, what is broken or unfinished, where to go next. |
+| `PROJECT-BRIEF.md` | Original intent and first-pass spec (Feb 2026). Historical. The red-cubes-on-a-grid version is long behind us. |
+| `game_reqs.md` | Living requirements v0.2 (last updated 2025-03-06). Dialogs, tiles, zoom, and editable maps were listed as draft; most of that is now in, if unfinished. Traffic signals remain deferred. |
+| `context_digest.md` | Agent handoff: architecture map, conventions, gotchas. Still useful; some details may lag this file. |
+
+---
+
+## 1. What this game is
+
+**Vision:** A Chris Sawyer / RCT-scale isometric sandbox about micromanaging traffic — lane by lane, hour by hour — that eventually captures the mess of real road construction. Cars have origins and destinations. Places generate and attract demand. Roads are discrete directed lanes that start and stop at intersections. Long-term flavour: scheduled demand, backups, crashes, emergency vehicles, construction, Steam if it is fun.
+
+**What it is today:** A self-running isometric traffic sim with a working (if rough) in-game editor. There is still **no stoplight**. Cars use a visibility cone (green / yellow / red), an impasse white-override when two cars deadlock, and police cars that deploy on gridlock. Demand is steady, not time-of-day.
+
+The name is a promise, not a feature.
+
+---
+
+## 2. How far we got
+
+The first pass was: one 2×2 crossroad, four 6×6 places, grey lanes, red cubes, no player input. That plan is complete and then some.
+
+### Universal map model (2026-08-25)
+
+The engine no longer special-cases `main` / `bypass` / “extra” or the original twelve lane indices.
+
+- **Schema 4** is the lingua franca for `assets/maps/default.json` and `config.json`.
+- Places, intersections, and lanes are uniform records with a **`protected`** flag (delete refused when true).
+- **`traffic_in` / `traffic_out`** derived from occupancy at lane endpoints.
+- **Straight / turn / U-turn** from tangents and place identity — not hardcoded `(0,1)` tables.
+- **Police home ends** derived from which end of the lane is a place.
+- **Route hints** (e.g. Housing↔Park via bypass) live in map data, not Python names.
+- Stable **lane ids** as a dict (gaps allowed). `reset_to_defaults()` reloads `default.json`.
+- Schema 3 saves migrate on load (living sandbox extras kept).
+
+Headless check: `python -m tests.test_universal_map`.
+
+### Shipped and real
+
+- **Sim / display split.** `sim/` has no Arcade imports. `main.py` + `render/` + `ui.py` read sim state and draw.
+- **World rebuild from config.** `world.rebuild_world(place_rects, intersections, lane_configs)` — one path for every junction.
+- **Routing graph.** BFS next-hops over place/intersection nodes; optional `route_hints`.
+- **Car motion.** Lane segments + turn arcs; visibility fans; spatial buckets; impasse; police.
+- **Ortho → iso tiles**, dialogs, toolbar editor, discrete zoom/pan.
+- **Persistence.** Schema 4 `config.json`. Cars not saved. Debounced save + save-on-close.
+- **Perf overlay.** Always on; `V` toggles visibility fans.
+
+### Present in data / UI but not wired
+
+- **Lane `speed_limit`.** Stored and shown; not yet applied to movement.
+
+### Explicitly not in this iteration
+
+- Traffic signals / right-of-way devices.
+- Time-of-day demand, crashes, construction.
+- Named multi-map UI (one session save + one default file).
+- Soft validation for invalid editor geometry (MAP-4).
+- Algorithmic lane derivation from place/intersection masters only (endpoints are still authored).
+
+---
+
+## 3. Architecture
+
+```
+main.py          Window, game loop, input, draw
+ui.py            Dialogs, toolbar, widgets
+sim/
+  scenario.py    Schema 4 load / migrate / apply / serialize
+  game.py        GameState; reset loads default.json
+  world.py       Uniform intersections + stable lane id dict
+  map_data.py    Geometry helpers only (no named default map)
+  places.py      Configs + graph routing + route_hints
+  paths.py       Tangents, straight-by-dot, turn arcs
+  cop.py         Police; home end derived from traffic meta
+  persistence.py config.json schema 4
+  …
+assets/maps/default.json   Authored default scenario
+config.json                Living session save (schema 4)
+tests/test_universal_map.py
+```
+
+**Scenario contract (schema 4):** `places`, `intersections`, `lanes`, `police`, `route_hints`, `spawn_balance`, `user_settings`. Entity ids may be named `main` / `Housing` in data; the engine treats them as opaque strings.
+
+**Conventions:** Grid y increases north. Eight directions 0=N … 7=NW. Iterate lanes with `world.lane_ids()`, not `range(lane_count())`.
+
+---
+
+## 4. The living save (`config.json`)
+
+Migrated from schema 3. May still contain sandbox extras (Place 1/2, overlapping `intersection_3` on main, lanes 0–21). That is intentional until cleaned in-editor. Reset = reload `assets/maps/default.json`.
+
+---
+
+## 5. How to run
+
+```bash
+cd Stoplights
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+python main.py
+python -m tests.test_universal_map
+```
+
+**Controls:** Click entities for dialogs; toolbar for new intersection/place/lane/settings; Esc closes; scroll zooms; arrows pan; `V` visibility fans.
+
+---
+
+## 6. Known gotchas
+
+- **U-turns:** Semantic (same place on approach in and exit out). No index tables.
+- **Police home:** Place end of the lane (`traffic_in` place → pos 0; `traffic_out` place → len−1).
+- **Cop dismiss:** Red count ≤ 1.
+- **Car dataclass:** `slots=True`; non-default fields first.
+- **Draw crashes:** Missing texture / `pixelated=True`.
+- **New junctions:** Only matter if lanes pierce them (occupancy at endpoints).
+- **Padding:** Rebuild may 0-base the grid; authored tiles are in pre-pad space in JSON (item-3 coordinate unify still open).
+
+---
+
+## 7. What “bring it to ground” means next
+
+1. Editor integrity / soft validation (MAP-4).
+2. Wire `speed_limit`.
+3. Asset pipeline check (ortho + car sprites).
+4. Named maps UI.
+5. Then a real signal at a junction.
+
+Do not reintroduce named-map special cases in Python. Put map knowledge in JSON.
+
+---
+
+## 8. Working agreements
+
+- Tiny, testable slices. Chat voice: Jeeves. Sim stays Arcade-free. Commit only when asked.
+
+---
+
+*End of snapshot.*

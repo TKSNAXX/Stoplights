@@ -44,8 +44,6 @@ from ui import (
 TICKS_PER_SECOND = 60
 TICK_DT = 1.0 / TICKS_PER_SECOND
 MAX_SUBSTEPS_PER_FRAME = 8
-LANE_TO_DIRECTION_INDEX: list[int] = [0, 0, 4, 4, 6, 2, 2, 6]
-
 BUILDING_OUTLINE_WIDTH = 2
 PLACE_LABEL_FONT_SIZE = 12
 VIS_ZONE_COLOR = (60, 220, 100)
@@ -194,7 +192,7 @@ class StoplightsWindow(arcade.Window):
 
     def _build_lane_cell_to_road(self) -> dict[tuple[int, int], str]:
         lane_cell_to_road: dict[tuple[int, int], str] = {}
-        for lane_index in range(world.lane_count()):
+        for lane_index in world.lane_ids():
             lane = world.get_lane_cells(lane_index)
             road_type = self._lane_road_type(lane_index)
             for gx, gy in lane:
@@ -535,7 +533,7 @@ class StoplightsWindow(arcade.Window):
         cell = (int(round(gx)), int(round(gy)))
         if world.get_intersection_at_cell(cell) is not None:
             return None
-        for i in range(world.lane_count()):
+        for i in world.lane_ids():
             lane = world.get_lane_cells(i)
             if cell in lane:
                 return i

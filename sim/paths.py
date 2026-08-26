@@ -6,12 +6,12 @@ from __future__ import annotations
 
 import math
 
-from sim.places import STRAIGHT_TRANSITIONS
 from sim import world
 
 # Sample step for path length integral and tangent epsilon
 _PATH_LENGTH_SAMPLES = 32
 _TANGENT_EPS = 1e-4
+_STRAIGHT_DOT_MIN = 0.9
 
 
 def _inbound_tangent(lane_index: int) -> tuple[float, float]:
@@ -124,8 +124,12 @@ def _turn_cubic_position(
 
 
 def is_straight_path(in_lane_index: int, out_lane_index: int) -> bool:
-    """True if this (in, out) pair is straight-through at the intersection."""
-    return (in_lane_index, out_lane_index) in STRAIGHT_TRANSITIONS
+    """True if inbound and outbound tangents are aligned (straight-through)."""
+    tin = _inbound_tangent(in_lane_index)
+    tout = _outbound_tangent(out_lane_index)
+    if tin == (0.0, 0.0) or tout == (0.0, 0.0):
+        return False
+    return tin[0] * tout[0] + tin[1] * tout[1] >= _STRAIGHT_DOT_MIN
 
 
 def path_position(in_lane_index: int, out_lane_index: int, t: float) -> tuple[float, float]:

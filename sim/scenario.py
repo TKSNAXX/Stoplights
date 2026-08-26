@@ -1,0 +1,468 @@
+"""
+Schema-4 scenario load, migrate, and apply.
+
+Authored maps (default.json, config.json) share one shape. The engine never
+reconstructs Housing/Office/main from Python constants.
+"""
+from __future__ import annotations
+
+import copy
+import json
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from sim import places
+
+if TYPE_CHECKING:
+    from sim.game import GameState
+
+SCHEMA_VERSION = 4
+
+# Legacy schema-3 core IDs used only when migrating old saves.
+_LEGACY_PROTECTED_PLACES = frozenset({"Housing", "Office", "Park", "Shopping"})
+_LEGACY_CORE_INTERSECTIONS = frozenset({"main", "bypass"})
+_LEGACY_BASE_LANE_COUNT = 12
+_LEGACY_POLICE = [
+    {"deploy_lane": 7, "return_lane": 7, "red_trigger": 10},
+    {"deploy_lane": 5, "return_lane": 5, "red_trigger": 20},
+]
+_LEGACY_ROUTE_HINTS = [
+    ["Housing", "Park", "bypass"],
+    ["Park", "Housing", "bypass"],
+]
+
+
+def project_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def default_map_path() -> Path:
+    return project_root() / "assets" / "maps" / "default.json"
+
+
+def load_json_file(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def load_default_scenario() -> dict:
+    """Load assets/maps/default.json; raise if missing or invalid."""
+    data = load_json_file(default_map_path())
+    if data is None:
+        raise FileNotFoundError(f"Default map not found: {default_map_path()}")
+    return migrate_to_schema_4(data)
+
+
+def clamp_intersection_size(n: int) -> int:
+    n = max(places.INTERSECTION_SIZE_MIN, min(places.INTERSECTION_SIZE_MAX, int(n)))
+    return n if n % 2 == 0 else (n // 2) * 2
+
+
+def migrate_to_schema_4(data: dict) -> dict:
+    """
+    Normalize any supported save/map dict to schema 4.
+    Schema 3 (place_configs + place_geometry + lane_configs + intersection_configs)
+    is merged into the unified places/intersections/lanes shape.
+    """
+    version = int(data.get("schema_version", 3) or 3)
+    if version >= 4 and "places" in data and "intersections" in data and "lanes" in data:
+        return _normalize_schema_4(data)
+    return _migrate_schema_3(data)
+
+
+def _normalize_schema_4(data: dict) -> dict:
+    out: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "places": {},
+        "intersections": {},
+        "lanes": {},
+        "police": [],
+        "route_hints": [],
+        "spawn_balance": {
+            "origin_spawn_balance_coeff": 1.0,
+            "out_lane_balance_coeff": 1.0,
+        },
+        "user_settings": {},
+    }
+    for key, raw in (data.get("places") or {}).items():
+        if not isinstance(raw, dict):
+            continue
+        out["places"][str(key)] = _normalize_place(raw)
+    for key, raw in (data.get("intersections") or {}).items():
+        if not isinstance(raw, dict):
+            continue
+        out["intersections"][str(key)] = _normalize_intersection(raw)
+    for key, raw in (data.get("lanes") or {}).items():
+        if not isinstance(raw, dict):
+            continue
+        try:
+            idx = int(key)
+        except (TypeError, ValueError):
+            continue
+        out["lanes"][str(idx)] = _normalize_lane(raw)
+    police = data.get("police")
+    if isinstance(police, list):
+        out["police"] = [_normalize_police(p) for p in police if isinstance(p, dict)]
+    hints = data.get("route_hints")
+    if isinstance(hints, list):
+        out["route_hints"] = [
+            [str(h[0]), str(h[1]), str(h[2])]
+            for h in hints
+            if isinstance(h, (list, tuple)) and len(h) == 3
+        ]
+    sb = data.get("spawn_balance")
+    if isinstance(sb, dict):
+        try:
+            out["spawn_balance"]["origin_spawn_balance_coeff"] = max(
+                0.0, float(sb.get("origin_spawn_balance_coeff", 1.0))
+            )
+        except (TypeError, ValueError):
+            pass
+        try:
+            out["spawn_balance"]["out_lane_balance_coeff"] = max(
+                0.0, float(sb.get("out_lane_balance_coeff", 1.0))
+            )
+        except (TypeError, ValueError):
+            pass
+    us = data.get("user_settings")
+    if isinstance(us, dict):
+        out["user_settings"] = dict(us)
+    return out
+
+
+def _normalize_place(raw: dict) -> dict:
+    w = max(places.PLACE_SIZE_MIN, min(places.PLACE_SIZE_MAX, int(raw.get("width", 5))))
+    length = max(places.PLACE_SIZE_MIN, min(places.PLACE_SIZE_MAX, int(raw.get("length", 5))))
+    try:
+        spawn = max(0.1, float(raw.get("spawn_interval", 2.0)))
+    except (TypeError, ValueError):
+        spawn = 2.0
+    try:
+        attract = max(0.01, float(raw.get("attract_weight", 1.0)))
+    except (TypeError, ValueError):
+        attract = 1.0
+    return {
+        "center_x": int(raw.get("center_x", 0)),
+        "center_y": int(raw.get("center_y", 0)),
+        "width": w,
+        "length": length,
+        "spawn_interval": spawn,
+        "attract_weight": attract,
+        "protected": bool(raw.get("protected", False)),
+    }
+
+
+def _normalize_intersection(raw: dict) -> dict:
+    itype = raw.get("type") or raw.get("intersection_type") or places.INTERSECTION_TYPE_X
+    if itype not in places.INTERSECTION_TYPES:
+        itype = places.INTERSECTION_TYPE_X
+    return {
+        "type": itype,
+        "center_x": int(raw.get("center_x", 36)),
+        "center_y": int(raw.get("center_y", 48)),
+        "size_cells": clamp_intersection_size(int(raw.get("size_cells", places.INTERSECTION_SIZE_DEFAULT))),
+        "protected": bool(raw.get("protected", False)),
+    }
+
+
+def _normalize_lane(raw: dict) -> dict:
+    start = raw.get("start_tile", [0, 0])
+    end = raw.get("end_tile", [0, 0])
+    try:
+        sx, sy = int(start[0]), int(start[1])
+        ex, ey = int(end[0]), int(end[1])
+    except (TypeError, ValueError, IndexError):
+        sx = sy = ex = ey = 0
+    lane_type = raw.get("lane_type", places.LANE_TYPE_NORMAL)
+    if lane_type not in places.LANE_TYPES:
+        lane_type = places.LANE_TYPE_NORMAL
+    try:
+        speed = max(0.1, min(3.0, float(raw.get("speed_limit", 1.0))))
+    except (TypeError, ValueError):
+        speed = 1.0
+    return {
+        "start_tile": [sx, sy],
+        "end_tile": [ex, ey],
+        "speed_limit": speed,
+        "lane_type": lane_type,
+        "protected": bool(raw.get("protected", False)),
+    }
+
+
+def _normalize_police(raw: dict) -> dict:
+    try:
+        deploy = int(raw.get("deploy_lane", 0))
+    except (TypeError, ValueError):
+        deploy = 0
+    try:
+        ret = int(raw.get("return_lane", deploy))
+    except (TypeError, ValueError):
+        ret = deploy
+    try:
+        trigger = int(raw.get("red_trigger", 10))
+    except (TypeError, ValueError):
+        trigger = 10
+    return {"deploy_lane": deploy, "return_lane": ret, "red_trigger": trigger}
+
+
+def _migrate_schema_3(data: dict) -> dict:
+    places_out: dict[str, dict] = {}
+    geometry = data.get("place_geometry") or {}
+    configs = data.get("place_configs") or {}
+    all_place_ids = set(geometry) | set(configs)
+    for key in all_place_ids:
+        g = geometry.get(key) if isinstance(geometry.get(key), dict) else {}
+        c = configs.get(key) if isinstance(configs.get(key), dict) else {}
+        places_out[str(key)] = _normalize_place(
+            {
+                "center_x": g.get("center_x", 0),
+                "center_y": g.get("center_y", 0),
+                "width": g.get("width", 5),
+                "length": g.get("length", 5),
+                "spawn_interval": c.get("spawn_interval", 2.0),
+                "attract_weight": c.get("attract_weight", 1.0),
+                "protected": str(key) in _LEGACY_PROTECTED_PLACES,
+            }
+        )
+
+    intersections_out: dict[str, dict] = {}
+    for key, raw in (data.get("intersection_configs") or {}).items():
+        if not isinstance(raw, dict):
+            continue
+        intersections_out[str(key)] = _normalize_intersection(
+            {
+                "type": raw.get("intersection_type", places.INTERSECTION_TYPE_X),
+                "center_x": raw.get("center_x", 36),
+                "center_y": raw.get("center_y", 48),
+                "size_cells": raw.get("size_cells", places.INTERSECTION_SIZE_DEFAULT),
+                "protected": str(key) in _LEGACY_CORE_INTERSECTIONS,
+            }
+        )
+
+    lanes_out: dict[str, dict] = {}
+    for key, raw in (data.get("lane_configs") or {}).items():
+        if not isinstance(raw, dict):
+            continue
+        try:
+            idx = int(key)
+        except (TypeError, ValueError):
+            continue
+        start = raw.get("start_tile", [0, 0])
+        end = raw.get("end_tile", [0, 0])
+        # Drop legacy use_template_endpoints sentinel — keep explicit tiles if present.
+        if bool(raw.get("use_template_endpoints", False)):
+            # Prefer explicit tiles when they exist; otherwise leave zeros (invalid).
+            pass
+        lanes_out[str(idx)] = _normalize_lane(
+            {
+                "start_tile": start,
+                "end_tile": end,
+                "speed_limit": raw.get("speed_limit", 1.0),
+                "lane_type": raw.get("lane_type", places.LANE_TYPE_NORMAL),
+                "protected": idx < _LEGACY_BASE_LANE_COUNT,
+            }
+        )
+
+    police = data.get("police")
+    if not isinstance(police, list) or not police:
+        tmpl = data.get("template") if isinstance(data.get("template"), dict) else {}
+        routes = tmpl.get("police_routes") if isinstance(tmpl, dict) else None
+        police = routes if isinstance(routes, list) and routes else copy.deepcopy(_LEGACY_POLICE)
+
+    hints = data.get("route_hints")
+    if not isinstance(hints, list) or not hints:
+        tmpl = data.get("template") if isinstance(data.get("template"), dict) else {}
+        pairs = tmpl.get("route_pairs_via_secondary") if isinstance(tmpl, dict) else None
+        secondary = (tmpl.get("secondary_intersection_id") if isinstance(tmpl, dict) else None) or "bypass"
+        if isinstance(pairs, list) and pairs:
+            hints = [
+                [str(p[0]), str(p[1]), str(secondary)]
+                for p in pairs
+                if isinstance(p, (list, tuple)) and len(p) == 2
+            ]
+        else:
+            hints = copy.deepcopy(_LEGACY_ROUTE_HINTS)
+
+    sb = data.get("spawn_balance") if isinstance(data.get("spawn_balance"), dict) else {}
+    us = data.get("user_settings") if isinstance(data.get("user_settings"), dict) else {}
+
+    return _normalize_schema_4(
+        {
+            "schema_version": SCHEMA_VERSION,
+            "places": places_out,
+            "intersections": intersections_out,
+            "lanes": lanes_out,
+            "police": police,
+            "route_hints": hints,
+            "spawn_balance": sb,
+            "user_settings": us,
+        }
+    )
+
+
+def scenario_to_game_dicts(scenario: dict) -> tuple[
+    dict[str, places.PlaceGeometry],
+    dict[str, places.PlaceConfig],
+    dict[str, places.IntersectionConfig],
+    dict[int, places.LaneConfig],
+    list[dict],
+    list[tuple[str, str, str]],
+    float,
+    float,
+]:
+    """Convert a schema-4 scenario into runtime config objects."""
+    place_geometry: dict[str, places.PlaceGeometry] = {}
+    place_configs: dict[str, places.PlaceConfig] = {}
+    for key, raw in scenario.get("places", {}).items():
+        place_geometry[key] = places.PlaceGeometry(
+            center_x=int(raw["center_x"]),
+            center_y=int(raw["center_y"]),
+            width=int(raw["width"]),
+            length=int(raw["length"]),
+            protected=bool(raw.get("protected", False)),
+        )
+        place_configs[key] = places.PlaceConfig(
+            spawn_interval=float(raw.get("spawn_interval", 2.0)),
+            attract_weight=float(raw.get("attract_weight", 1.0)),
+        )
+
+    intersection_configs: dict[str, places.IntersectionConfig] = {}
+    for key, raw in scenario.get("intersections", {}).items():
+        intersection_configs[key] = places.IntersectionConfig(
+            intersection_type=str(raw.get("type", places.INTERSECTION_TYPE_X)),
+            size_cells=clamp_intersection_size(int(raw.get("size_cells", 4))),
+            center_x=int(raw["center_x"]),
+            center_y=int(raw["center_y"]),
+            protected=bool(raw.get("protected", False)),
+        )
+
+    lane_configs: dict[int, places.LaneConfig] = {}
+    for key, raw in scenario.get("lanes", {}).items():
+        idx = int(key)
+        st = raw["start_tile"]
+        et = raw["end_tile"]
+        lane_configs[idx] = places.LaneConfig(
+            speed_limit=float(raw.get("speed_limit", 1.0)),
+            lane_type=str(raw.get("lane_type", places.LANE_TYPE_NORMAL)),
+            start_tile=(int(st[0]), int(st[1])),
+            end_tile=(int(et[0]), int(et[1])),
+            protected=bool(raw.get("protected", False)),
+        )
+
+    police = [_normalize_police(p) for p in scenario.get("police", []) if isinstance(p, dict)]
+    hints = [
+        (str(h[0]), str(h[1]), str(h[2]))
+        for h in scenario.get("route_hints", [])
+        if isinstance(h, (list, tuple)) and len(h) == 3
+    ]
+    sb = scenario.get("spawn_balance") or {}
+    origin_bal = float(sb.get("origin_spawn_balance_coeff", 1.0))
+    out_bal = float(sb.get("out_lane_balance_coeff", 1.0))
+    return (
+        place_geometry,
+        place_configs,
+        intersection_configs,
+        lane_configs,
+        police,
+        hints,
+        origin_bal,
+        out_bal,
+    )
+
+
+def apply_scenario_to_game(game: "GameState", scenario: dict) -> None:
+    """Replace game map config from a schema-4 scenario (does not clear cars)."""
+    (
+        place_geometry,
+        place_configs,
+        intersection_configs,
+        lane_configs,
+        police,
+        hints,
+        origin_bal,
+        out_bal,
+    ) = scenario_to_game_dicts(scenario)
+    game.place_geometry = place_geometry
+    game.place_configs = place_configs
+    game.intersection_configs = intersection_configs
+    game.lane_configs = lane_configs
+    game.route_hints = hints
+    game.origin_spawn_balance_coeff = origin_bal
+    game.out_lane_balance_coeff = out_bal
+    from sim import cop
+
+    game.police_list = [
+        cop.PoliceCar(
+            deploy_lane=int(p["deploy_lane"]),
+            return_lane=int(p["return_lane"]),
+            red_trigger=int(p["red_trigger"]),
+        )
+        for p in police
+    ]
+    game.spawn_places = tuple(place_geometry.keys())
+
+
+def game_to_scenario(game: "GameState", window=None) -> dict:
+    """Serialize current game map config to schema 4."""
+    places_out: dict[str, dict] = {}
+    for key, g in game.place_geometry.items():
+        cfg = game.place_configs.get(key) or places.PlaceConfig()
+        places_out[key] = {
+            "center_x": g.center_x,
+            "center_y": g.center_y,
+            "width": g.width,
+            "length": g.length,
+            "spawn_interval": cfg.spawn_interval,
+            "attract_weight": cfg.attract_weight,
+            "protected": bool(getattr(g, "protected", False)),
+        }
+    intersections_out: dict[str, dict] = {}
+    for key, cfg in game.intersection_configs.items():
+        intersections_out[key] = {
+            "type": cfg.intersection_type,
+            "center_x": cfg.center_x,
+            "center_y": cfg.center_y,
+            "size_cells": cfg.size_cells,
+            "protected": bool(getattr(cfg, "protected", False)),
+        }
+    lanes_out: dict[str, dict] = {}
+    for idx, cfg in game.lane_configs.items():
+        lanes_out[str(idx)] = {
+            "start_tile": [int(cfg.start_tile[0]), int(cfg.start_tile[1])],
+            "end_tile": [int(cfg.end_tile[0]), int(cfg.end_tile[1])],
+            "speed_limit": cfg.speed_limit,
+            "lane_type": cfg.lane_type,
+            "protected": bool(getattr(cfg, "protected", False)),
+        }
+    police = [
+        {
+            "deploy_lane": p.deploy_lane,
+            "return_lane": p.return_lane,
+            "red_trigger": p.red_trigger,
+        }
+        for p in getattr(game, "police_list", [])
+    ]
+    hints = [[a, b, c] for (a, b, c) in getattr(game, "route_hints", [])]
+    user_settings = {}
+    if window is not None:
+        user_settings = {
+            "edge_pan_enabled": getattr(window, "_edge_pan_enabled", True),
+        }
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "places": places_out,
+        "intersections": intersections_out,
+        "lanes": lanes_out,
+        "police": police,
+        "route_hints": hints,
+        "spawn_balance": {
+            "origin_spawn_balance_coeff": float(getattr(game, "origin_spawn_balance_coeff", 1.0)),
+            "out_lane_balance_coeff": float(getattr(game, "out_lane_balance_coeff", 1.0)),
+        },
+        "user_settings": user_settings,
+    }

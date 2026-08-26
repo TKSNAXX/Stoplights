@@ -140,7 +140,7 @@ def classify_intersection_sides(
 
     x_lo, x_hi, y_lo, y_hi = _bounds_from_cells(cells)
     raw: list[tuple[Cardinal, str, int, int]] = []
-    for i in range(world.lane_count()):
+    for i in world.lane_ids():
         raw.extend(_crossings_for_lane(i, intersection_key, inside))
 
     if require_centre_two and raw:
@@ -209,7 +209,7 @@ def straight_axis_for_intersection(
         return "ew"
     score_ns = 0
     score_ew = 0
-    for i in range(world.lane_count()):
+    for i in world.lane_ids():
         tin = world.lane_traffic_in(i)
         tout = world.lane_traffic_out(i)
         if intersection_key not in (tin, tout):

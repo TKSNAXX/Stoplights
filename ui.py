@@ -1024,11 +1024,14 @@ class PlaceVarsDialog(Dialog):
         center_x, center_y = self._center_compass.value
         w = max(PLACE_SIZE_MIN, min(PLACE_SIZE_MAX, self._w_box.value))
         l = max(PLACE_SIZE_MIN, min(PLACE_SIZE_MAX, self._l_box.value))
+        existing = self._place_geometry.get(self.place)
+        protected = bool(getattr(existing, "protected", False)) if existing is not None else False
         self._place_geometry[self.place] = PlaceGeometry(
             center_x=center_x,
             center_y=center_y,
             width=w,
             length=l,
+            protected=protected,
         )
         if self._on_commit:
             self._on_commit()
