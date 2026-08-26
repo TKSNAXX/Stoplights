@@ -192,6 +192,34 @@ def straight_axis_for_sides(active: frozenset[Cardinal]) -> StraightAxis:
     return "ns"
 
 
+_OPPOSITE_CARDINAL: dict[Cardinal, Cardinal] = {"N": "S", "S": "N", "E": "W", "W": "E"}
+_ALL_CARDINALS: frozenset[Cardinal] = frozenset({"N", "S", "E", "W"})
+
+
+def tee_layout_for_sides(
+    active: frozenset[Cardinal],
+    through_fallback: StraightAxis = "ns",
+) -> tuple[StraightAxis, Cardinal]:
+    """
+    Through axis and stem cardinal for a tee overlay.
+
+    Three active sides: missing face is open (transparent); stem is opposite the
+    gap; through is the remaining pair.
+    Otherwise: use through_fallback; stem is a perpendicular active side, else S.
+    """
+    if len(active) == 3:
+        missing = next(iter(_ALL_CARDINALS - active))
+        stem = _OPPOSITE_CARDINAL[missing]
+        axis: StraightAxis = "ew" if stem in ("N", "S") else "ns"
+        return axis, stem
+    axis = through_fallback if through_fallback in ("ns", "ew") else "ns"
+    perp: frozenset[Cardinal] = frozenset({"E", "W"}) if axis == "ns" else frozenset({"N", "S"})
+    for side in ("N", "S", "E", "W"):
+        if side in active and side in perp:
+            return axis, side
+    return axis, "S"
+
+
 def straight_axis_for_intersection(
     intersection_key: str,
     cells: list[tuple[int, int]],

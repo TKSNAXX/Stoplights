@@ -14,7 +14,7 @@ except ImportError:
 
 from sim.constants import ORTHO_TILE_SIZE
 
-from render.corner_gen import make_corner, make_straight_through
+from render.corner_gen import make_corner, make_straight_through, make_tee
 
 
 # Affine coeffs for inverse: iso dest (x,y) -> ortho source (a*x+b*y+c, d*x+e*y+f)
@@ -106,7 +106,9 @@ class TileSet:
 
 _corner_texture_cache: dict[tuple[int, int], arcade.Texture] = {}
 _straight_texture_cache: dict[tuple[int, str, int], arcade.Texture] = {}
+_tee_texture_cache: dict[tuple[int, str, str, int], arcade.Texture] = {}
 _STRAIGHT_TEX_REV = 11
+_TEE_TEX_REV = 2
 
 
 def generate_corner_texture(cells: int, quadrant: int = 0) -> arcade.Texture | None:
@@ -149,6 +151,28 @@ def generate_straight_texture(cells: int, axis: str = "ns") -> arcade.Texture | 
         iso_img = ortho_to_iso_large(ortho_img, cells=cells)
         tex = arcade.Texture(iso_img, name=f"straight_{cells}_{ax}_r{_STRAIGHT_TEX_REV}")
         _straight_texture_cache[key] = tex
+        return tex
+    except Exception:
+        return None
+
+
+def generate_tee_texture(cells: int, axis: str = "ns", stem: str = "E") -> arcade.Texture | None:
+    """Tee overlay: through dual-lane band plus stem-side grey. Cached by (cells, axis, stem)."""
+    if Image is None:
+        return None
+    cells = max(2, min(12, cells))
+    if cells % 2 != 0:
+        cells = (cells // 2) * 2
+    ax = axis if axis in ("ns", "ew") else "ns"
+    st = stem if stem in ("N", "S", "E", "W") else "E"
+    key = (cells, ax, st, _TEE_TEX_REV)
+    if key in _tee_texture_cache:
+        return _tee_texture_cache[key]
+    try:
+        ortho_img = make_tee(cells, axis=ax, stem=st)
+        iso_img = ortho_to_iso_large(ortho_img, cells=cells)
+        tex = arcade.Texture(iso_img, name=f"tee_{cells}_{ax}_{st}_r{_TEE_TEX_REV}")
+        _tee_texture_cache[key] = tex
         return tex
     except Exception:
         return None

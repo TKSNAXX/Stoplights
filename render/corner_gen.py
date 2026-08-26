@@ -100,13 +100,14 @@ def make_corner(cells: int = 4, quadrant: int = 0):
     return img
 
 
-def make_straight_through(cells: int = 4, axis: str = "ns"):
+def make_straight_through(cells: int = 4, axis: str = "ns", omit_white: str | None = None):
     """
     Ortho patch for straight-through intersections: grey only on the dual-carriageway band (two ortho
     cells); outside stays transparent so the iso sprite does not paint a full diamond over grass.
 
     Yellow median: two 1px lines (same stroke as outer white); exactly 6 grey px between them (split-4 and split+3).
     axis 'ns' = through traffic N–S → horizontal ortho stripes (like road_n/road_s); 'ew' = through E–W → vertical (like road_e/road_w).
+    omit_white: 'lo' skips the low-ortho-edge white (top / left of the band); 'hi' skips the high-ortho-edge white.
     """
     if Image is None or ImageDraw is None:
         raise RuntimeError("Pillow required: pip install Pillow")
@@ -148,15 +149,69 @@ def make_straight_through(cells: int = 4, axis: str = "ns"):
         ya, yb = c0, c1 + t
         split = c1
         white_outer_bottom = c1 + 28
-        h_white_outer_1px(ya + 2)
-        h_white_outer_1px(white_outer_bottom)
+        if omit_white != "lo":
+            h_white_outer_1px(ya + 2)
+        if omit_white != "hi":
+            h_white_outer_1px(white_outer_bottom)
         h_yellow_1px(split - 4)
         h_yellow_1px(split + 3)
     else:
-        v_white_outer_1px(xa + 2)
-        v_white_outer_1px(white_outer_right)
+        if omit_white != "lo":
+            v_white_outer_1px(xa + 2)
+        if omit_white != "hi":
+            v_white_outer_1px(white_outer_right)
         split = c1
         v_yellow_1px(split - 4)
         v_yellow_1px(split + 3)
 
+    return img
+
+
+def make_tee(cells: int = 4, axis: str = "ns", stem: str = "E"):
+    """
+    Straight-through dual-lane band plus solid grey on the stem side.
+
+    Stem grey fills from the through-band edge to the stem edge of the patch,
+    spanning the full other dimension. The opposite side stays transparent.
+    The through-road white stripe on the stem side is omitted.
+    Stem must be perpendicular to axis (ns→E/W, ew→N/S); otherwise this is
+    identical to make_straight_through.
+    """
+    # Swapped vs first paint: lo leftover is E (ns) / N (ew); hi is W (ns) / S (ew).
+    omit_white: str | None = None
+    if axis == "ns":
+        if stem == "E":
+            omit_white = "lo"
+        elif stem == "W":
+            omit_white = "hi"
+    else:
+        if stem == "N":
+            omit_white = "lo"
+        elif stem == "S":
+            omit_white = "hi"
+
+    img = make_straight_through(cells, axis=axis, omit_white=omit_white)
+    if ImageDraw is None:
+        return img
+
+    cells = max(2, min(12, cells))
+    if cells % 2 != 0:
+        cells = (cells // 2) * 2
+    size = cells * ORTHO_TILE_SIZE
+    t = ORTHO_TILE_SIZE
+    c0 = (cells // 2 - 1) * t
+    c1 = (cells // 2) * t
+    band_hi = c1 + t
+    draw = ImageDraw.Draw(img)
+
+    if axis == "ns":
+        if stem == "E":
+            draw.rectangle((0, 0, size, c0), fill=(*ROAD_GREY, 255))
+        elif stem == "W":
+            draw.rectangle((0, band_hi, size, size), fill=(*ROAD_GREY, 255))
+    else:
+        if stem == "N":
+            draw.rectangle((0, 0, c0, size), fill=(*ROAD_GREY, 255))
+        elif stem == "S":
+            draw.rectangle((band_hi, 0, size, size), fill=(*ROAD_GREY, 255))
     return img

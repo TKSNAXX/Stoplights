@@ -13,8 +13,9 @@ from render.intersection_topology import (
     classify_intersection_sides,
     corner_quadrant_for_sides,
     straight_axis_for_intersection,
+    tee_layout_for_sides,
 )
-from render.tiles import TileSet, generate_corner_texture, generate_straight_texture
+from render.tiles import TileSet, generate_corner_texture, generate_straight_texture, generate_tee_texture
 from sim import places
 from sim.constants import (
     CAR_DEFAULT,
@@ -293,6 +294,10 @@ class StoplightsWindow(arcade.Window):
             elif itype == places.INTERSECTION_TYPE_STRAIGHT:
                 ax = straight_axis_for_intersection(key, cells, active)
                 centered_tex = generate_straight_texture(size_cells, axis=ax)
+            elif itype == places.INTERSECTION_TYPE_TEE:
+                ax = straight_axis_for_intersection(key, cells, active)
+                axis, stem = tee_layout_for_sides(active, through_fallback=ax)
+                centered_tex = generate_tee_texture(size_cells, axis=axis, stem=stem)
             self._overlay_intersection(cells, centered_tex, road_cross_tex, center_x, center_y)
 
         self._update_text_positions(center_x, center_y)

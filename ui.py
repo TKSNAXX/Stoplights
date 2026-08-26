@@ -588,8 +588,8 @@ PLACE_ATTRACT_VALUES = (0.2, 0.5, 1.0, 2.0, 5.0)
 LANE_SPEED_VALUES = (0.5, 0.75, 1.0, 1.25, 1.5)
 # Lane type: normal, passing (more types in future)
 LANE_TYPE_VALUES = ("normal", "passing")
-# Intersection type: x (cross), corner, straight (dual lane through)
-INTERSECTION_TYPE_VALUES = ("x", "corner", "straight")
+# Intersection type: x (cross), corner, straight (dual lane through), tee
+INTERSECTION_TYPE_VALUES = ("x", "corner", "straight", "tee")
 
 
 def _intersection_type_index(intersection_type: str) -> int:

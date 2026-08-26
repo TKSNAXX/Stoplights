@@ -13,6 +13,7 @@
 - **2026-08-25 (item 3):** Authored JSON cells are live world cells. No pad-shift. `world.get_bounds()` is the content AABB; camera/draw use those bounds.
 - **2026-08-25 (unified Place):** Runtime `GameState.places` is one `Place` per id (geometry + spawn/attract + `protected`), matching schema 4. `PlaceGeometry` / `PlaceConfig` removed. `spawn_places` stays derived.
 - **2026-08-25 (store names):** `GameState.intersections` and `GameState.lanes` match schema 4 (was `*_configs`). Overlapping intersections allowed. Unused one-junction blob APIs and `ALL_LANES`/`GRID_*` mirrors removed.
+- **2026-08-25 (tee overlay):** Intersection type `tee` is draw-only. Through-road keeps dual-lane markings; stem side is grey; opposite side transparent. Occupancy remains a square AABB.
 
 ---
 

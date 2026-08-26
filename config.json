@@ -72,7 +72,7 @@
       "protected": true
     },
     "intersection_2": {
-      "type": "x",
+      "type": "tee",
       "center_x": 19,
       "center_y": 69,
       "size_cells": 4,
@@ -86,7 +86,7 @@
       "protected": false
     },
     "intersection_4": {
-      "type": "straight",
+      "type": "tee",
       "center_x": 36,
       "center_y": 28,
       "size_cells": 2,

@@ -225,6 +225,17 @@ def test_camera_roundtrip() -> None:
     assert abs(back_y - gy) < 1e-6
 
 
+def test_tee_layout_for_sides() -> None:
+    from render.intersection_topology import tee_layout_for_sides
+
+    assert tee_layout_for_sides(frozenset({"N", "S", "E"})) == ("ns", "E")
+    assert tee_layout_for_sides(frozenset({"N", "S", "W"})) == ("ns", "W")
+    assert tee_layout_for_sides(frozenset({"E", "W", "S"})) == ("ew", "S")
+    assert tee_layout_for_sides(frozenset({"E", "W", "N"})) == ("ew", "N")
+    assert tee_layout_for_sides(frozenset({"N", "S"})) == ("ns", "S")
+    assert tee_layout_for_sides(frozenset({"N", "E"}), through_fallback="ns") == ("ns", "E")
+
+
 def main() -> None:
     tests = [
         test_migrate_schema_3_snippet,
@@ -236,6 +247,7 @@ def main() -> None:
         test_authored_coords_match_world,
         test_place_spawn_survives_rebuild,
         test_camera_roundtrip,
+        test_tee_layout_for_sides,
     ]
     failed = 0
     for fn in tests:

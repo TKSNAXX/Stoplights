@@ -50,7 +50,7 @@ Headless check: `python -m tests.test_universal_map`.
 - **World rebuild from config.** `world.rebuild_world(place_rects, intersections, lanes)` — one path for every junction. Authored cell coordinates are live world coordinates (`get_bounds()`); no pad-shift. Runtime stores match schema 4: `GameState.places`, `.intersections`, `.lanes`. Overlapping intersections are allowed.
 - **Routing graph.** BFS next-hops over place/intersection nodes; optional `route_hints`.
 - **Car motion.** Lane segments + turn arcs; visibility fans; spatial buckets; impasse; police.
-- **Ortho → iso tiles**, dialogs, toolbar editor, discrete zoom/pan.
+- **Ortho → iso tiles**, dialogs, toolbar editor, discrete zoom/pan. Intersection overlay types: `x`, `corner`, `straight`, `tee`. Tee is draw-only (through-road markings + stem-side grey; opposite side transparent). Occupancy stays a square AABB.
 - **Persistence.** Schema 4 `config.json`. Cars not saved. Debounced save + save-on-close.
 - **Perf overlay.** Always on; `V` toggles visibility fans.
 
