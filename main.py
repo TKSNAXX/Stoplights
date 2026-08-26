@@ -168,10 +168,12 @@ class StoplightsWindow(arcade.Window):
         self._cam_y = max(-max_cam_y, min(max_cam_y, self._cam_y))
 
     def _to_screen(self, gx: float, gy: float, center_x: float, center_y: float) -> tuple[float, float]:
-        return grid_to_screen(gx, gy, center_x, center_y, world.get_grid_w(), world.get_grid_h(), self._zoom_scale)
+        x_lo, y_lo, x_hi, y_hi = world.get_bounds()
+        return grid_to_screen(gx, gy, center_x, center_y, x_lo, y_lo, x_hi, y_hi, self._zoom_scale)
 
     def _screen_to_grid(self, sx: float, sy: float, center_x: float, center_y: float) -> tuple[float, float]:
-        return screen_to_grid(sx, sy, center_x, center_y, world.get_grid_w(), world.get_grid_h(), self._zoom_scale)
+        x_lo, y_lo, x_hi, y_hi = world.get_bounds()
+        return screen_to_grid(sx, sy, center_x, center_y, x_lo, y_lo, x_hi, y_hi, self._zoom_scale)
 
     def _lane_road_type(self, lane_index: int) -> str:
         """Return texture key for lane base tile (normal/passing)."""
@@ -264,8 +266,9 @@ class StoplightsWindow(arcade.Window):
         road_cross_tex = self._tile_set.get("road_cross")
         intersection_cells_map = world.get_intersection_cells_map()
         all_inter_cells = {c for cells in intersection_cells_map.values() for c in cells}
-        for gy in range(world.get_grid_h()):
-            for gx in range(world.get_grid_w()):
+        x_lo, y_lo, x_hi, y_hi = world.get_bounds()
+        for gy in range(y_lo, y_hi):
+            for gx in range(x_lo, x_hi):
                 cell = (gx, gy)
                 if cell in all_inter_cells:
                     tex = grass_tex  # always grass under intersections; overlay drawn below
@@ -312,12 +315,13 @@ class StoplightsWindow(arcade.Window):
             sx, sy = self._to_screen((min_gx + max_gx + 1) / 2, (min_gy + max_gy + 1) / 2, center_x, center_y)
             self._place_texts[place].x, self._place_texts[place].y = sx, sy
 
-        cx_grid = (world.get_grid_w() - 1) / 2
-        cy_grid = (world.get_grid_h() - 1) / 2
-        self._cardinal_texts["N"].x, self._cardinal_texts["N"].y = self._to_screen(cx_grid, world.get_grid_h() - 1, center_x, center_y)
-        self._cardinal_texts["S"].x, self._cardinal_texts["S"].y = self._to_screen(cx_grid, 0, center_x, center_y)
-        self._cardinal_texts["E"].x, self._cardinal_texts["E"].y = self._to_screen(world.get_grid_w() - 1, cy_grid, center_x, center_y)
-        self._cardinal_texts["W"].x, self._cardinal_texts["W"].y = self._to_screen(0, cy_grid, center_x, center_y)
+        x_lo, y_lo, x_hi, y_hi = world.get_bounds()
+        cx_grid = (x_lo + x_hi - 1) / 2
+        cy_grid = (y_lo + y_hi - 1) / 2
+        self._cardinal_texts["N"].x, self._cardinal_texts["N"].y = self._to_screen(cx_grid, y_hi - 1, center_x, center_y)
+        self._cardinal_texts["S"].x, self._cardinal_texts["S"].y = self._to_screen(cx_grid, y_lo, center_x, center_y)
+        self._cardinal_texts["E"].x, self._cardinal_texts["E"].y = self._to_screen(x_hi - 1, cy_grid, center_x, center_y)
+        self._cardinal_texts["W"].x, self._cardinal_texts["W"].y = self._to_screen(x_lo, cy_grid, center_x, center_y)
 
     def _update_tile_positions(self, center_x: float, center_y: float) -> None:
         """Update sprite screen positions without rebuilding. Requires _tile_cells and _tile_sprite_list."""

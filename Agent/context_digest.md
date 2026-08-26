@@ -10,6 +10,7 @@
 - **2025-03-06:** Ortho tile pipeline, bypass corner sprite, intersection dialogs, transparency trim, grass-under-corner.
 - **2025-03-14:** Mobile places and intersections. PlaceGeometry (center-based); IntersectionConfig with center_x/y. NumberBox widget. Global traffic/speed sliders removed. Lanes derived from masters (places + intersections).
 - **2026-08-25:** Universal map model. Schema 4 (`assets/maps/default.json` + `config.json`). Uniform intersections/lanes with `protected`. Straight/U-turn/police home derived; no `STRAIGHT_TRANSITIONS` / main-bypass-extra split. See `STATE-OF-THE-PROJECT.md`.
+- **2026-08-25 (item 3):** Authored JSON cells are live world cells. No pad-shift. `world.get_bounds()` is the content AABB; camera/draw use those bounds.
 
 ---
 
@@ -40,7 +41,7 @@ Stoplights is an isometric traffic simulation (Python + Arcade). Cars spawn at p
 
 ### Key Conventions (updated)
 
-1. Isometric grid: `ORTHO_TILE_SIZE=32`, `TILE_W=32`, `TILE_H=16`. Grid y increases north.
+1. Isometric grid: `ORTHO_TILE_SIZE=32`, `TILE_W=32`, `TILE_H=16`. Grid y increases north. Authored JSON cells = live world cells; `get_bounds()` is the AABB (hi exclusive).
 2. Eight directions: 0=N … 7=NW.
 3. Iterate with `world.lane_ids()` — ids need not be dense.
 4. Delete only when `not entity.protected`.

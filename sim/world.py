@@ -36,8 +36,10 @@ class _WorldState:
     def __init__(self) -> None:
         self.lanes: dict[int, list[tuple[int, int]]] = {}
         self.lane_meta: dict[int, tuple[str, str, str]] = {}
-        self.grid_w: int = 32
-        self.grid_h: int = 36
+        self.x_lo: int = 0
+        self.y_lo: int = 0
+        self.x_hi: int = 1
+        self.y_hi: int = 1
         self.place_rects: dict[str, dict] = {}
         self.intersections: dict[str, _IntersectionState] = {}
 
@@ -46,22 +48,19 @@ _state = _WorldState()
 
 # Module-level mirrors kept for older importers (updated on rebuild).
 ALL_LANES: list[list[tuple[int, int]]] = []
-GRID_W: int = 32
-GRID_H: int = 36
+GRID_W: int = 1
+GRID_H: int = 1
 
 
-def _apply_map_padding(
+def _compute_bounds(
     lanes: dict[int, list[tuple[int, int]]],
     place_rects: dict[str, dict],
     intersection_dicts: dict[str, dict],
-) -> tuple[
-    dict[int, list[tuple[int, int]]],
-    dict[str, dict],
-    dict[str, dict],
-    int,
-    int,
-]:
-    """Shift all geometry to a 0-based grid. Same path for every intersection."""
+) -> tuple[int, int, int, int]:
+    """
+    Axis-aligned content bounds (x_lo, y_lo, x_hi, y_hi) with hi exclusive.
+    Authored coordinates are not shifted.
+    """
     all_x: list[int] = []
     all_y: list[int] = []
 
@@ -80,40 +79,9 @@ def _apply_map_padding(
             all_y.append(c[1])
 
     if not all_x or not all_y:
-        return lanes, place_rects, intersection_dicts, 32, 36
+        return (0, 0, 1, 1)
 
-    x_min, x_max = min(all_x), max(all_x)
-    y_min, y_max = min(all_y), max(all_y)
-    offset_x = -x_min
-    offset_y = -y_min
-
-    def shift(c: tuple[int, int]) -> tuple[int, int]:
-        return (c[0] + offset_x, c[1] + offset_y)
-
-    new_lanes = {idx: [shift(c) for c in lane] for idx, lane in lanes.items()}
-    new_place_rects = {
-        k: {
-            "x": int(r.get("x", 0)) + offset_x,
-            "y": int(r.get("y", 0)) + offset_y,
-            "w": int(r.get("w", 0)),
-            "h": int(r.get("h", 0)),
-        }
-        for k, r in place_rects.items()
-    }
-    new_intersections: dict[str, dict] = {}
-    for key, inter in intersection_dicts.items():
-        new_intersections[key] = {
-            "x_lo": int(inter.get("x_lo", 0)) + offset_x,
-            "x_hi": int(inter.get("x_hi", 0)) + offset_x,
-            "y_lo": int(inter.get("y_lo", 0)) + offset_y,
-            "y_hi": int(inter.get("y_hi", 0)) + offset_y,
-            "cells": [shift(c) for c in inter.get("cells", [])],
-            "slots": [shift(c) for c in inter.get("slots", [])],
-        }
-
-    grid_w = x_max - x_min + 1
-    grid_h = y_max - y_min + 1
-    return new_lanes, new_place_rects, new_intersections, grid_w, grid_h
+    return (min(all_x), min(all_y), max(all_x) + 1, max(all_y) + 1)
 
 
 def rebuild_world(
@@ -140,32 +108,12 @@ def rebuild_world(
         place_rects, intersection_bounds, lane_configs or {}
     )
 
-    lanes, place_rects, intersection_dicts, grid_w, grid_h = _apply_map_padding(
-        lanes, place_rects, intersection_dicts
-    )
-
-    # Re-derive traffic after padding so adjacency uses shifted cells.
-    padded_bounds = {
-        key: (
-            int(d["x_lo"]),
-            int(d["x_hi"]),
-            int(d["y_lo"]),
-            int(d["y_hi"]),
-        )
-        for key, d in intersection_dicts.items()
-    }
-    for lane_idx, cells in lanes.items():
-        if not cells:
-            lane_meta[lane_idx] = ("", "", "")
-            continue
-        start, end = cells[0], cells[-1]
-        lane_meta[lane_idx] = map_data.derive_traffic(start, end, place_rects, padded_bounds)
+    x_lo, y_lo, x_hi, y_hi = _compute_bounds(lanes, place_rects, intersection_dicts)
 
     _state.lanes = {idx: [tuple(c) for c in lane] for idx, lane in lanes.items()}
     _state.lane_meta = dict(lane_meta)
     _state.place_rects = dict(place_rects)
-    _state.grid_w = grid_w
-    _state.grid_h = grid_h
+    _state.x_lo, _state.y_lo, _state.x_hi, _state.y_hi = x_lo, y_lo, x_hi, y_hi
     _state.intersections = {}
     for key, d in intersection_dicts.items():
         bounds = (int(d["x_lo"]), int(d["x_hi"]), int(d["y_lo"]), int(d["y_hi"]))
@@ -178,8 +126,8 @@ def rebuild_world(
 def _refresh_refs() -> None:
     global ALL_LANES, GRID_W, GRID_H
     ALL_LANES = [_state.lanes[i] for i in sorted(_state.lanes.keys())]
-    GRID_W = _state.grid_w
-    GRID_H = _state.grid_h
+    GRID_W = get_grid_w()
+    GRID_H = get_grid_h()
 
 
 def get_intersection_at_cell(cell: tuple[int, int]) -> str | None:
@@ -237,12 +185,19 @@ def intersection_center() -> tuple[float, float]:
     return (sum(cell[0] for cell in cells) / n, sum(cell[1] for cell in cells) / n)
 
 
+def get_bounds() -> tuple[int, int, int, int]:
+    """Content bounds (x_lo, y_lo, x_hi, y_hi), hi exclusive. Authored cell space."""
+    return (_state.x_lo, _state.y_lo, _state.x_hi, _state.y_hi)
+
+
 def get_grid_w() -> int:
-    return _state.grid_w
+    """Span of content bounds in x (not an origin-at-zero grid width)."""
+    return max(1, _state.x_hi - _state.x_lo)
 
 
 def get_grid_h() -> int:
-    return _state.grid_h
+    """Span of content bounds in y (not an origin-at-zero grid height)."""
+    return max(1, _state.y_hi - _state.y_lo)
 
 
 def lane_ids() -> list[int]:

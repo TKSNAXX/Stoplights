@@ -47,7 +47,7 @@ Headless check: `python -m tests.test_universal_map`.
 ### Shipped and real
 
 - **Sim / display split.** `sim/` has no Arcade imports. `main.py` + `render/` + `ui.py` read sim state and draw.
-- **World rebuild from config.** `world.rebuild_world(place_rects, intersections, lane_configs)` — one path for every junction.
+- **World rebuild from config.** `world.rebuild_world(place_rects, intersections, lane_configs)` — one path for every junction. Authored cell coordinates are live world coordinates (`get_bounds()`); no pad-shift.
 - **Routing graph.** BFS next-hops over place/intersection nodes; optional `route_hints`.
 - **Car motion.** Lane segments + turn arcs; visibility fans; spatial buckets; impasse; police.
 - **Ortho → iso tiles**, dialogs, toolbar editor, discrete zoom/pan.
@@ -76,7 +76,7 @@ ui.py            Dialogs, toolbar, widgets
 sim/
   scenario.py    Schema 4 load / migrate / apply / serialize
   game.py        GameState; reset loads default.json
-  world.py       Uniform intersections + stable lane id dict
+  world.py       Uniform intersections + stable lane id dict; authored coords; get_bounds()
   map_data.py    Geometry helpers only (no named default map)
   places.py      Configs + graph routing + route_hints
   paths.py       Tangents, straight-by-dot, turn arcs
@@ -123,7 +123,7 @@ python -m tests.test_universal_map
 - **Car dataclass:** `slots=True`; non-default fields first.
 - **Draw crashes:** Missing texture / `pixelated=True`.
 - **New junctions:** Only matter if lanes pierce them (occupancy at endpoints).
-- **Padding:** Rebuild may 0-base the grid; authored tiles are in pre-pad space in JSON (item-3 coordinate unify still open).
+- **Authored = world:** JSON lane tiles and centres are the sim cells after rebuild. Draw iterates `get_bounds()`.
 
 ---
 

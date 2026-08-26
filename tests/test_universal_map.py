@@ -110,10 +110,14 @@ def test_unnamed_intersections_occupancy() -> None:
     world.rebuild_world(place_rects_from_geometry(place_geometry), intersections, lanes)
     keys = world.get_intersection_keys()
     assert keys == ["alpha", "beta", "gamma"]
-    # After padding, centres shift but keys remain; cell lookup returns a key.
+    # Authored centres are live world cells (no pad-shift).
     cell = world.get_intersection_cells_by_key("alpha")[0]
     assert world.get_intersection_at_cell(cell) == "alpha"
     assert "main" not in keys
+    x_lo, y_lo, x_hi, y_hi = world.get_bounds()
+    assert x_lo <= 20 < x_hi
+    assert y_lo <= 20 < y_hi
+    assert x_lo <= 60 < x_hi
 
 
 def test_default_map_hints_and_police_homes() -> None:
@@ -164,6 +168,44 @@ def test_stable_lane_ids_survive_gap() -> None:
     assert world.lane_count() == 2
 
 
+def test_authored_coords_match_world() -> None:
+    """Lane endpoints in the world equal authored JSON tiles; bounds cover content."""
+    from sim.scenario import load_default_scenario, apply_scenario_to_game
+
+    scenario = load_default_scenario()
+    g = GameState()
+    apply_scenario_to_game(g, scenario)
+    g.rebuild_world_from_config()
+
+    for key, raw in scenario["lanes"].items():
+        idx = int(key)
+        cells = world.get_lane_cells(idx)
+        assert cells, idx
+        start = tuple(raw["start_tile"])
+        end = tuple(raw["end_tile"])
+        assert cells[0] == start, (idx, cells[0], start)
+        assert cells[-1] == end, (idx, cells[-1], end)
+
+    x_lo, y_lo, x_hi, y_hi = world.get_bounds()
+    for idx in world.lane_ids():
+        for gx, gy in world.get_lane_cells(idx):
+            assert x_lo <= gx < x_hi
+            assert y_lo <= gy < y_hi
+    main_cells = world.get_intersection_cells_by_key("main")
+    assert (36, 48) in main_cells
+
+
+def test_camera_roundtrip() -> None:
+    from render.camera import grid_to_screen, screen_to_grid
+
+    gx, gy = 36.0, 48.0
+    bounds = (0, 0, 80, 90)
+    sx, sy = grid_to_screen(gx, gy, 400.0, 300.0, *bounds, zoom_scale=1.0)
+    back_x, back_y = screen_to_grid(sx, sy, 400.0, 300.0, *bounds, zoom_scale=1.0)
+    assert abs(back_x - gx) < 1e-6
+    assert abs(back_y - gy) < 1e-6
+
+
 def main() -> None:
     tests = [
         test_migrate_schema_3_snippet,
@@ -172,6 +214,8 @@ def main() -> None:
         test_default_map_hints_and_police_homes,
         test_reset_loads_default,
         test_stable_lane_ids_survive_gap,
+        test_authored_coords_match_world,
+        test_camera_roundtrip,
     ]
     failed = 0
     for fn in tests:
