@@ -10,15 +10,6 @@
       "attract_weight": 1.0,
       "protected": true
     },
-    "Place 2": {
-      "center_x": 40,
-      "center_y": 28,
-      "width": 2,
-      "length": 2,
-      "spawn_interval": 2.0,
-      "attract_weight": 1.0,
-      "protected": false
-    },
     "Office": {
       "center_x": 36,
       "center_y": 71,
@@ -37,7 +28,7 @@
       "attract_weight": 1.0,
       "protected": true
     },
-    "Park": {
+    "Stan": {
       "center_x": 58,
       "center_y": 42,
       "width": 16,
@@ -46,7 +37,16 @@
       "attract_weight": 1.0,
       "protected": true
     },
-    "Place 1": {
+    "Your Moms House": {
+      "center_x": 40,
+      "center_y": 28,
+      "width": 2,
+      "length": 2,
+      "spawn_interval": 2.0,
+      "attract_weight": 1.0,
+      "protected": false
+    },
+    "Escape": {
       "center_x": 19,
       "center_y": 76,
       "width": 5,
@@ -396,11 +396,11 @@
   "route_hints": [
     [
       "Housing",
-      "Park",
+      "Stan",
       "bypass"
     ],
     [
-      "Park",
+      "Stan",
       "Housing",
       "bypass"
     ]

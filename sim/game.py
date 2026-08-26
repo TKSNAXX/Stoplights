@@ -158,6 +158,36 @@ class GameState:
         cfg = self.intersections.get(intersection_key)
         return cfg is not None and not getattr(cfg, "protected", False)
 
+    def rename_place(self, old: str, new: str) -> str:
+        """Rename a place id. Returns the name actually used (old if refused)."""
+        new = (new or "").strip()
+        if not old or old not in self.places or not new or new == old:
+            return old
+        if new in self.places or new in self.intersections:
+            return old
+        self.places[new] = self.places.pop(old)
+        self.spawn_enabled = {(new if k == old else k): v for k, v in self.spawn_enabled.items()}
+        self.spawn_timers = {(new if k == old else k): v for k, v in self.spawn_timers.items()}
+        self.origin_spawn_counts = {
+            (new if k == old else k): v for k, v in self.origin_spawn_counts.items()
+        }
+        self.lane_spawn_counts = {
+            ((new if k[0] == old else k[0]), k[1]): v for k, v in self.lane_spawn_counts.items()
+        }
+        self.spawn_places = tuple(new if p == old else p for p in self.spawn_places)
+        self.route_hints = [
+            (new if a == old else a, new if b == old else b, new if c == old else c)
+            for (a, b, c) in self.route_hints
+        ]
+        for car in self.cars:
+            if car.origin == old:
+                car.origin = new
+            if car.destination == old:
+                car.destination = new
+        places.set_route_hints(self.route_hints)
+        self.rebuild_world_from_config()
+        return new
+
     def _apply_police_influence(
         self,
         poses: list[tuple[float, float, int] | None],

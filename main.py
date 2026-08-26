@@ -143,6 +143,16 @@ class StoplightsWindow(arcade.Window):
         self._invalidate_draw_cache()
         persistence.request_debounced_save()
 
+    def _on_place_renamed(self, old: str, new: str) -> None:
+        """Rekey open dialog and map label after a place id change."""
+        dlg = self._place_dialogs.pop(old, None)
+        if dlg is not None:
+            self._place_dialogs[new] = dlg
+        label = self._place_texts.pop(old, None)
+        if label is not None:
+            label.value = new
+            self._place_texts[new] = label
+
     def _update_zoom_scale(self) -> None:
         """Compute zoom scale from current zoom level and window size."""
         map_w = (world.get_grid_w() + world.get_grid_h()) * TILE_W
@@ -341,6 +351,9 @@ class StoplightsWindow(arcade.Window):
     def on_key_press(self, key: int, modifiers: int) -> None:
         fw = self._dialog_manager.get_focused_widget()
         if fw is not None:
+            if key == arcade.key.ESCAPE:
+                self._dialog_manager.set_focused_widget(None)
+                return
             if fw.on_key_press(key):
                 if key in (arcade.key.RETURN, arcade.key.TAB):
                     self._dialog_manager.set_focused_widget(None)
@@ -357,6 +370,12 @@ class StoplightsWindow(arcade.Window):
             self._key_up = True
         elif key == arcade.key.DOWN:
             self._key_down = True
+
+    def on_text(self, text: str) -> None:
+        fw = self._dialog_manager.get_focused_widget()
+        on_text = getattr(fw, "on_text", None) if fw is not None else None
+        if callable(on_text):
+            on_text(text)
 
     def on_key_release(self, key: int, modifiers: int) -> None:
         if key == arcade.key.LEFT:
@@ -626,9 +645,11 @@ class StoplightsWindow(arcade.Window):
                         game=self.game,
                         on_change=self._on_config_change,
                         on_commit=lambda: self._on_config_change(rebuild_world=True),
+                        on_rename=self._on_place_renamed,
                         on_remove=lambda: (
                             self._on_config_change(),
-                            self._place_dialogs.pop(place, None),
+                            self._place_dialogs.pop(dlg.place, None),
+                            self._place_texts.pop(dlg.place, None),
                             self._dialog_manager.close(dlg),
                         ),
                     )

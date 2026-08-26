@@ -1,6 +1,6 @@
 # Stoplights — State of the Project
 
-**As of:** 2026-08-25 (GameState.places / intersections / lanes)  
+**As of:** 2026-08-25 (editable place names)  
 **Status:** Playable prototype / in-game editor-lite. Not a shippable game.  
 **Stack:** Python 3 + Arcade (`arcade>=2.6.0`). Entry point: `python main.py` from `Stoplights/`.
 
@@ -34,6 +34,7 @@ The first pass was: one 2×2 crossroad, four 6×6 places, grey lanes, red cubes,
 The engine no longer special-cases `main` / `bypass` / “extra” or the original twelve lane indices.
 
 - **Schema 4** is the lingua franca for `assets/maps/default.json` and `config.json`. Runtime `GameState.places` is one `Place` record per id (geometry + spawn/attract + `protected`) — same shape as JSON. `spawn_places` is derived (outbound-lane eligibility), not a second store.
+- Place names **are** those ids (map labels, `route_hints`, car origin/destination). They are editable in the place dialog; `GameState.rename_place` retargets the identity. Collision with another place or an intersection id is refused. `protected` still means delete-only.
 - Places, intersections, and lanes are uniform records with a **`protected`** flag (delete refused when true).
 - **`traffic_in` / `traffic_out`** derived from occupancy at lane endpoints.
 - **Straight / turn / U-turn** from tangents and place identity — not hardcoded `(0,1)` tables.
@@ -52,6 +53,7 @@ Headless check: `python -m tests.test_universal_map`.
 - **Car motion.** Lane segments + turn arcs; visibility fans; spatial buckets; impasse; police.
 - **Ortho → iso tiles**, dialogs, toolbar editor, discrete zoom/pan. Intersection overlay types: `x`, `corner`, `straight`, `tee`. Tee is draw-only (through-road markings + stem-side grey; opposite side transparent). Occupancy stays a square AABB.
 - **Persistence.** Schema 4 `config.json`. Cars not saved. Debounced save + save-on-close.
+- **Editable place names.** Place dialog `TextBox` commits via `rename_place` (keys, hints, live cars). Intersection rename is out of scope.
 - **Perf overlay.** Always on; `V` toggles visibility fans.
 
 ### Present in data / UI but not wired
@@ -124,6 +126,7 @@ python -m tests.test_universal_map
 - **Draw crashes:** Missing texture / `pixelated=True`.
 - **New junctions:** Only matter if lanes pierce them (occupancy at endpoints).
 - **Authored = world:** JSON lane tiles and centres are the sim cells after rebuild. Draw iterates `get_bounds()`.
+- **Place id = name:** Renaming retargets `places`, spawn maps, `route_hints`, and live cars. Empty or colliding names are no-ops. Intersection ids share that namespace.
 
 ---
 

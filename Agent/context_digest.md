@@ -14,6 +14,7 @@
 - **2026-08-25 (unified Place):** Runtime `GameState.places` is one `Place` per id (geometry + spawn/attract + `protected`), matching schema 4. `PlaceGeometry` / `PlaceConfig` removed. `spawn_places` stays derived.
 - **2026-08-25 (store names):** `GameState.intersections` and `GameState.lanes` match schema 4 (was `*_configs`). Overlapping intersections allowed. Unused one-junction blob APIs and `ALL_LANES`/`GRID_*` mirrors removed.
 - **2026-08-25 (tee overlay):** Intersection type `tee` is draw-only. Through-road keeps dual-lane markings; stem side is grey; opposite side transparent. Occupancy remains a square AABB.
+- **2026-08-25 (place names):** Place ids are the names. Editable in PlaceVarsDialog via `GameState.rename_place` (retargets keys, hints, cars). Collision with a place or intersection id is a no-op. `protected` is still delete-only.
 
 ---
 
@@ -24,7 +25,7 @@ Stoplights is an isometric traffic simulation (Python + Arcade). Cars spawn at p
 ### What’s There Now (High Level)
 
 - **Schema 4 scenario.** Places / intersections / lanes / police / route_hints. `protected` replaces base_lane_count / core id sets.
-- **Places and intersections are movable.** Center-based geometry. Commit rebuilds the world via `rebuild_world(place_rects, intersections, lanes)`. Overlapping intersections are allowed.
+- **Places and intersections are movable.** Center-based geometry. Commit rebuilds the world via `rebuild_world(place_rects, intersections, lanes)`. Overlapping intersections are allowed. Place names are the ids and can be renamed in the place dialog.
 - **NumberBox, dialogs, toolbar editor, ortho→iso tiles, zoom/pan.** As before.
 - **Default map** in `assets/maps/default.json` (not reconstructed in Python).
 
@@ -48,8 +49,9 @@ Stoplights is an isometric traffic simulation (Python + Arcade). Cars spawn at p
 2. Eight directions: 0=N … 7=NW.
 3. Iterate with `world.lane_ids()` — ids need not be dense.
 4. Delete only when `not entity.protected`.
-5. Police home: place end of deploy/return lane.
-6. Cop dismiss: red count ≤ 1.
+5. Place names are the ids (shared routing-node namespace with intersections). Rename retargets identity; it is not a display alias.
+6. Police home: place end of deploy/return lane.
+7. Cop dismiss: red count ≤ 1.
 
 ### Gotchas (still true / updated)
 

@@ -177,6 +177,105 @@ class NumberBox:
         arrow_dn.draw()
 
 
+TEXT_BOX_MAX_LEN = 24
+
+
+def _text_box_char_ok(ch: str) -> bool:
+    return ch.isalnum() or ch in " -"
+
+
+class TextBox:
+    """Single-line text field. Focus to type. Rect (left, bottom, width, height)."""
+
+    def __init__(
+        self,
+        left: float,
+        bottom: float,
+        width: float,
+        height: float,
+        value: str = "",
+        on_change: Callable[[str], None] | None = None,
+        on_unfocus: Callable[[], None] | None = None,
+        max_len: int = TEXT_BOX_MAX_LEN,
+    ):
+        self.rect = (left, bottom, width, height)
+        self.value = value
+        self.max_len = max_len
+        self._on_change = on_change
+        self._on_unfocus = on_unfocus
+        self._focused = False
+        self._text_buffer = value
+        self._text = arcade.Text(
+            "", 0, 0, color=(220, 220, 220), font_size=11, anchor_x="left", anchor_y="center"
+        )
+
+    def contains(self, x: float, y: float) -> bool:
+        left, bottom, width, height = self.rect
+        return left <= x <= left + width and bottom <= y <= bottom + height
+
+    def set_focus(self, focused: bool) -> None:
+        if self._focused != focused:
+            self._focused = focused
+            if not focused:
+                self._commit_text()
+                if self._on_unfocus:
+                    self._on_unfocus()
+
+    def _commit_text(self) -> None:
+        stripped = self._text_buffer.strip()
+        if not stripped:
+            self._text_buffer = self.value
+            return
+        if stripped != self.value:
+            self.value = stripped
+            self._text_buffer = stripped
+            if self._on_change:
+                self._on_change(self.value)
+
+    def on_press(self, x: float, y: float) -> bool:
+        if not self.contains(x, y):
+            return False
+        self.set_focus(True)
+        return True
+
+    def on_drag(self, x: float) -> bool:
+        return False
+
+    def on_release(self) -> bool:
+        return False
+
+    def on_key_press(self, key: int) -> bool:
+        if not self._focused:
+            return False
+        if key == arcade.key.RETURN or key == arcade.key.TAB:
+            self.set_focus(False)
+            return True
+        if key == arcade.key.BACKSPACE:
+            if self._text_buffer:
+                self._text_buffer = self._text_buffer[:-1]
+            return True
+        return False
+
+    def on_text(self, text: str) -> None:
+        if not self._focused:
+            return
+        for ch in text:
+            if not _text_box_char_ok(ch):
+                continue
+            if len(self._text_buffer) >= self.max_len:
+                break
+            self._text_buffer += ch
+
+    def draw(self) -> None:
+        left, bottom, width, height = self.rect
+        rect_filled(left, bottom, width, height, (50, 50, 60))
+        rect_outline(left, bottom, width, height, DIALOG_BORDER if self._focused else (80, 80, 90), 1)
+        self._text.value = self._text_buffer if self._focused else self.value
+        self._text.x = left + 6
+        self._text.y = bottom + height / 2
+        self._text.draw()
+
+
 class Slider:
     """Horizontal step slider. Rect (left, bottom, width, height). value is 0..num_steps-1."""
 
@@ -869,12 +968,12 @@ class NewPlaceDialog(Dialog):
         on_commit: Callable[[], None] | None = None,
     ):
         name = _next_place_name(game.places)
-        super().__init__(x, y, 220, 174, f"New Place: {name}")
+        super().__init__(x, y, 220, 202, f"New Place: {name}")
         self._game = game
-        self._name = name
         self._on_commit = on_commit
 
         control_width = 140
+        self._name_box = TextBox(0, 0, 140, NUMBER_BOX_HEIGHT, name)
         self._center_compass = CompassSelect(
             0, 0, control_width, DROPDOWN_ROW_HEIGHT, (20, 20), on_change=None,
         )
@@ -882,7 +981,8 @@ class NewPlaceDialog(Dialog):
         self._l_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, 5, 1, 16, 1)
         self._commit_btn = CommitButton(0, 0, 70, 22, on_click=self._do_commit)
 
-        self.widgets = [self._center_compass, self._w_box, self._l_box, self._commit_btn]
+        self.widgets = [self._name_box, self._center_compass, self._w_box, self._l_box, self._commit_btn]
+        self._name_label = arcade.Text("Name:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._center_label = arcade.Text("Center:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._w_label = arcade.Text("Width:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._l_label = arcade.Text("Length:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
@@ -890,6 +990,11 @@ class NewPlaceDialog(Dialog):
     def _do_commit(self) -> None:
         from sim import places
         from sim.places import PLACE_SIZE_MIN, PLACE_SIZE_MAX
+        if self._name_box._focused:
+            self._name_box.set_focus(False)
+        name = self._name_box.value.strip()
+        if not name or name in self._game.places or name in self._game.intersections:
+            return
         center_x, center_y = self._center_compass.value
         w = max(PLACE_SIZE_MIN, min(PLACE_SIZE_MAX, self._w_box.value))
         l = max(PLACE_SIZE_MIN, min(PLACE_SIZE_MAX, self._l_box.value))
@@ -899,7 +1004,7 @@ class NewPlaceDialog(Dialog):
             width=w,
             length=l,
         )
-        self._game.places[self._name] = p
+        self._game.places[name] = p
         self._game.rebuild_world_from_config()
         if self._on_commit:
             self._on_commit()
@@ -909,20 +1014,24 @@ class NewPlaceDialog(Dialog):
         content_top = self.y - 32
         box_w = 100
         control_left = left + 70
-        self._center_compass.rect = (control_left, content_top - 24, 140, DROPDOWN_ROW_HEIGHT)
-        self._w_box.rect = (control_left, content_top - 50, box_w, NUMBER_BOX_HEIGHT)
-        self._l_box.rect = (control_left, content_top - 76, box_w, NUMBER_BOX_HEIGHT)
-        self._commit_btn.rect = (left, content_top - 108, 70, 22)
+        self._name_box.rect = (control_left, content_top - 24, 140, NUMBER_BOX_HEIGHT)
+        self._center_compass.rect = (control_left, content_top - 52, 140, DROPDOWN_ROW_HEIGHT)
+        self._w_box.rect = (control_left, content_top - 78, box_w, NUMBER_BOX_HEIGHT)
+        self._l_box.rect = (control_left, content_top - 104, box_w, NUMBER_BOX_HEIGHT)
+        self._commit_btn.rect = (left, content_top - 136, 70, 22)
+        self._name_label.x = left
+        self._name_label.y = content_top - 12
         self._center_label.x = left
-        self._center_label.y = content_top - 12
+        self._center_label.y = content_top - 40
         self._w_label.x = left
-        self._w_label.y = content_top - 38
+        self._w_label.y = content_top - 66
         self._l_label.x = left
-        self._l_label.y = content_top - 64
+        self._l_label.y = content_top - 92
 
     def draw(self) -> None:
         self._layout_widgets()
         super().draw()
+        self._name_label.draw()
         self._center_label.draw()
         self._w_label.draw()
         self._l_label.draw()
@@ -975,18 +1084,21 @@ class PlaceVarsDialog(Dialog):
         on_change: Callable[[], None] | None = None,
         on_commit: Callable[[], None] | None = None,
         on_remove: Callable[[], None] | None = None,
+        on_rename: Callable[[str, str], None] | None = None,
     ):
-        super().__init__(x, y, 240, 212, f"Place: {place}")
+        super().__init__(x, y, 240, 240, f"Place: {place}")
         self.place = place
         self._place = place_obj
         self._game = game
         self._on_change = on_change
         self._on_commit = on_commit
         self._on_remove = on_remove
+        self._on_rename = on_rename
         self._can_remove = bool(game is not None and hasattr(game, "can_remove_place") and game.can_remove_place(place))
 
         spawn_step = self._step_for_spawn(place_obj.spawn_interval)
         attract_step = self._step_for_attract(place_obj.attract_weight)
+        self._name_box = TextBox(0, 0, 140, NUMBER_BOX_HEIGHT, place, on_unfocus=self._commit_name)
         self._spawn_slider = Slider(0, 0, 160, 20, 5, spawn_step, (100, 100, 100), (180, 180, 180))
         self._attract_slider = Slider(0, 0, 160, 20, 5, attract_step, (100, 100, 100), (180, 180, 180))
 
@@ -1000,16 +1112,34 @@ class PlaceVarsDialog(Dialog):
         self._remove_btn = RemoveButton(0, 0, 70, 22, on_click=self._do_remove)
 
         self.widgets = [
-            self._spawn_slider, self._attract_slider,
+            self._name_box, self._spawn_slider, self._attract_slider,
             self._center_compass, self._w_box, self._l_box,
         ]
         if self._can_remove:
             self.widgets.append(self._remove_btn)
+        self._name_label = arcade.Text("Name:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._spawn_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._attract_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._center_label = arcade.Text("Center:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._w_label = arcade.Text("Width:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._l_label = arcade.Text("Length:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+
+    def _commit_name(self) -> None:
+        """Rename this place id on unfocus. Collision or empty keeps the current id."""
+        if self._game is None:
+            return
+        old = self.place
+        used = self._game.rename_place(old, self._name_box.value)
+        self._name_box.value = used
+        self._name_box._text_buffer = used
+        if used == old:
+            return
+        self.place = used
+        self.title = f"Place: {used}"
+        if self._on_rename:
+            self._on_rename(old, used)
+        if self._on_change:
+            self._on_change()
 
     def _apply_geometry(self) -> None:
         """Apply geometry from CompassSelect and NumberBoxes, call on_commit."""
@@ -1052,29 +1182,33 @@ class PlaceVarsDialog(Dialog):
         content_top = self.y - 32
         box_w = 100
         control_left = left + 70
-        self._spawn_slider.rect = (left, content_top - 24, 160, 20)
-        self._attract_slider.rect = (left, content_top - 52, 160, 20)
-        self._center_compass.rect = (control_left, content_top - 78, 140, DROPDOWN_ROW_HEIGHT)
-        self._w_box.rect = (control_left, content_top - 104, box_w, NUMBER_BOX_HEIGHT)
-        self._l_box.rect = (control_left, content_top - 130, box_w, NUMBER_BOX_HEIGHT)
+        self._name_box.rect = (control_left, content_top - 24, 140, NUMBER_BOX_HEIGHT)
+        self._spawn_slider.rect = (left, content_top - 52, 160, 20)
+        self._attract_slider.rect = (left, content_top - 80, 160, 20)
+        self._center_compass.rect = (control_left, content_top - 106, 140, DROPDOWN_ROW_HEIGHT)
+        self._w_box.rect = (control_left, content_top - 132, box_w, NUMBER_BOX_HEIGHT)
+        self._l_box.rect = (control_left, content_top - 158, box_w, NUMBER_BOX_HEIGHT)
         if self._can_remove:
-            self._remove_btn.rect = (left, content_top - 162, 70, 22)
+            self._remove_btn.rect = (left, content_top - 190, 70, 22)
+        self._name_label.x = left
+        self._name_label.y = content_top - 12
         self._spawn_label.x = left
-        self._spawn_label.y = content_top - 12
+        self._spawn_label.y = content_top - 40
         self._attract_label.x = left
-        self._attract_label.y = content_top - 40
+        self._attract_label.y = content_top - 68
         self._center_label.x = left
-        self._center_label.y = content_top - 66
+        self._center_label.y = content_top - 94
         self._w_label.x = left
-        self._w_label.y = content_top - 92
+        self._w_label.y = content_top - 120
         self._l_label.x = left
-        self._l_label.y = content_top - 118
+        self._l_label.y = content_top - 146
 
     def draw(self) -> None:
         self._layout_widgets()
         self._spawn_label.value = f"Spawn: {PLACE_SPAWN_VALUES[self._spawn_slider.value]:.1f}s"
         self._attract_label.value = f"Attract: {PLACE_ATTRACT_VALUES[self._attract_slider.value]:.1f}x"
         super().draw()
+        self._name_label.draw()
         self._spawn_label.draw()
         self._attract_label.draw()
         self._center_label.draw()

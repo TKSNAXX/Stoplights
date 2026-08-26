@@ -142,6 +142,36 @@ def test_default_map_hints_and_police_homes() -> None:
     assert _home_at_lane_start(0) is True
 
 
+def test_rename_place() -> None:
+    from sim.cars import Car
+
+    g = GameState()
+    car = Car(
+        origin="Housing",
+        destination="Park",
+        color=(220, 60, 60),
+        base_speed_multiplier=1.0,
+        lane_index=0,
+        position_in_lane=0,
+    )
+    g.cars.append(car)
+
+    assert g.rename_place("Housing", "Homes") == "Homes"
+    assert "Homes" in g.places
+    assert "Housing" not in g.places
+    assert ("Homes", "Park", "bypass") in g.route_hints
+    assert ("Park", "Homes", "bypass") in g.route_hints
+    assert car.origin == "Homes"
+    assert world.lane_traffic_in(0) == "Homes"
+
+    assert g.rename_place("Homes", "main") == "Homes"
+    assert g.rename_place("Homes", "Park") == "Homes"
+    assert g.rename_place("Homes", "") == "Homes"
+    assert g.rename_place("Homes", "   ") == "Homes"
+    assert "Homes" in g.places
+    assert "Housing" not in g.places
+
+
 def test_reset_loads_default() -> None:
     g = GameState()
     g.places["Zed"] = places.Place(1, 1, 2, 2)
@@ -248,6 +278,7 @@ def main() -> None:
         test_place_spawn_survives_rebuild,
         test_camera_roundtrip,
         test_tee_layout_for_sides,
+        test_rename_place,
     ]
     failed = 0
     for fn in tests:
