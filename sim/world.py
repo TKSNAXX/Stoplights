@@ -46,11 +46,6 @@ class _WorldState:
 
 _state = _WorldState()
 
-# Module-level mirrors kept for older importers (updated on rebuild).
-ALL_LANES: list[list[tuple[int, int]]] = []
-GRID_W: int = 1
-GRID_H: int = 1
-
 
 def _compute_bounds(
     lanes: dict[int, list[tuple[int, int]]],
@@ -87,7 +82,7 @@ def _compute_bounds(
 def rebuild_world(
     place_rects: dict[str, dict],
     intersections: dict[str, "IntersectionConfig"],
-    lane_configs: dict[int, "LaneConfig"],
+    lanes: dict[int, "LaneConfig"],
 ) -> None:
     """
     Rebuild lanes and intersection geometry from places, intersections, and lanes.
@@ -104,13 +99,13 @@ def rebuild_world(
         x_lo, x_hi, y_lo, y_hi = bounds
         intersection_dicts[key] = map_data.intersection_dict_from_bounds(x_lo, x_hi, y_lo, y_hi)
 
-    lanes, lane_meta = map_data.build_lanes_from_config(
-        place_rects, intersection_bounds, lane_configs or {}
+    lane_cells, lane_meta = map_data.build_lanes_from_config(
+        place_rects, intersection_bounds, lanes or {}
     )
 
-    x_lo, y_lo, x_hi, y_hi = _compute_bounds(lanes, place_rects, intersection_dicts)
+    x_lo, y_lo, x_hi, y_hi = _compute_bounds(lane_cells, place_rects, intersection_dicts)
 
-    _state.lanes = {idx: [tuple(c) for c in lane] for idx, lane in lanes.items()}
+    _state.lanes = {idx: [tuple(c) for c in cells] for idx, cells in lane_cells.items()}
     _state.lane_meta = dict(lane_meta)
     _state.place_rects = dict(place_rects)
     _state.x_lo, _state.y_lo, _state.x_hi, _state.y_hi = x_lo, y_lo, x_hi, y_hi
@@ -120,14 +115,6 @@ def rebuild_world(
         cells = [tuple(c) for c in d.get("cells", [])]
         slots = [tuple(c) for c in d.get("slots", [])]
         _state.intersections[key] = _IntersectionState(key, cells, slots, bounds)
-    _refresh_refs()
-
-
-def _refresh_refs() -> None:
-    global ALL_LANES, GRID_W, GRID_H
-    ALL_LANES = [_state.lanes[i] for i in sorted(_state.lanes.keys())]
-    GRID_W = get_grid_w()
-    GRID_H = get_grid_h()
 
 
 def get_intersection_at_cell(cell: tuple[int, int]) -> str | None:
@@ -152,37 +139,9 @@ def get_intersection_cells_map() -> dict[str, list[tuple[int, int]]]:
     return {k: get_intersection_cells_by_key(k) for k in get_intersection_keys()}
 
 
-def get_intersection_cells() -> list[tuple[int, int]]:
-    seen: set[tuple[int, int]] = set()
-    out: list[tuple[int, int]] = []
-    for inter in _state.intersections.values():
-        for c in inter.cells:
-            if c not in seen:
-                seen.add(c)
-                out.append(c)
-    return out
-
-
 def get_intersection_slots(key: str) -> list[tuple[int, int]]:
     inter = _state.intersections.get(key)
     return list(inter.slots) if inter else []
-
-
-def intersection_bounds() -> tuple[int, int, int, int]:
-    cells = get_intersection_cells()
-    if not cells:
-        return (0, 0, 0, 0)
-    xs = [c[0] for c in cells]
-    ys = [c[1] for c in cells]
-    return (min(xs), max(xs) + 1, min(ys), max(ys) + 1)
-
-
-def intersection_center() -> tuple[float, float]:
-    cells = get_intersection_cells()
-    if not cells:
-        return (0.0, 0.0)
-    n = len(cells)
-    return (sum(cell[0] for cell in cells) / n, sum(cell[1] for cell in cells) / n)
 
 
 def get_bounds() -> tuple[int, int, int, int]:

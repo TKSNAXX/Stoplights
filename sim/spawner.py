@@ -16,7 +16,7 @@ def update_spawns(
     spawn_places: tuple[str, ...],
     spawn_enabled: dict[str, bool],
     spawn_timers: dict[str, float],
-    place_configs: dict,
+    places: dict,
     out_cars: list[cars.Car],
     origin_spawn_counts: dict[str, int] | None = None,
     lane_spawn_counts: dict[tuple[str, int], int] | None = None,
@@ -30,7 +30,7 @@ def update_spawns(
     for place in spawn_places:
         if not spawn_enabled.get(place, True):
             continue
-        config = place_configs.get(place)
+        config = places.get(place)
         spawn_interval = config.spawn_interval if config else 2.0
         intervals[place] = max(SPAWN_INTERVAL_MIN, float(spawn_interval))
         spawn_timers[place] += dt
@@ -59,8 +59,8 @@ def update_spawns(
         pending[place] -= 1
 
         attract_weights = {
-            p: (place_configs[p].attract_weight if p in place_configs else 1.0)
-            for p in place_configs
+            p: (places[p].attract_weight if p in places else 1.0)
+            for p in places
             if p != place
         }
         car = cars.spawn_car(

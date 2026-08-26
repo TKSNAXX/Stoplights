@@ -729,8 +729,8 @@ class IntersectionVarsDialog(Dialog):
 
     def _do_remove(self) -> None:
         """Remove this intersection from game and call on_remove."""
-        if self._game is not None and self.intersection_key in self._game.intersection_configs:
-            del self._game.intersection_configs[self.intersection_key]
+        if self._game is not None and self.intersection_key in self._game.intersections:
+            del self._game.intersections[self.intersection_key]
             self._game.rebuild_world_from_config()
         if self._on_remove:
             self._on_remove()
@@ -788,7 +788,7 @@ class NewIntersectionDialog(Dialog):
         game,
         on_commit: Callable[[], None] | None = None,
     ):
-        key = _next_intersection_key(game.intersection_configs)
+        key = _next_intersection_key(game.intersections)
         super().__init__(x, y, 220, 174, f"New Intersection: {key}")
         self._game = game
         self._key = key
@@ -823,7 +823,7 @@ class NewIntersectionDialog(Dialog):
         )
         if cfg.size_cells % 2 != 0:
             cfg.size_cells = (cfg.size_cells // 2) * 2
-        self._game.intersection_configs[self._key] = cfg
+        self._game.intersections[self._key] = cfg
         self._game.rebuild_world_from_config()
         if self._on_commit:
             self._on_commit()
@@ -868,7 +868,7 @@ class NewPlaceDialog(Dialog):
         game,
         on_commit: Callable[[], None] | None = None,
     ):
-        name = _next_place_name(game.place_geometry)
+        name = _next_place_name(game.places)
         super().__init__(x, y, 220, 174, f"New Place: {name}")
         self._game = game
         self._name = name
@@ -893,14 +893,13 @@ class NewPlaceDialog(Dialog):
         center_x, center_y = self._center_compass.value
         w = max(PLACE_SIZE_MIN, min(PLACE_SIZE_MAX, self._w_box.value))
         l = max(PLACE_SIZE_MIN, min(PLACE_SIZE_MAX, self._l_box.value))
-        g = places.PlaceGeometry(
+        p = places.Place(
             center_x=center_x,
             center_y=center_y,
             width=w,
             length=l,
         )
-        self._game.place_geometry[self._name] = g
-        self._game.place_configs[self._name] = places.PlaceConfig()
+        self._game.places[self._name] = p
         self._game.rebuild_world_from_config()
         if self._on_commit:
             self._on_commit()
@@ -948,10 +947,10 @@ def _next_intersection_key(configs: dict) -> str:
     return f"intersection_{n}"
 
 
-def _next_place_name(place_geometry: dict) -> str:
+def _next_place_name(places_by_id: dict) -> str:
     """Return Place N where N is the next available index (1, 2, ...)."""
     seen = set()
-    for k in place_geometry:
+    for k in places_by_id:
         if k.startswith("Place ") and k != "Place ":
             try:
                 seen.add(int(k.split()[1]))
@@ -971,8 +970,7 @@ class PlaceVarsDialog(Dialog):
         x: float,
         y: float,
         place: str,
-        place_config,
-        place_geometry: dict,
+        place_obj,
         game=None,
         on_change: Callable[[], None] | None = None,
         on_commit: Callable[[], None] | None = None,
@@ -980,24 +978,19 @@ class PlaceVarsDialog(Dialog):
     ):
         super().__init__(x, y, 240, 212, f"Place: {place}")
         self.place = place
-        self._config = place_config
-        self._place_geometry = place_geometry
+        self._place = place_obj
         self._game = game
         self._on_change = on_change
         self._on_commit = on_commit
         self._on_remove = on_remove
         self._can_remove = bool(game is not None and hasattr(game, "can_remove_place") and game.can_remove_place(place))
 
-        spawn_step = self._step_for_spawn(place_config.spawn_interval)
-        attract_step = self._step_for_attract(place_config.attract_weight)
+        spawn_step = self._step_for_spawn(place_obj.spawn_interval)
+        attract_step = self._step_for_attract(place_obj.attract_weight)
         self._spawn_slider = Slider(0, 0, 160, 20, 5, spawn_step, (100, 100, 100), (180, 180, 180))
         self._attract_slider = Slider(0, 0, 160, 20, 5, attract_step, (100, 100, 100), (180, 180, 180))
 
-        g = place_geometry.get(place)
-        if g is not None:
-            cx, cy, w, l = g.center_x, g.center_y, g.width, g.length
-        else:
-            cx, cy, w, l = 0, 0, 5, 5
+        cx, cy, w, l = place_obj.center_x, place_obj.center_y, place_obj.width, place_obj.length
         control_width = 140
         self._center_compass = CompassSelect(
             0, 0, control_width, DROPDOWN_ROW_HEIGHT, (cx, cy), on_change=lambda _: self._apply_geometry(),
@@ -1020,29 +1013,22 @@ class PlaceVarsDialog(Dialog):
 
     def _apply_geometry(self) -> None:
         """Apply geometry from CompassSelect and NumberBoxes, call on_commit."""
-        from sim.places import PlaceGeometry, PLACE_SIZE_MIN, PLACE_SIZE_MAX
+        from sim.places import PLACE_SIZE_MIN, PLACE_SIZE_MAX
         center_x, center_y = self._center_compass.value
         w = max(PLACE_SIZE_MIN, min(PLACE_SIZE_MAX, self._w_box.value))
         l = max(PLACE_SIZE_MIN, min(PLACE_SIZE_MAX, self._l_box.value))
-        existing = self._place_geometry.get(self.place)
-        protected = bool(getattr(existing, "protected", False)) if existing is not None else False
-        self._place_geometry[self.place] = PlaceGeometry(
-            center_x=center_x,
-            center_y=center_y,
-            width=w,
-            length=l,
-            protected=protected,
-        )
+        self._place.center_x = center_x
+        self._place.center_y = center_y
+        self._place.width = w
+        self._place.length = l
         if self._on_commit:
             self._on_commit()
 
     def _do_remove(self) -> None:
         """Remove this place from game and call on_remove."""
         if self._game is not None:
-            if self.place in self._game.place_geometry:
-                del self._game.place_geometry[self.place]
-            if self.place in self._game.place_configs:
-                del self._game.place_configs[self.place]
+            if self.place in self._game.places:
+                del self._game.places[self.place]
             self._game.rebuild_world_from_config()
         if self._on_remove:
             self._on_remove()
@@ -1112,8 +1098,8 @@ class PlaceVarsDialog(Dialog):
         return result
 
     def _sync_from_sliders(self) -> None:
-        self._config.spawn_interval = PLACE_SPAWN_VALUES[self._spawn_slider.value]
-        self._config.attract_weight = PLACE_ATTRACT_VALUES[self._attract_slider.value]
+        self._place.spawn_interval = PLACE_SPAWN_VALUES[self._spawn_slider.value]
+        self._place.attract_weight = PLACE_ATTRACT_VALUES[self._attract_slider.value]
         if self._on_change:
             self._on_change()
 
@@ -1387,7 +1373,7 @@ class AddLaneDialog(Dialog):
         idx = self._game.next_lane_index()
         start = self._start_compass.value
         end = self._end_compass.value
-        self._game.lane_configs[idx] = LaneConfig(start_tile=start, end_tile=end)
+        self._game.lanes[idx] = LaneConfig(start_tile=start, end_tile=end)
         self._game.rebuild_world_from_config()
         if self._on_commit:
             self._on_commit()
@@ -1426,8 +1412,6 @@ class LaneVarsDialog(Dialog):
         y: float,
         lane_index: int,
         lane_config,
-        place_geometry: dict,
-        intersection_configs: dict,
         game=None,
         on_change: Callable[[], None] | None = None,
         on_remove: Callable[[], None] | None = None,
@@ -1492,7 +1476,7 @@ class LaneVarsDialog(Dialog):
 
     def _do_remove(self) -> None:
         """Delete this lane and call on_remove."""
-        if self._game is not None and self.lane_index in self._game.lane_configs:
+        if self._game is not None and self.lane_index in self._game.lanes:
             self._game.delete_lane(self.lane_index)
         if self._on_remove:
             self._on_remove()

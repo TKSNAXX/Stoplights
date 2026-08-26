@@ -36,7 +36,7 @@ def run_seeded_spawn_validation(seed: int = 12345, steps: int = 20000, dt: float
             game.spawn_places,
             game.spawn_enabled,
             game.spawn_timers,
-            game.place_configs,
+            game.places,
             new_cars,
             origin_spawn_counts=game.origin_spawn_counts,
             lane_spawn_counts=game.lane_spawn_counts,

@@ -188,7 +188,7 @@ class StoplightsWindow(arcade.Window):
             base = "road_w"
         else:
             base = "road_n"
-        cfg = self.game.lane_configs.get(lane_index)
+        cfg = self.game.lanes.get(lane_index)
         suffix = "_pass" if cfg and cfg.lane_type == places.LANE_TYPE_PASSING else ""
         return base + suffix if self._tile_set.get(base + suffix) else base
 
@@ -282,7 +282,7 @@ class StoplightsWindow(arcade.Window):
                 self._append_sprite_at(tex, gx, gy, center_x, center_y)
 
         for key, cells in intersection_cells_map.items():
-            cfg = self.game.intersection_configs.get(key)
+            cfg = self.game.intersections.get(key)
             itype = cfg.intersection_type if cfg else places.INTERSECTION_TYPE_X
             size_cells = cfg.size_cells if cfg else 4
             active, _, _ = classify_intersection_sides(key, cells)
@@ -531,7 +531,7 @@ class StoplightsWindow(arcade.Window):
         return None
 
     def _lane_at_screen(self, sx: float, sy: float) -> int | None:
-        """Return lane index (0-11) if (sx, sy) hits a lane cell, else None. Skips intersection cells."""
+        """Return stable lane id if (sx, sy) hits a lane cell, else None. Skips intersection cells."""
         center_x, center_y = self._effective_center()
         gx, gy = self._screen_to_grid(sx, sy, center_x, center_y)
         cell = (int(round(gx)), int(round(gy)))
@@ -617,8 +617,7 @@ class StoplightsWindow(arcade.Window):
                 else:
                     dlg = PlaceVarsDialog(
                         x - 120, y - 130, place,
-                        self.game.place_configs[place],
-                        self.game.place_geometry,
+                        self.game.places[place],
                         game=self.game,
                         on_change=self._on_config_change,
                         on_commit=lambda: self._on_config_change(rebuild_world=True),
@@ -639,15 +638,13 @@ class StoplightsWindow(arcade.Window):
                 self._dialog_manager.open(dlg)
                 return
             lane_idx = self._lane_at_screen(x, y)
-            if lane_idx is not None and lane_idx in self.game.lane_configs:
+            if lane_idx is not None and lane_idx in self.game.lanes:
                 if lane_idx in self._lane_dialogs:
                     self._dialog_manager.open(self._lane_dialogs[lane_idx])
                 else:
                     dlg = LaneVarsDialog(
                         x - 110, y - 70, lane_idx,
-                        self.game.lane_configs[lane_idx],
-                        self.game.place_geometry,
-                        self.game.intersection_configs,
+                        self.game.lanes[lane_idx],
                         game=self.game,
                         on_change=lambda: self._on_config_change(rebuild_world=True),
                         on_remove=lambda: (
@@ -667,7 +664,7 @@ class StoplightsWindow(arcade.Window):
                 else:
                     dlg = IntersectionVarsDialog(
                         x - 110, y - 50, inter_key,
-                        self.game.intersection_configs[inter_key],
+                        self.game.intersections[inter_key],
                         game=self.game,
                         on_commit=lambda: self._on_config_change(rebuild_world=True),
                         on_remove=lambda: (

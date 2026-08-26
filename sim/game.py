@@ -9,7 +9,7 @@ import time
 
 from sim import cars, cop, places
 from sim.constants import POLICE_PRIORITY_SCALE, VIS_ZONE_LENGTH_CELLS, VIS_ZONE_WIDTH_CELLS
-from sim.map_data import next_lane_index, place_rects_from_geometry
+from sim.map_data import next_lane_index, place_rects_from_places
 from sim import scenario, world
 from sim.impasse import apply_impasse
 from sim.movement import advance_car
@@ -26,10 +26,9 @@ class GameState:
         self.cars: list[cars.Car] = []
         self.spawn_interval: float = SPAWN_INTERVAL
         self.spawn_enabled: dict[str, bool] = {}
-        self.place_configs: dict[str, places.PlaceConfig] = {}
-        self.lane_configs: dict[int, places.LaneConfig] = {}
-        self.intersection_configs: dict[str, places.IntersectionConfig] = {}
-        self.place_geometry: dict[str, places.PlaceGeometry] = {}
+        self.places: dict[str, places.Place] = {}
+        self.lanes: dict[int, places.LaneConfig] = {}
+        self.intersections: dict[str, places.IntersectionConfig] = {}
         self.route_hints: list[tuple[str, str, str]] = []
         self.spawn_places: tuple[str, ...] = ()
         self.spawn_timers: dict[str, float] = {}
@@ -62,13 +61,13 @@ class GameState:
         self.rebuild_world_from_config()
 
     def next_lane_index(self) -> int:
-        return next_lane_index(self.lane_configs)
+        return next_lane_index(self.lanes)
 
     def delete_lane(self, lane_idx: int) -> None:
-        cfg = self.lane_configs.get(lane_idx)
+        cfg = self.lanes.get(lane_idx)
         if cfg is None or getattr(cfg, "protected", False):
             return
-        del self.lane_configs[lane_idx]
+        del self.lanes[lane_idx]
         self.cars = [c for c in self.cars if c.lane_index != lane_idx]
         self.rebuild_world_from_config()
 
@@ -84,16 +83,14 @@ class GameState:
         return dict(self._perf_stats)
 
     def ensure_default_state(self) -> None:
-        """Prune stale place configs; ensure spawn timers exist."""
-        for key in list(self.place_configs):
-            if key not in self.place_geometry:
-                del self.place_configs[key]
+        """Prune timers/counts for missing place ids; ensure spawn timers exist."""
         for key in list(self.spawn_timers):
-            if key not in self.place_geometry:
+            if key not in self.places:
                 del self.spawn_timers[key]
-        for p in self.place_geometry:
-            if p not in self.place_configs:
-                self.place_configs[p] = places.PlaceConfig()
+        for key in list(self.origin_spawn_counts):
+            if key not in self.places:
+                del self.origin_spawn_counts[key]
+        for p in self.places:
             if p not in self.spawn_timers:
                 self.spawn_timers[p] = random.uniform(0, self.spawn_interval)
             if p not in self.origin_spawn_counts:
@@ -115,9 +112,9 @@ class GameState:
     def rebuild_world_from_config(self) -> None:
         """Rebuild world geometry from current configs."""
         self.ensure_default_state()
-        place_rects = place_rects_from_geometry(self.place_geometry)
+        place_rects = place_rects_from_places(self.places)
         places.set_route_hints(self.route_hints)
-        world.rebuild_world(place_rects, self.intersection_configs, self.lane_configs)
+        world.rebuild_world(place_rects, self.intersections, self.lanes)
         self._refresh_spawn_places_from_world()
 
     def _refresh_spawn_places_from_world(self) -> None:
@@ -128,7 +125,7 @@ class GameState:
                 continue
             ordered_candidates.append(p)
             seen.add(p)
-        for p in sorted(set(self.place_geometry) | set(self.place_configs)):
+        for p in sorted(self.places):
             if p in seen:
                 continue
             ordered_candidates.append(p)
@@ -150,15 +147,15 @@ class GameState:
         }
 
     def can_remove_lane(self, lane_index: int) -> bool:
-        cfg = self.lane_configs.get(lane_index)
+        cfg = self.lanes.get(lane_index)
         return cfg is not None and not getattr(cfg, "protected", False)
 
     def can_remove_place(self, place_key: str) -> bool:
-        g = self.place_geometry.get(place_key)
+        g = self.places.get(place_key)
         return g is not None and not getattr(g, "protected", False)
 
     def can_remove_intersection(self, intersection_key: str) -> bool:
-        cfg = self.intersection_configs.get(intersection_key)
+        cfg = self.intersections.get(intersection_key)
         return cfg is not None and not getattr(cfg, "protected", False)
 
     def _apply_police_influence(
@@ -265,7 +262,7 @@ class GameState:
             self.spawn_places,
             self.spawn_enabled,
             self.spawn_timers,
-            self.place_configs,
+            self.places,
             self.cars,
             origin_spawn_counts=self.origin_spawn_counts,
             lane_spawn_counts=self.lane_spawn_counts,

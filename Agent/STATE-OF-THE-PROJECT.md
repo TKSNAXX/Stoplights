@@ -1,6 +1,6 @@
 # Stoplights — State of the Project
 
-**As of:** 2026-08-25 (universal map model)  
+**As of:** 2026-08-25 (GameState.places / intersections / lanes)  
 **Status:** Playable prototype / in-game editor-lite. Not a shippable game.  
 **Stack:** Python 3 + Arcade (`arcade>=2.6.0`). Entry point: `python main.py` from `Stoplights/`.
 
@@ -33,7 +33,7 @@ The first pass was: one 2×2 crossroad, four 6×6 places, grey lanes, red cubes,
 
 The engine no longer special-cases `main` / `bypass` / “extra” or the original twelve lane indices.
 
-- **Schema 4** is the lingua franca for `assets/maps/default.json` and `config.json`.
+- **Schema 4** is the lingua franca for `assets/maps/default.json` and `config.json`. Runtime `GameState.places` is one `Place` record per id (geometry + spawn/attract + `protected`) — same shape as JSON. `spawn_places` is derived (outbound-lane eligibility), not a second store.
 - Places, intersections, and lanes are uniform records with a **`protected`** flag (delete refused when true).
 - **`traffic_in` / `traffic_out`** derived from occupancy at lane endpoints.
 - **Straight / turn / U-turn** from tangents and place identity — not hardcoded `(0,1)` tables.
@@ -47,7 +47,7 @@ Headless check: `python -m tests.test_universal_map`.
 ### Shipped and real
 
 - **Sim / display split.** `sim/` has no Arcade imports. `main.py` + `render/` + `ui.py` read sim state and draw.
-- **World rebuild from config.** `world.rebuild_world(place_rects, intersections, lane_configs)` — one path for every junction. Authored cell coordinates are live world coordinates (`get_bounds()`); no pad-shift.
+- **World rebuild from config.** `world.rebuild_world(place_rects, intersections, lanes)` — one path for every junction. Authored cell coordinates are live world coordinates (`get_bounds()`); no pad-shift. Runtime stores match schema 4: `GameState.places`, `.intersections`, `.lanes`. Overlapping intersections are allowed.
 - **Routing graph.** BFS next-hops over place/intersection nodes; optional `route_hints`.
 - **Car motion.** Lane segments + turn arcs; visibility fans; spatial buckets; impasse; police.
 - **Ortho → iso tiles**, dialogs, toolbar editor, discrete zoom/pan.
@@ -75,10 +75,10 @@ main.py          Window, game loop, input, draw
 ui.py            Dialogs, toolbar, widgets
 sim/
   scenario.py    Schema 4 load / migrate / apply / serialize
-  game.py        GameState; reset loads default.json
+  game.py        GameState.places / intersections / lanes; reset loads default.json
   world.py       Uniform intersections + stable lane id dict; authored coords; get_bounds()
   map_data.py    Geometry helpers only (no named default map)
-  places.py      Configs + graph routing + route_hints
+  places.py      Place record + graph routing + route_hints
   paths.py       Tangents, straight-by-dot, turn arcs
   cop.py         Police; home end derived from traffic meta
   persistence.py config.json schema 4

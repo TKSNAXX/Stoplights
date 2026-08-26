@@ -7,7 +7,7 @@ from __future__ import annotations
 from sim import places, world
 from sim.cop import _home_at_lane_start
 from sim.game import GameState
-from sim.map_data import place_rects_from_geometry
+from sim.map_data import place_rects_from_places
 from sim.paths import is_straight_path
 from sim.scenario import (
     SCHEMA_VERSION,
@@ -62,10 +62,10 @@ def test_migrate_schema_3_snippet() -> None:
 def test_tangent_straight_turn_uturn() -> None:
     """Synthetic 4-way: lanes keyed arbitrarily, not 0..11."""
     # Places sized so their edges sit flush with lane endpoints.
-    place_geometry = {
-        "A": places.PlaceGeometry(11, 1, 4, 4),   # y [ -1, 3)
-        "B": places.PlaceGeometry(11, 29, 4, 4),  # y [27, 31)
-        "C": places.PlaceGeometry(29, 15, 4, 4),  # x [27, 31)
+    places_by_id = {
+        "A": places.Place(11, 1, 4, 4),   # y [ -1, 3)
+        "B": places.Place(11, 29, 4, 4),  # y [27, 31)
+        "C": places.Place(29, 15, 4, 4),  # x [27, 31)
     }
     intersections = {
         "hub": places.IntersectionConfig(
@@ -82,7 +82,7 @@ def test_tangent_straight_turn_uturn() -> None:
         102: places.LaneConfig(start_tile=(12, 12), end_tile=(12, 3)),   # hub → A (U-turn)
         103: places.LaneConfig(start_tile=(13, 15), end_tile=(27, 15)),  # hub → C
     }
-    world.rebuild_world(place_rects_from_geometry(place_geometry), intersections, lanes)
+    world.rebuild_world(place_rects_from_places(places_by_id), intersections, lanes)
 
     assert world.lane_traffic_in(100) == "A", world.lane_traffic_in(100)
     assert world.lane_traffic_out(100) == "hub", world.lane_traffic_out(100)
@@ -96,8 +96,8 @@ def test_tangent_straight_turn_uturn() -> None:
 
 
 def test_unnamed_intersections_occupancy() -> None:
-    place_geometry = {
-        "P": places.PlaceGeometry(5, 5, 3, 3),
+    places_by_id = {
+        "P": places.Place(5, 5, 3, 3),
     }
     intersections = {
         "alpha": places.IntersectionConfig(size_cells=4, center_x=20, center_y=20),
@@ -107,7 +107,7 @@ def test_unnamed_intersections_occupancy() -> None:
     lanes = {
         1: places.LaneConfig(start_tile=(6, 7), end_tile=(18, 20)),
     }
-    world.rebuild_world(place_rects_from_geometry(place_geometry), intersections, lanes)
+    world.rebuild_world(place_rects_from_places(places_by_id), intersections, lanes)
     keys = world.get_intersection_keys()
     assert keys == ["alpha", "beta", "gamma"]
     # Authored centres are live world cells (no pad-shift).
@@ -144,24 +144,24 @@ def test_default_map_hints_and_police_homes() -> None:
 
 def test_reset_loads_default() -> None:
     g = GameState()
-    g.place_geometry["Zed"] = places.PlaceGeometry(1, 1, 2, 2)
-    g.lane_configs[99] = places.LaneConfig(start_tile=(0, 0), end_tile=(0, 3))
+    g.places["Zed"] = places.Place(1, 1, 2, 2)
+    g.lanes[99] = places.LaneConfig(start_tile=(0, 0), end_tile=(0, 3))
     g.reset_to_defaults()
-    assert "Zed" not in g.place_geometry
-    assert 99 not in g.lane_configs
-    assert set(g.place_geometry) == {"Housing", "Office", "Park", "Shopping"}
+    assert "Zed" not in g.places
+    assert 99 not in g.lanes
+    assert set(g.places) == {"Housing", "Office", "Park", "Shopping"}
     assert g.can_remove_lane(0) is False
     assert g.can_remove_intersection("main") is False
 
 
 def test_stable_lane_ids_survive_gap() -> None:
-    place_geometry = {"P": places.PlaceGeometry(0, 0, 2, 2)}
+    places_by_id = {"P": places.Place(0, 0, 2, 2)}
     intersections = {"j": places.IntersectionConfig(size_cells=2, center_x=10, center_y=0)}
     lanes = {
         2: places.LaneConfig(start_tile=(1, 0), end_tile=(8, 0)),
         5: places.LaneConfig(start_tile=(8, 1), end_tile=(1, 1)),
     }
-    world.rebuild_world(place_rects_from_geometry(place_geometry), intersections, lanes)
+    world.rebuild_world(place_rects_from_places(places_by_id), intersections, lanes)
     assert world.lane_ids() == [2, 5]
     assert world.get_lane_cells(2)
     assert world.get_lane_cells(3) == ()
@@ -195,6 +195,25 @@ def test_authored_coords_match_world() -> None:
     assert (36, 48) in main_cells
 
 
+def test_place_spawn_survives_rebuild() -> None:
+    """A Place holds geometry and spawn_interval in one record; rebuild does not drop spawn."""
+    g = GameState()
+    record = places.Place(
+        center_x=1,
+        center_y=1,
+        width=2,
+        length=2,
+        spawn_interval=1.5,
+        attract_weight=0.5,
+    )
+    g.places["Solo"] = record
+    g.rebuild_world_from_config()
+    assert g.places["Solo"] is record
+    assert g.places["Solo"].spawn_interval == 1.5
+    assert g.places["Solo"].attract_weight == 0.5
+    assert g.places["Solo"].width == 2
+
+
 def test_camera_roundtrip() -> None:
     from render.camera import grid_to_screen, screen_to_grid
 
@@ -215,6 +234,7 @@ def main() -> None:
         test_reset_loads_default,
         test_stable_lane_ids_survive_gap,
         test_authored_coords_match_world,
+        test_place_spawn_survives_rebuild,
         test_camera_roundtrip,
     ]
     failed = 0

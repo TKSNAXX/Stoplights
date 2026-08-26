@@ -23,19 +23,14 @@ NORTH = OFFICE
 
 
 @dataclasses.dataclass
-class PlaceConfig:
-    """Per-place spawn and attract configuration."""
-    spawn_interval: float = 2.0
-    attract_weight: float = 1.0
-
-
-@dataclasses.dataclass
-class PlaceGeometry:
-    """Center-based place rectangle. Bounds: [cx - w//2, cx + w//2), [cy - l//2, cy + l//2)."""
+class Place:
+    """Center-based place rectangle plus spawn/attract. Bounds: [cx - w//2, cx + w//2), [cy - l//2, cy + l//2)."""
     center_x: int = 0
     center_y: int = 0
     width: int = 5
     length: int = 5
+    spawn_interval: float = 2.0
+    attract_weight: float = 1.0
     protected: bool = False
 
 

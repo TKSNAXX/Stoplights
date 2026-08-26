@@ -8,14 +8,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from sim.places import LaneConfig, PlaceGeometry
+    from sim.places import LaneConfig, Place
 
 
-def geometry_from_place_rects(place_rects: dict[str, dict]) -> dict[str, "PlaceGeometry"]:
-    """Convert {x, y, w, h} place_rects to center-based PlaceGeometry."""
+def places_from_rects(place_rects: dict[str, dict]) -> dict[str, "Place"]:
+    """Convert {x, y, w, h} place_rects to Place records (spawn fields default)."""
     from sim import places
 
-    result: dict[str, places.PlaceGeometry] = {}
+    result: dict[str, places.Place] = {}
     for name, r in place_rects.items():
         x = int(r.get("x", 0))
         y = int(r.get("y", 0))
@@ -25,19 +25,19 @@ def geometry_from_place_rects(place_rects: dict[str, dict]) -> dict[str, "PlaceG
             continue
         cx = x + w // 2
         cy = y + h // 2
-        result[name] = places.PlaceGeometry(center_x=cx, center_y=cy, width=w, length=h)
+        result[name] = places.Place(center_x=cx, center_y=cy, width=w, length=h)
     return result
 
 
-def place_rects_from_geometry(place_geometry: dict[str, "PlaceGeometry"]) -> dict[str, dict]:
+def place_rects_from_places(places_by_id: dict[str, "Place"]) -> dict[str, dict]:
     """
-    Convert center-based place geometry to {x, y, w, h} place_rects.
+    Convert Place records to {x, y, w, h} occupancy rects.
     Bounds: [cx - w//2, cx + w//2), [cy - l//2, cy + l//2).
     """
     from sim import places
 
     result: dict[str, dict] = {}
-    for name, g in place_geometry.items():
+    for name, g in places_by_id.items():
         w = max(places.PLACE_SIZE_MIN, min(places.PLACE_SIZE_MAX, g.width))
         length = max(places.PLACE_SIZE_MIN, min(places.PLACE_SIZE_MAX, g.length))
         half_w = w // 2
@@ -75,15 +75,6 @@ def intersection_dict_from_bounds(x_lo: int, x_hi: int, y_lo: int, y_hi: int) ->
         "cells": cells,
         "slots": slots,
     }
-
-
-def intersection_from_center(center: tuple[float, float], size: int) -> dict:
-    """Build intersection dict from center and even size."""
-    size = max(2, min(12, int(size)))
-    if size % 2 != 0:
-        size = (size // 2) * 2
-    x_lo, x_hi, y_lo, y_hi = bounds_from_center(center[0], center[1], size)
-    return intersection_dict_from_bounds(x_lo, x_hi, y_lo, y_hi)
 
 
 def build_lane_cells(start: tuple[int, int], end: tuple[int, int]) -> list[tuple[int, int]]:
@@ -169,31 +160,31 @@ def derive_traffic(
     return (direction, traffic_in, traffic_out)
 
 
-def next_lane_index(lane_configs: dict) -> int:
+def next_lane_index(lanes: dict) -> int:
     """Return next available lane id: max(keys)+1, or 0 if empty."""
-    if not lane_configs:
+    if not lanes:
         return 0
-    return max(lane_configs.keys()) + 1
+    return max(lanes.keys()) + 1
 
 
 def build_lanes_from_config(
     place_rects: dict[str, dict],
     intersection_bounds: dict[str, tuple[int, int, int, int]],
-    lane_configs: dict[int, "LaneConfig"],
+    lanes: dict[int, "LaneConfig"],
 ) -> tuple[dict[int, list[tuple[int, int]]], dict[int, tuple[str, str, str]]]:
     """
     Build lane cells and meta from explicit start/end tiles.
     Returns (lanes_by_id, meta_by_id) where meta is (direction, traffic_in, traffic_out).
     """
-    lanes: dict[int, list[tuple[int, int]]] = {}
+    lane_cells: dict[int, list[tuple[int, int]]] = {}
     lane_meta: dict[int, tuple[str, str, str]] = {}
-    for lane_idx in sorted(lane_configs.keys()):
-        cfg = lane_configs[lane_idx]
+    for lane_idx in sorted(lanes.keys()):
+        cfg = lanes[lane_idx]
         start = (int(cfg.start_tile[0]), int(cfg.start_tile[1]))
         end = (int(cfg.end_tile[0]), int(cfg.end_tile[1]))
         cells = build_lane_cells(start, end)
         if not cells:
             cells = [start]
-        lanes[lane_idx] = cells
+        lane_cells[lane_idx] = cells
         lane_meta[lane_idx] = derive_traffic(start, end, place_rects, intersection_bounds)
-    return lanes, lane_meta
+    return lane_cells, lane_meta

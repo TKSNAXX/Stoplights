@@ -306,8 +306,7 @@ def _migrate_schema_3(data: dict) -> dict:
 
 
 def scenario_to_game_dicts(scenario: dict) -> tuple[
-    dict[str, places.PlaceGeometry],
-    dict[str, places.PlaceConfig],
+    dict[str, places.Place],
     dict[str, places.IntersectionConfig],
     dict[int, places.LaneConfig],
     list[dict],
@@ -316,24 +315,21 @@ def scenario_to_game_dicts(scenario: dict) -> tuple[
     float,
 ]:
     """Convert a schema-4 scenario into runtime config objects."""
-    place_geometry: dict[str, places.PlaceGeometry] = {}
-    place_configs: dict[str, places.PlaceConfig] = {}
+    places_by_id: dict[str, places.Place] = {}
     for key, raw in scenario.get("places", {}).items():
-        place_geometry[key] = places.PlaceGeometry(
+        places_by_id[key] = places.Place(
             center_x=int(raw["center_x"]),
             center_y=int(raw["center_y"]),
             width=int(raw["width"]),
             length=int(raw["length"]),
-            protected=bool(raw.get("protected", False)),
-        )
-        place_configs[key] = places.PlaceConfig(
             spawn_interval=float(raw.get("spawn_interval", 2.0)),
             attract_weight=float(raw.get("attract_weight", 1.0)),
+            protected=bool(raw.get("protected", False)),
         )
 
-    intersection_configs: dict[str, places.IntersectionConfig] = {}
+    intersections_by_id: dict[str, places.IntersectionConfig] = {}
     for key, raw in scenario.get("intersections", {}).items():
-        intersection_configs[key] = places.IntersectionConfig(
+        intersections_by_id[key] = places.IntersectionConfig(
             intersection_type=str(raw.get("type", places.INTERSECTION_TYPE_X)),
             size_cells=clamp_intersection_size(int(raw.get("size_cells", 4))),
             center_x=int(raw["center_x"]),
@@ -341,12 +337,12 @@ def scenario_to_game_dicts(scenario: dict) -> tuple[
             protected=bool(raw.get("protected", False)),
         )
 
-    lane_configs: dict[int, places.LaneConfig] = {}
+    lanes_by_id: dict[int, places.LaneConfig] = {}
     for key, raw in scenario.get("lanes", {}).items():
         idx = int(key)
         st = raw["start_tile"]
         et = raw["end_tile"]
-        lane_configs[idx] = places.LaneConfig(
+        lanes_by_id[idx] = places.LaneConfig(
             speed_limit=float(raw.get("speed_limit", 1.0)),
             lane_type=str(raw.get("lane_type", places.LANE_TYPE_NORMAL)),
             start_tile=(int(st[0]), int(st[1])),
@@ -364,10 +360,9 @@ def scenario_to_game_dicts(scenario: dict) -> tuple[
     origin_bal = float(sb.get("origin_spawn_balance_coeff", 1.0))
     out_bal = float(sb.get("out_lane_balance_coeff", 1.0))
     return (
-        place_geometry,
-        place_configs,
-        intersection_configs,
-        lane_configs,
+        places_by_id,
+        intersections_by_id,
+        lanes_by_id,
         police,
         hints,
         origin_bal,
@@ -378,19 +373,17 @@ def scenario_to_game_dicts(scenario: dict) -> tuple[
 def apply_scenario_to_game(game: "GameState", scenario: dict) -> None:
     """Replace game map config from a schema-4 scenario (does not clear cars)."""
     (
-        place_geometry,
-        place_configs,
-        intersection_configs,
-        lane_configs,
+        places_by_id,
+        intersections_by_id,
+        lanes_by_id,
         police,
         hints,
         origin_bal,
         out_bal,
     ) = scenario_to_game_dicts(scenario)
-    game.place_geometry = place_geometry
-    game.place_configs = place_configs
-    game.intersection_configs = intersection_configs
-    game.lane_configs = lane_configs
+    game.places = places_by_id
+    game.intersections = intersections_by_id
+    game.lanes = lanes_by_id
     game.route_hints = hints
     game.origin_spawn_balance_coeff = origin_bal
     game.out_lane_balance_coeff = out_bal
@@ -404,25 +397,24 @@ def apply_scenario_to_game(game: "GameState", scenario: dict) -> None:
         )
         for p in police
     ]
-    game.spawn_places = tuple(place_geometry.keys())
+    game.spawn_places = tuple(places_by_id.keys())
 
 
 def game_to_scenario(game: "GameState", window=None) -> dict:
     """Serialize current game map config to schema 4."""
     places_out: dict[str, dict] = {}
-    for key, g in game.place_geometry.items():
-        cfg = game.place_configs.get(key) or places.PlaceConfig()
+    for key, p in game.places.items():
         places_out[key] = {
-            "center_x": g.center_x,
-            "center_y": g.center_y,
-            "width": g.width,
-            "length": g.length,
-            "spawn_interval": cfg.spawn_interval,
-            "attract_weight": cfg.attract_weight,
-            "protected": bool(getattr(g, "protected", False)),
+            "center_x": p.center_x,
+            "center_y": p.center_y,
+            "width": p.width,
+            "length": p.length,
+            "spawn_interval": p.spawn_interval,
+            "attract_weight": p.attract_weight,
+            "protected": bool(getattr(p, "protected", False)),
         }
     intersections_out: dict[str, dict] = {}
-    for key, cfg in game.intersection_configs.items():
+    for key, cfg in game.intersections.items():
         intersections_out[key] = {
             "type": cfg.intersection_type,
             "center_x": cfg.center_x,
@@ -431,7 +423,7 @@ def game_to_scenario(game: "GameState", window=None) -> dict:
             "protected": bool(getattr(cfg, "protected", False)),
         }
     lanes_out: dict[str, dict] = {}
-    for idx, cfg in game.lane_configs.items():
+    for idx, cfg in game.lanes.items():
         lanes_out[str(idx)] = {
             "start_tile": [int(cfg.start_tile[0]), int(cfg.start_tile[1])],
             "end_tile": [int(cfg.end_tile[0]), int(cfg.end_tile[1])],

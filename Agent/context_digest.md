@@ -11,6 +11,8 @@
 - **2025-03-14:** Mobile places and intersections. PlaceGeometry (center-based); IntersectionConfig with center_x/y. NumberBox widget. Global traffic/speed sliders removed. Lanes derived from masters (places + intersections).
 - **2026-08-25:** Universal map model. Schema 4 (`assets/maps/default.json` + `config.json`). Uniform intersections/lanes with `protected`. Straight/U-turn/police home derived; no `STRAIGHT_TRANSITIONS` / main-bypass-extra split. See `STATE-OF-THE-PROJECT.md`.
 - **2026-08-25 (item 3):** Authored JSON cells are live world cells. No pad-shift. `world.get_bounds()` is the content AABB; camera/draw use those bounds.
+- **2026-08-25 (unified Place):** Runtime `GameState.places` is one `Place` per id (geometry + spawn/attract + `protected`), matching schema 4. `PlaceGeometry` / `PlaceConfig` removed. `spawn_places` stays derived.
+- **2026-08-25 (store names):** `GameState.intersections` and `GameState.lanes` match schema 4 (was `*_configs`). Overlapping intersections allowed. Unused one-junction blob APIs and `ALL_LANES`/`GRID_*` mirrors removed.
 
 ---
 
@@ -21,7 +23,7 @@ Stoplights is an isometric traffic simulation (Python + Arcade). Cars spawn at p
 ### What’s There Now (High Level)
 
 - **Schema 4 scenario.** Places / intersections / lanes / police / route_hints. `protected` replaces base_lane_count / core id sets.
-- **Places and intersections are movable.** Center-based geometry. Commit rebuilds the world via `rebuild_world(place_rects, intersections, lane_configs)`.
+- **Places and intersections are movable.** Center-based geometry. Commit rebuilds the world via `rebuild_world(place_rects, intersections, lanes)`. Overlapping intersections are allowed.
 - **NumberBox, dialogs, toolbar editor, ortho→iso tiles, zoom/pan.** As before.
 - **Default map** in `assets/maps/default.json` (not reconstructed in Python).
 
@@ -34,7 +36,7 @@ Stoplights is an isometric traffic simulation (Python + Arcade). Cars spawn at p
 - **`game.py`** — Orchestrator; `reset_to_defaults()` loads default.json.
 - **`world.py`** — Dict of intersections + dict of stable lane ids; `lane_ids()`, `rebuild_world(...)`.
 - **`map_data.py`** — Geometry helpers only (`build_lane_cells`, `derive_traffic`, `object_at_cell`).
-- **`places.py`** — Configs; BFS routing; `route_hints`; semantic U-turn.
+- **`places.py`** — `Place` record; BFS routing; `route_hints`; semantic U-turn.
 - **`paths.py`** — Straight when inbound/outbound tangent dot ≥ 0.9.
 - **`cop.py`** — Home end derived from place occupancy on the lane.
 - **`persistence.py`** — Schema 4 `config.json`.
@@ -88,7 +90,7 @@ Import from `sim.constants` for `ORTHO_TILE_SIZE`, `TILE_W`, `TILE_H`.
 
 ## Planned / In Progress
 
-- User-editable maps (lane/place data already decoupled; `place_geometry` persisted).
+- User-editable maps (lane/place data already decoupled; `GameState.places` persisted as schema-4 `places`).
 - Lane positions derived algorithmically from intersection and place positions as masters.
 - Camera zoom/scroll (partially implemented).
 - More corner/intersection sprites using the arc-band pipeline.
