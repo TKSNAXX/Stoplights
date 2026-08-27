@@ -1,6 +1,6 @@
 # Stoplights — State of the Project
 
-**As of:** 2026-08-25 (editable place names)  
+**As of:** 2026-08-26 (mouse-drawn lanes)  
 **Status:** Playable prototype / in-game editor-lite. Not a shippable game.  
 **Stack:** Python 3 + Arcade (`arcade>=2.6.0`). Entry point: `python main.py` from `Stoplights/`.
 
@@ -54,6 +54,7 @@ Headless check: `python -m tests.test_universal_map`.
 - **Ortho → iso tiles**, dialogs, toolbar editor, discrete zoom/pan. Intersection overlay types: `x`, `corner`, `straight`, `tee`. Tee is draw-only (through-road markings + stem-side grey; opposite side transparent). Occupancy stays a square AABB.
 - **Persistence.** Schema 4 `config.json`. Cars not saved. Debounced save + save-on-close.
 - **Editable place names.** Place dialog `TextBox` commits via `rename_place` (keys, hints, live cars). Intersection rename is out of scope.
+- **Mouse-drawn lanes.** Toolbar iso-road button enters a two-click cardinal tool (ghost preview; Add Lane dialog is a live readout). One lane per activation. Cancel via Esc (key or upper-left Esc chip), the lane button, or a click off the map island.
 - **Perf overlay.** Always on; `V` toggles visibility fans.
 
 ### Present in data / UI but not wired
@@ -113,7 +114,7 @@ python main.py
 python -m tests.test_universal_map
 ```
 
-**Controls:** Click entities for dialogs; toolbar for new intersection/place/lane/settings; Esc closes; scroll zooms; arrows pan; `V` visibility fans.
+**Controls:** Click entities for dialogs; toolbar for new intersection/place/lane/settings. Lane tool: click start cell, stretch cardinal, click end (or Commit on the readout). Esc / Esc chip / lane button / off-island click cancel. Scroll zooms; arrows pan; `V` visibility fans.
 
 ---
 
@@ -127,6 +128,7 @@ python -m tests.test_universal_map
 - **New junctions:** Only matter if lanes pierce them (occupancy at endpoints).
 - **Authored = world:** JSON lane tiles and centres are the sim cells after rebuild. Draw iterates `get_bounds()`.
 - **Place id = name:** Renaming retargets `places`, spawn maps, `route_hints`, and live cars. Empty or colliding names are no-ops. Intersection ids share that namespace.
+- **Lane draw is one-shot:** finishing a lane exits the tool; it does not chain another draw.
 
 ---
 

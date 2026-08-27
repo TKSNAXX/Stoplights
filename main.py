@@ -27,10 +27,12 @@ from sim.constants import (
 )
 from sim.game import GameState
 from sim import persistence, world
+from sim.map_data import build_lane_cells, snap_cardinal_end, _direction_from_tiles
 from ui import (
     AddLaneDialog,
     CarDeetsDialog,
     DialogManager,
+    EscKeyChip,
     IntersectionVarsDialog,
     LaneVarsDialog,
     NewIntersectionDialog,
@@ -39,6 +41,8 @@ from ui import (
     PlaceVarsDialog,
     SettingsDialog,
     Toolbar,
+    TOOLBAR_BOTTOM_DRAW,
+    TOOLBAR_BOTTOM_IDLE,
     TOOLBAR_LEFT,
 )
 
@@ -105,7 +109,12 @@ class StoplightsWindow(arcade.Window):
         self._place_dialogs: dict[str, PlaceVarsDialog] = {}
         self._lane_dialogs: dict[int, LaneVarsDialog] = {}
         self._intersection_dialogs: dict[str, IntersectionVarsDialog] = {}
-        self._toolbar = Toolbar(TOOLBAR_LEFT, self.height - 180)
+        self._toolbar = Toolbar(TOOLBAR_LEFT, self.height - TOOLBAR_BOTTOM_IDLE)
+        self._esc_chip = EscKeyChip()
+        self._lane_draw: str | None = None
+        self._lane_draw_start: tuple[int, int] | None = None
+        self._lane_draw_end: tuple[int, int] | None = None
+        self._lane_draw_dialog: AddLaneDialog | None = None
 
         self._cam_x = 0.0
         self._cam_y = 0.0
@@ -120,6 +129,7 @@ class StoplightsWindow(arcade.Window):
 
         assets_dir = Path(__file__).resolve().parent / "assets"
         self._tile_set = TileSet(assets_dir / "ortho")
+        self._toolbar.set_lane_icon(self._tile_set.get("road_n"))
         self._tile_sprite_list: arcade.SpriteList | None = None
         self._tile_cells: list[tuple[int, int]] = []
 
@@ -152,6 +162,122 @@ class StoplightsWindow(arcade.Window):
         if label is not None:
             label.value = new
             self._place_texts[new] = label
+
+    def _sync_toolbar_bottom(self) -> None:
+        inset = TOOLBAR_BOTTOM_DRAW if self._lane_draw else TOOLBAR_BOTTOM_IDLE
+        self._toolbar.bottom = self.height - inset
+
+    def _grid_cell_at(self, sx: float, sy: float) -> tuple[int, int]:
+        center_x, center_y = self._effective_center()
+        gx, gy = self._screen_to_grid(sx, sy, center_x, center_y)
+        return (int(round(gx)), int(round(gy)))
+
+    def _cell_on_map(self, cell: tuple[int, int]) -> bool:
+        x_lo, y_lo, x_hi, y_hi = world.get_bounds()
+        return x_lo <= cell[0] < x_hi and y_lo <= cell[1] < y_hi
+
+    def _enter_lane_draw(self) -> None:
+        self._lane_draw = "start"
+        self._lane_draw_start = None
+        self._lane_draw_end = None
+        self._toolbar.active_action = "new_lane"
+        self._sync_toolbar_bottom()
+        dlg_x = TOOLBAR_LEFT + 56
+        dlg_y = self.height / 2 + 100
+        dlg = AddLaneDialog(
+            dlg_x, dlg_y, self.game,
+            on_commit=self._on_lane_draw_committed,
+            on_tiles_change=self._on_lane_draw_tiles,
+        )
+        self._lane_draw_dialog = dlg
+        dlg.set_on_close(lambda d: self._exit_lane_draw())
+        self._dialog_manager.open(dlg)
+        self._update_lane_draw_hover()
+
+    def _exit_lane_draw(self) -> None:
+        if self._lane_draw is None and self._lane_draw_dialog is None:
+            return
+        dlg = self._lane_draw_dialog
+        self._lane_draw = None
+        self._lane_draw_start = None
+        self._lane_draw_end = None
+        self._lane_draw_dialog = None
+        self._toolbar.active_action = None
+        self._sync_toolbar_bottom()
+        if dlg is not None:
+            self._dialog_manager.close(dlg)
+
+    def _on_lane_draw_committed(self) -> None:
+        self._on_config_change()
+        self._exit_lane_draw()
+
+    def _on_lane_draw_tiles(self, start: tuple[int, int], end: tuple[int, int]) -> None:
+        if not self._lane_draw:
+            return
+        if self._lane_draw == "start":
+            self._lane_draw_start = start
+            self._lane_draw_end = start
+        else:
+            self._lane_draw_start = start
+            self._lane_draw_end = end
+
+    def _update_lane_draw_hover(self) -> None:
+        if not self._lane_draw:
+            return
+        cell = self._grid_cell_at(self._mouse_x, self._mouse_y)
+        if self._lane_draw == "start":
+            self._lane_draw_start = cell
+            self._lane_draw_end = cell
+            if self._lane_draw_dialog is not None:
+                self._lane_draw_dialog.set_tiles(cell, cell)
+            return
+        if self._lane_draw_start is None:
+            return
+        end = snap_cardinal_end(self._lane_draw_start, cell)
+        self._lane_draw_end = end
+        if self._lane_draw_dialog is not None:
+            self._lane_draw_dialog.set_tiles(self._lane_draw_start, end)
+
+    def _finish_lane_from_map(self) -> None:
+        start = self._lane_draw_start
+        end = self._lane_draw_end
+        if start is None or end is None:
+            self._exit_lane_draw()
+            return
+        idx = self.game.next_lane_index()
+        self.game.lanes[idx] = places.LaneConfig(start_tile=start, end_tile=end)
+        self._on_config_change(rebuild_world=True)
+        self._exit_lane_draw()
+
+    def _draw_lane_preview(self, center_x: float, center_y: float) -> None:
+        if not self._lane_draw or not self._mouse_in_window:
+            return
+        start = self._lane_draw_start
+        end = self._lane_draw_end
+        if start is None or end is None:
+            return
+        cells = build_lane_cells(start, end)
+        if not cells:
+            return
+        direction = _direction_from_tiles(start, end)
+        if direction == "S":
+            key = "road_s"
+        elif direction == "E":
+            key = "road_e"
+        elif direction == "W":
+            key = "road_w"
+        else:
+            key = "road_n"
+        tex = self._tile_set.get(key)
+        if tex is None:
+            return
+        lst = arcade.SpriteList()
+        for gx, gy in cells:
+            spr = arcade.Sprite(tex, scale=self._zoom_scale)
+            spr.center_x, spr.center_y = self._to_screen(gx, gy, center_x, center_y)
+            spr.alpha = 170
+            lst.append(spr)
+        lst.draw(pixelated=True)
 
     def _update_zoom_scale(self) -> None:
         """Compute zoom scale from current zoom level and window size."""
@@ -359,7 +485,10 @@ class StoplightsWindow(arcade.Window):
                     self._dialog_manager.set_focused_widget(None)
                 return
         if key == arcade.key.ESCAPE:
-            self._dialog_manager.close_top()
+            if self._lane_draw:
+                self._exit_lane_draw()
+            else:
+                self._dialog_manager.close_top()
         elif key == arcade.key.V:
             self._show_visibility_fans = not self._show_visibility_fans
         elif key == arcade.key.LEFT:
@@ -402,13 +531,15 @@ class StoplightsWindow(arcade.Window):
         self._mouse_x = x
         self._mouse_y = y
         self._mouse_in_window = True
+        if not self._dialog_manager.contains_point(x, y):
+            self._update_lane_draw_hover()
 
     def on_mouse_leave(self, x: float, y: float) -> None:
         self._mouse_in_window = False
 
     def on_resize(self, width: int, height: int) -> None:
         super().on_resize(width, height)
-        self._toolbar.bottom = self.height - 180
+        self._sync_toolbar_bottom()
         self._update_zoom_scale()
         if self._car_sprite_pool is not None:
             self._car_sprite_pool.set_zoom_scale(self._zoom_scale)
@@ -463,6 +594,8 @@ class StoplightsWindow(arcade.Window):
 
         if self._tile_sprite_list is not None:
             self._tile_sprite_list.draw(pixelated=True)
+
+        self._draw_lane_preview(center_x, center_y)
 
         for place in world.get_place_rects():
             if places.place_bounds(place):
@@ -519,7 +652,7 @@ class StoplightsWindow(arcade.Window):
         draw_ms = (time.perf_counter() - draw_start) * 1000.0
         self._draw_ms_ema = draw_ms if self._draw_ms_ema <= 0.0 else (0.9 * self._draw_ms_ema + 0.1 * draw_ms)
         perf = self.game.get_perf_stats()
-        self._perf_text.x = 10
+        self._perf_text.x = 64 if self._lane_draw else 10
         self._perf_text.y = self.height - 10
         self._perf_text.value = (
             f"FPS~{self._fps_ema:5.1f} substeps:{self._last_substeps} draw:{self._draw_ms_ema:5.2f}ms "
@@ -529,6 +662,8 @@ class StoplightsWindow(arcade.Window):
         )
         self._perf_text.draw()
 
+        if self._lane_draw:
+            self._esc_chip.draw(self.height)
         self._toolbar.draw()
         self._dialog_manager.draw_all()
 
@@ -580,7 +715,18 @@ class StoplightsWindow(arcade.Window):
                 self._dialog_manager.set_focused_widget(None)
             if self._dialog_manager.on_mouse_press(x, y):
                 return
+            if self._lane_draw and self._esc_chip.contains(x, y, self.height):
+                self._exit_lane_draw()
+                return
             toolbar_action = self._toolbar.on_press(x, y)
+            if toolbar_action == "new_lane":
+                if self._lane_draw:
+                    self._exit_lane_draw()
+                else:
+                    self._enter_lane_draw()
+                return
+            if toolbar_action and self._lane_draw:
+                self._exit_lane_draw()
             if toolbar_action == "settings":
                 dlg_x = TOOLBAR_LEFT + 56
                 dlg_y = self.height / 2 + 100
@@ -621,18 +767,21 @@ class StoplightsWindow(arcade.Window):
                 dlg.set_on_close(lambda d: self._dialog_manager.close(d))
                 self._dialog_manager.open(dlg)
                 return
-            if toolbar_action == "new_lane":
-                dlg_x = TOOLBAR_LEFT + 56
-                dlg_y = self.height / 2 + 100
-                dlg = AddLaneDialog(
-                    dlg_x, dlg_y, self.game,
-                    on_commit=lambda: (
-                        self._on_config_change(),
-                        self._dialog_manager.close(dlg),
-                    ),
-                )
-                dlg.set_on_close(lambda d: self._dialog_manager.close(d))
-                self._dialog_manager.open(dlg)
+            if self._lane_draw:
+                cell = self._grid_cell_at(x, y)
+                if not self._cell_on_map(cell):
+                    self._exit_lane_draw()
+                    return
+                if self._lane_draw == "start":
+                    self._lane_draw_start = cell
+                    self._lane_draw_end = cell
+                    self._lane_draw = "end"
+                    if self._lane_draw_dialog is not None:
+                        self._lane_draw_dialog.set_tiles(cell, cell)
+                    return
+                end = snap_cardinal_end(self._lane_draw_start or cell, cell)
+                self._lane_draw_end = end
+                self._finish_lane_from_map()
                 return
             place = self._place_at_screen(x, y)
             if place is not None:

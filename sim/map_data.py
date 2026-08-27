@@ -92,6 +92,21 @@ def build_lane_cells(start: tuple[int, int], end: tuple[int, int]) -> list[tuple
     return []
 
 
+def snap_cardinal_end(
+    start: tuple[int, int], hover: tuple[int, int]
+) -> tuple[int, int]:
+    """Project hover onto a cardinal from start. Tie on |dx|==|dy| prefers E/W."""
+    sx, sy = start
+    hx, hy = hover
+    dx = hx - sx
+    dy = hy - sy
+    if dx == 0 and dy == 0:
+        return (sx, sy)
+    if abs(dx) >= abs(dy):
+        return (hx, sy)
+    return (sx, hy)
+
+
 def _direction_from_tiles(start: tuple[int, int], end: tuple[int, int]) -> str:
     sx, sy = start
     ex, ey = end

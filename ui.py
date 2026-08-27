@@ -1458,6 +1458,7 @@ class AddLaneDialog(Dialog):
         y: float,
         game,
         on_commit: Callable[[], None] | None = None,
+        on_tiles_change: Callable[[tuple[int, int], tuple[int, int]], None] | None = None,
     ):
         super().__init__(x, y, 320, 180, "Add Lane")
         self._game = game
@@ -1477,6 +1478,20 @@ class AddLaneDialog(Dialog):
         self._start_label = arcade.Text("Start:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._end_label = arcade.Text("End:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._status_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._on_tiles_change = on_tiles_change
+
+    def set_tiles(self, start: tuple[int, int], end: tuple[int, int]) -> None:
+        """Update compasses from the map tool without fighting a focused field."""
+        self._start_tile = start
+        self._end_tile = end
+        if not self._start_compass._focused:
+            self._start_compass.set_value(start)
+        if not self._end_compass._focused:
+            self._end_compass.set_value(end)
+
+    def _notify_tiles(self) -> None:
+        if self._on_tiles_change:
+            self._on_tiles_change(self._start_compass.value, self._end_compass.value)
 
     def _is_valid_lane(self) -> bool:
         """True if start and end form an orthogonal lane (same row or same column)."""
@@ -1496,9 +1511,11 @@ class AddLaneDialog(Dialog):
 
     def _on_start_change(self, new_start: tuple[int, int]) -> None:
         self._start_tile = new_start
+        self._notify_tiles()
 
-    def _on_end_change(self, _v: tuple[int, int]) -> None:
-        pass
+    def _on_end_change(self, new_end: tuple[int, int]) -> None:
+        self._end_tile = new_end
+        self._notify_tiles()
 
     def _do_commit(self) -> None:
         if not self._is_valid_lane():
@@ -1864,6 +1881,41 @@ TOOLBAR_BUTTON_SIZE = 36
 TOOLBAR_GAP = 4
 TOOLBAR_BG = (50, 50, 60)
 TOOLBAR_BORDER = (80, 80, 90)
+TOOLBAR_BOTTOM_IDLE = 180
+TOOLBAR_BOTTOM_DRAW = 220
+
+ESC_CHIP_LEFT = 8
+ESC_CHIP_MARGIN_TOP = 8
+ESC_CHIP_WIDTH = 48
+ESC_CHIP_HEIGHT = 28
+
+
+def esc_chip_rect(window_height: float) -> tuple[float, float, float, float]:
+    """(left, bottom, width, height) for the skeuomorphic Esc key chip."""
+    bottom = window_height - ESC_CHIP_MARGIN_TOP - ESC_CHIP_HEIGHT
+    return (ESC_CHIP_LEFT, bottom, ESC_CHIP_WIDTH, ESC_CHIP_HEIGHT)
+
+
+class EscKeyChip:
+    """Small keyboard-key control labeled Esc. Visible only while a draw tool is active."""
+
+    def __init__(self) -> None:
+        self._label = arcade.Text(
+            "Esc", 0, 0, color=(30, 30, 35), font_size=12, anchor_x="center", anchor_y="center"
+        )
+
+    def contains(self, x: float, y: float, window_height: float) -> bool:
+        left, bottom, width, height = esc_chip_rect(window_height)
+        return left <= x <= left + width and bottom <= y <= bottom + height
+
+    def draw(self, window_height: float) -> None:
+        left, bottom, width, height = esc_chip_rect(window_height)
+        rect_filled(left, bottom, width, height, (70, 70, 80))
+        rect_filled(left + 1, bottom + 4, width - 2, height - 5, (200, 200, 210))
+        rect_outline(left, bottom, width, height, (110, 110, 125), 1)
+        self._label.x = left + width / 2
+        self._label.y = bottom + height / 2 + 1
+        self._label.draw()
 
 
 class Toolbar:
@@ -1880,11 +1932,30 @@ class Toolbar:
         self._gap = TOOLBAR_GAP
         padding = (width - self._button_size) / 2
         self._height = 4 * self._button_size + 3 * self._gap + 2 * padding
+        self.active_action: str | None = None
+        self._lane_icon_list: arcade.SpriteList | None = None
+        self._lane_icon_sprite: arcade.Sprite | None = None
 
         self._settings_icon = arcade.Text("...", 0, 0, color=(220, 220, 220), font_size=16, anchor_x="center", anchor_y="center")
         self._inter_icon = arcade.Text("+", 0, 0, color=(220, 220, 220), font_size=18, anchor_x="center", anchor_y="center")
         self._place_icon = arcade.Text("P", 0, 0, color=(220, 220, 220), font_size=18, anchor_x="center", anchor_y="center")
-        self._lane_icon = arcade.Text("L", 0, 0, color=(220, 220, 220), font_size=18, anchor_x="center", anchor_y="center")
+        self._lane_fallback = arcade.Text("L", 0, 0, color=(220, 220, 220), font_size=18, anchor_x="center", anchor_y="center")
+
+    def set_lane_icon(self, tex: arcade.Texture | None) -> None:
+        """Use an iso road texture as the new-lane button icon."""
+        if tex is None:
+            self._lane_icon_list = None
+            self._lane_icon_sprite = None
+            return
+        tw = max(1, getattr(tex, "width", 64))
+        th = max(1, getattr(tex, "height", 32))
+        pad = 4
+        scale = min((self._button_size - pad) / tw, (self._button_size - pad) / th)
+        spr = arcade.Sprite(tex, scale=scale)
+        lst = arcade.SpriteList()
+        lst.append(spr)
+        self._lane_icon_sprite = spr
+        self._lane_icon_list = lst
 
     def _button_rects(self) -> list[tuple[float, float, float, float, str]]:
         """Return list of (left, bottom, width, height, action) for each button."""
@@ -1914,8 +1985,10 @@ class Toolbar:
         rect_filled(self.left, self.bottom, self.width, self._height, TOOLBAR_BG)
         rect_outline(self.left, self.bottom, self.width, self._height, TOOLBAR_BORDER, 1)
         for l, b, w, h, action in self._button_rects():
-            rect_filled(l, b, w, h, (70, 70, 80))
-            rect_outline(l, b, w, h, (100, 100, 110), 1)
+            fill = (95, 95, 110) if action == self.active_action else (70, 70, 80)
+            border = (160, 160, 180) if action == self.active_action else (100, 100, 110)
+            rect_filled(l, b, w, h, fill)
+            rect_outline(l, b, w, h, border, 1)
             cx = l + w / 2
             cy = b + h / 2
             if action == "settings":
@@ -1925,8 +1998,13 @@ class Toolbar:
                 self._inter_icon.x, self._inter_icon.y = cx, cy
                 self._inter_icon.draw()
             elif action == "new_lane":
-                self._lane_icon.x, self._lane_icon.y = cx, cy
-                self._lane_icon.draw()
+                if self._lane_icon_sprite is not None and self._lane_icon_list is not None:
+                    self._lane_icon_sprite.center_x = cx
+                    self._lane_icon_sprite.center_y = cy
+                    self._lane_icon_list.draw(pixelated=True)
+                else:
+                    self._lane_fallback.x, self._lane_fallback.y = cx, cy
+                    self._lane_fallback.draw()
             else:
                 self._place_icon.x, self._place_icon.y = cx, cy
                 self._place_icon.draw()

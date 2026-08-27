@@ -7,7 +7,7 @@ from __future__ import annotations
 from sim import places, world
 from sim.cop import _home_at_lane_start
 from sim.game import GameState
-from sim.map_data import place_rects_from_places
+from sim.map_data import place_rects_from_places, snap_cardinal_end
 from sim.paths import is_straight_path
 from sim.scenario import (
     SCHEMA_VERSION,
@@ -266,6 +266,22 @@ def test_tee_layout_for_sides() -> None:
     assert tee_layout_for_sides(frozenset({"N", "E"}), through_fallback="ns") == ("ns", "E")
 
 
+def test_snap_cardinal_end() -> None:
+    origin = (10, 10)
+    assert snap_cardinal_end(origin, origin) == origin
+    assert snap_cardinal_end(origin, (14, 10)) == (14, 10)
+    assert snap_cardinal_end(origin, (6, 10)) == (6, 10)
+    assert snap_cardinal_end(origin, (10, 15)) == (10, 15)
+    assert snap_cardinal_end(origin, (10, 4)) == (10, 4)
+    assert snap_cardinal_end(origin, (14, 11)) == (14, 10)
+    assert snap_cardinal_end(origin, (11, 15)) == (10, 15)
+    assert snap_cardinal_end(origin, (6, 9)) == (6, 10)
+    assert snap_cardinal_end(origin, (9, 4)) == (10, 4)
+    # |dx| == |dy| prefers E/W
+    assert snap_cardinal_end(origin, (13, 13)) == (13, 10)
+    assert snap_cardinal_end(origin, (7, 13)) == (7, 10)
+
+
 def main() -> None:
     tests = [
         test_migrate_schema_3_snippet,
@@ -279,6 +295,7 @@ def main() -> None:
         test_camera_roundtrip,
         test_tee_layout_for_sides,
         test_rename_place,
+        test_snap_cardinal_end,
     ]
     failed = 0
     for fn in tests:

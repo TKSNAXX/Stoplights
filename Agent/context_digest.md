@@ -15,6 +15,7 @@
 - **2026-08-25 (store names):** `GameState.intersections` and `GameState.lanes` match schema 4 (was `*_configs`). Overlapping intersections allowed. Unused one-junction blob APIs and `ALL_LANES`/`GRID_*` mirrors removed.
 - **2026-08-25 (tee overlay):** Intersection type `tee` is draw-only. Through-road keeps dual-lane markings; stem side is grey; opposite side transparent. Occupancy remains a square AABB.
 - **2026-08-25 (place names):** Place ids are the names. Editable in PlaceVarsDialog via `GameState.rename_place` (retargets keys, hints, cars). Collision with a place or intersection id is a no-op. `protected` is still delete-only.
+- **2026-08-26 (lane draw):** Toolbar lane button is an iso road tile. Two-click cardinal draw (ghost preview; Add Lane dialog is readout). One lane per activation. Cancel: Esc key/chip, lane button, click off `get_bounds()`.
 
 ---
 
@@ -26,7 +27,7 @@ Stoplights is an isometric traffic simulation (Python + Arcade). Cars spawn at p
 
 - **Schema 4 scenario.** Places / intersections / lanes / police / route_hints. `protected` replaces base_lane_count / core id sets.
 - **Places and intersections are movable.** Center-based geometry. Commit rebuilds the world via `rebuild_world(place_rects, intersections, lanes)`. Overlapping intersections are allowed. Place names are the ids and can be renamed in the place dialog.
-- **NumberBox, dialogs, toolbar editor, ortho→iso tiles, zoom/pan.** As before.
+- **NumberBox, dialogs, toolbar editor, ortho→iso tiles, zoom/pan.** Lane tool is two-click cardinal draw; dialog compasses remain a readout. As before.
 - **Default map** in `assets/maps/default.json` (not reconstructed in Python).
 
 ---
@@ -37,7 +38,7 @@ Stoplights is an isometric traffic simulation (Python + Arcade). Cars spawn at p
 - **`scenario.py`** — Schema 4 load, migrate 3→4, apply, serialize.
 - **`game.py`** — Orchestrator; `reset_to_defaults()` loads default.json.
 - **`world.py`** — Dict of intersections + dict of stable lane ids; `lane_ids()`, `rebuild_world(...)`.
-- **`map_data.py`** — Geometry helpers only (`build_lane_cells`, `derive_traffic`, `object_at_cell`).
+- **`map_data.py`** — Geometry helpers only (`build_lane_cells`, `snap_cardinal_end`, `derive_traffic`, `object_at_cell`).
 - **`places.py`** — `Place` record; BFS routing; `route_hints`; semantic U-turn.
 - **`paths.py`** — Straight when inbound/outbound tangent dot ≥ 0.9.
 - **`cop.py`** — Home end derived from place occupancy on the lane.
