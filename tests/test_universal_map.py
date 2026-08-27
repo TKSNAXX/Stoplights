@@ -10,6 +10,8 @@ from sim.game import GameState
 from sim.map_data import (
     aabb_from_corners,
     aabb_from_edge_and_hover,
+    bounds_from_center,
+    intersection_size_for_hover,
     place_center_from_aabb,
     place_rects_from_places,
     snap_cardinal_end,
@@ -299,6 +301,20 @@ def test_place_aabb_from_corners() -> None:
     assert aabb_from_corners((20, 0), (0, 0)) == (5, 0, 16, 1)
 
 
+def test_intersection_size_for_hover() -> None:
+    c = (10, 10)
+    assert bounds_from_center(10, 10, 2) == (9, 11, 9, 11)
+    assert intersection_size_for_hover(c, c) == 2
+    assert intersection_size_for_hover(c, (9, 10)) == 2
+    assert intersection_size_for_hover(c, (10, 9)) == 2
+    # one step outside the 2×2 (cx-1, cx) × (cy-1, cy)
+    assert intersection_size_for_hover(c, (11, 10)) == 4
+    assert intersection_size_for_hover(c, (10, 11)) == 4
+    assert intersection_size_for_hover(c, (8, 10)) == 4
+    assert intersection_size_for_hover(c, (100, 10)) == 12
+    assert intersection_size_for_hover(c, (10, -100)) == 12
+
+
 def test_place_aabb_from_edge_and_hover() -> None:
     c1, c2 = (10, 10), (10, 14)
     # C3 on C2 → 1×N strip
@@ -327,6 +343,7 @@ def main() -> None:
         test_snap_cardinal_end,
         test_place_aabb_from_corners,
         test_place_aabb_from_edge_and_hover,
+        test_intersection_size_for_hover,
     ]
     failed = 0
     for fn in tests:

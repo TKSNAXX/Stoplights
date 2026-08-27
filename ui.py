@@ -886,12 +886,14 @@ class NewIntersectionDialog(Dialog):
         y: float,
         game,
         on_commit: Callable[[], None] | None = None,
+        on_geometry_change: Callable[[tuple[int, int], int], None] | None = None,
     ):
         key = _next_intersection_key(game.intersections)
         super().__init__(x, y, 220, 174, f"New Intersection: {key}")
         self._game = game
         self._key = key
         self._on_commit = on_commit
+        self._on_geometry_change = on_geometry_change
 
         self._type_dropdown = Dropdown(
             0, 0, 140, DROPDOWN_ROW_HEIGHT,
@@ -901,15 +903,39 @@ class NewIntersectionDialog(Dialog):
         )
         control_width = 140
         self._center_compass = CompassSelect(
-            0, 0, control_width, DROPDOWN_ROW_HEIGHT, (36, 48), on_change=None,
+            0, 0, control_width, DROPDOWN_ROW_HEIGHT, (36, 48),
+            on_change=lambda _: self._notify_geometry(),
         )
-        self._size_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, 4, 2, 12, 2)
+        self._size_box = NumberBox(
+            0, 0, 100, NUMBER_BOX_HEIGHT, 2, 2, 12, 2,
+            on_change=lambda _: self._notify_geometry(),
+        )
         self._commit_btn = CommitButton(0, 0, 70, 22, on_click=self._do_commit)
 
         self.widgets = [self._type_dropdown, self._center_compass, self._size_box, self._commit_btn]
         self._type_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._center_label = arcade.Text("Center:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._size_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+
+    def set_geometry(self, center: tuple[int, int], size: int) -> None:
+        """Update readout from the map tool without fighting a focused field."""
+        if not self._center_compass._focused:
+            self._center_compass.set_value(center)
+        if not self._size_box._focused:
+            self._size_box.value = size
+            self._size_box._text_buffer = str(size)
+
+    def current_type(self) -> str:
+        return INTERSECTION_TYPE_VALUES[self._type_dropdown.value]
+
+    def _notify_geometry(self) -> None:
+        if self._on_geometry_change:
+            size = max(2, min(12, self._size_box.value))
+            if size % 2 != 0:
+                size = (size // 2) * 2
+            if size < 2:
+                size = 2
+            self._on_geometry_change(self._center_compass.value, size)
 
     def _do_commit(self) -> None:
         from sim import places
@@ -1965,6 +1991,8 @@ class Toolbar:
         self._lane_icon_sprite: arcade.Sprite | None = None
         self._place_icon_list: arcade.SpriteList | None = None
         self._place_icon_sprite: arcade.Sprite | None = None
+        self._ix_icon_list: arcade.SpriteList | None = None
+        self._ix_icon_sprite: arcade.Sprite | None = None
 
         self._settings_icon = arcade.Text("...", 0, 0, color=(220, 220, 220), font_size=16, anchor_x="center", anchor_y="center")
         self._inter_icon = arcade.Text("+", 0, 0, color=(220, 220, 220), font_size=18, anchor_x="center", anchor_y="center")
@@ -1996,6 +2024,14 @@ class Toolbar:
             self._place_icon_sprite = None
             return
         self._place_icon_sprite, self._place_icon_list = self._icon_from_tex(tex)
+
+    def set_intersection_icon(self, tex: arcade.Texture | None) -> None:
+        """Use the iso road_cross tile as the new-intersection button icon."""
+        if tex is None:
+            self._ix_icon_list = None
+            self._ix_icon_sprite = None
+            return
+        self._ix_icon_sprite, self._ix_icon_list = self._icon_from_tex(tex)
 
     def _button_rects(self) -> list[tuple[float, float, float, float, str]]:
         """Return list of (left, bottom, width, height, action) for each button."""
@@ -2035,8 +2071,13 @@ class Toolbar:
                 self._settings_icon.x, self._settings_icon.y = cx, cy
                 self._settings_icon.draw()
             elif action == "new_intersection":
-                self._inter_icon.x, self._inter_icon.y = cx, cy
-                self._inter_icon.draw()
+                if self._ix_icon_sprite is not None and self._ix_icon_list is not None:
+                    self._ix_icon_sprite.center_x = cx
+                    self._ix_icon_sprite.center_y = cy
+                    self._ix_icon_list.draw(pixelated=True)
+                else:
+                    self._inter_icon.x, self._inter_icon.y = cx, cy
+                    self._inter_icon.draw()
             elif action == "new_lane":
                 if self._lane_icon_sprite is not None and self._lane_icon_list is not None:
                     self._lane_icon_sprite.center_x = cx

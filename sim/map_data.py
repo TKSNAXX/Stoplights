@@ -56,6 +56,25 @@ def bounds_from_center(center_x: float, center_y: float, size: int) -> tuple[int
     return (x_lo, x_lo + size, y_lo, y_lo + size)
 
 
+def intersection_size_for_hover(
+    center: tuple[int, int], hover: tuple[int, int]
+) -> int:
+    """
+    Smallest even size whose occupancy AABB contains hover.
+    Uses bounds_from_center so even-size stamps stay slightly asymmetric.
+    Hover on the centre cell is 2; past INTERSECTION_SIZE_MAX clamps to max.
+    """
+    from sim.places import INTERSECTION_SIZE_MAX, INTERSECTION_SIZE_MIN
+
+    cx, cy = int(center[0]), int(center[1])
+    hx, hy = int(hover[0]), int(hover[1])
+    for s in range(INTERSECTION_SIZE_MIN, INTERSECTION_SIZE_MAX + 1, 2):
+        x_lo, x_hi, y_lo, y_hi = bounds_from_center(cx, cy, s)
+        if x_lo <= hx < x_hi and y_lo <= hy < y_hi:
+            return s
+    return INTERSECTION_SIZE_MAX
+
+
 def intersection_dict_from_bounds(x_lo: int, x_hi: int, y_lo: int, y_hi: int) -> dict:
     """Build intersection dict including cells and lane-transition slots."""
     cells = [(x, y) for x in range(x_lo, x_hi) for y in range(y_lo, y_hi)]

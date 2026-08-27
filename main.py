@@ -31,7 +31,9 @@ from sim.map_data import (
     aabb_cells,
     aabb_from_corners,
     aabb_from_edge_and_hover,
+    bounds_from_center,
     build_lane_cells,
+    intersection_size_for_hover,
     place_center_from_aabb,
     snap_cardinal_end,
     _direction_from_tiles,
@@ -129,6 +131,10 @@ class StoplightsWindow(arcade.Window):
         self._place_c2: tuple[int, int] | None = None
         self._place_aabb: tuple[int, int, int, int] | None = None
         self._place_draw_dialog: NewPlaceDialog | None = None
+        self._ix_draw: str | None = None
+        self._ix_center: tuple[int, int] | None = None
+        self._ix_size: int | None = None
+        self._ix_draw_dialog: NewIntersectionDialog | None = None
 
         self._cam_x = 0.0
         self._cam_y = 0.0
@@ -145,6 +151,7 @@ class StoplightsWindow(arcade.Window):
         self._tile_set = TileSet(assets_dir / "ortho")
         self._toolbar.set_lane_icon(self._tile_set.get("road_n"))
         self._toolbar.set_place_icon(self._tile_set.get("place_zone"))
+        self._toolbar.set_intersection_icon(self._tile_set.get("road_cross"))
         self._tile_sprite_list: arcade.SpriteList | None = None
         self._tile_cells: list[tuple[int, int]] = []
 
@@ -183,7 +190,7 @@ class StoplightsWindow(arcade.Window):
         self._toolbar.bottom = self.height - inset
 
     def _draw_tool_active(self) -> bool:
-        return bool(self._lane_draw or self._place_draw)
+        return bool(self._lane_draw or self._place_draw or self._ix_draw)
 
     def _grid_cell_at(self, sx: float, sy: float) -> tuple[int, int]:
         center_x, center_y = self._effective_center()
@@ -302,9 +309,11 @@ class StoplightsWindow(arcade.Window):
             self._exit_lane_draw()
         if self._place_draw is not None or self._place_draw_dialog is not None:
             self._exit_place_draw()
+        if self._ix_draw is not None or self._ix_draw_dialog is not None:
+            self._exit_ix_draw()
 
     def _placement_can_pop(self) -> bool:
-        return self._place_draw in ("c2", "c3") or self._lane_draw == "end"
+        return self._place_draw in ("c2", "c3") or self._lane_draw == "end" or self._ix_draw == "size"
 
     def _placement_pop(self) -> None:
         if self._place_draw == "c3":
@@ -321,6 +330,12 @@ class StoplightsWindow(arcade.Window):
             self._lane_draw = "start"
             self._lane_draw_start = None
             self._update_lane_draw_hover()
+            return
+        if self._ix_draw == "size":
+            self._ix_draw = "center"
+            self._ix_center = None
+            self._ix_size = None
+            self._update_ix_draw_hover()
 
     def _enter_place_draw(self) -> None:
         self._place_draw = "c1"
@@ -405,6 +420,106 @@ class StoplightsWindow(arcade.Window):
             return
         x_lo, y_lo, w, h = self._place_aabb
         cells = aabb_cells(x_lo, y_lo, w, h)
+        if not cells:
+            return
+        lst = arcade.SpriteList()
+        for gx, gy in cells:
+            spr = arcade.Sprite(tex, scale=self._zoom_scale)
+            spr.center_x, spr.center_y = self._to_screen(gx, gy, center_x, center_y)
+            spr.alpha = 170
+            lst.append(spr)
+        lst.draw(pixelated=True)
+
+    def _enter_ix_draw(self) -> None:
+        self._ix_draw = "center"
+        self._ix_center = None
+        self._ix_size = None
+        self._toolbar.active_action = "new_intersection"
+        self._sync_toolbar_bottom()
+        dlg_x = TOOLBAR_LEFT + 56
+        dlg_y = self.height / 2 + 100
+        dlg = NewIntersectionDialog(
+            dlg_x, dlg_y, self.game,
+            on_commit=self._on_ix_draw_committed,
+            on_geometry_change=self._on_ix_draw_geometry,
+        )
+        self._ix_draw_dialog = dlg
+        dlg.set_on_close(lambda d: self._exit_ix_draw())
+        self._dialog_manager.open(dlg)
+        self._update_ix_draw_hover()
+
+    def _exit_ix_draw(self) -> None:
+        if self._ix_draw is None and self._ix_draw_dialog is None:
+            return
+        dlg = self._ix_draw_dialog
+        self._ix_draw = None
+        self._ix_center = None
+        self._ix_size = None
+        self._ix_draw_dialog = None
+        self._toolbar.active_action = None
+        self._sync_toolbar_bottom()
+        if dlg is not None:
+            self._dialog_manager.close(dlg)
+
+    def _on_ix_draw_committed(self) -> None:
+        self._on_config_change()
+        self._exit_ix_draw()
+
+    def _on_ix_draw_geometry(self, center: tuple[int, int], size: int) -> None:
+        if not self._ix_draw:
+            return
+        self._ix_center = center
+        self._ix_size = size
+
+    def _sync_ix_dialog_geometry(self) -> None:
+        if self._ix_draw_dialog is None or self._ix_center is None or self._ix_size is None:
+            return
+        self._ix_draw_dialog.set_geometry(self._ix_center, self._ix_size)
+
+    def _update_ix_draw_hover(self) -> None:
+        if not self._ix_draw:
+            return
+        cell = self._grid_cell_at(self._mouse_x, self._mouse_y)
+        if self._ix_draw == "center":
+            self._ix_center = cell
+            self._ix_size = 2
+        elif self._ix_center is not None:
+            self._ix_size = intersection_size_for_hover(self._ix_center, cell)
+        self._sync_ix_dialog_geometry()
+
+    def _finish_ix_from_map(self) -> None:
+        center = self._ix_center
+        size = self._ix_size
+        dlg = self._ix_draw_dialog
+        if center is None or size is None or dlg is None:
+            self._exit_ix_draw()
+            return
+        size = max(2, min(12, int(size)))
+        if size % 2 != 0:
+            size = (size // 2) * 2
+        if size < 2:
+            size = 2
+        self.game.intersections[dlg._key] = places.IntersectionConfig(
+            intersection_type=dlg.current_type(),
+            center_x=center[0],
+            center_y=center[1],
+            size_cells=size,
+        )
+        self._on_config_change(rebuild_world=True)
+        self._exit_ix_draw()
+
+    def _draw_ix_preview(self, center_x: float, center_y: float) -> None:
+        if not self._ix_draw or not self._mouse_in_window:
+            return
+        center = self._ix_center
+        size = self._ix_size
+        if center is None or size is None:
+            return
+        tex = self._tile_set.get("road_cross")
+        if tex is None:
+            return
+        x_lo, x_hi, y_lo, y_hi = bounds_from_center(center[0], center[1], size)
+        cells = [(gx, gy) for gx in range(x_lo, x_hi) for gy in range(y_lo, y_hi)]
         if not cells:
             return
         lst = arcade.SpriteList()
@@ -673,6 +788,7 @@ class StoplightsWindow(arcade.Window):
         if not self._dialog_manager.contains_point(x, y):
             self._update_lane_draw_hover()
             self._update_place_draw_hover()
+            self._update_ix_draw_hover()
 
     def on_mouse_leave(self, x: float, y: float) -> None:
         self._mouse_in_window = False
@@ -737,6 +853,7 @@ class StoplightsWindow(arcade.Window):
 
         self._draw_lane_preview(center_x, center_y)
         self._draw_place_preview(center_x, center_y)
+        self._draw_ix_preview(center_x, center_y)
 
         for place in world.get_place_rects():
             if places.place_bounds(place):
@@ -869,17 +986,22 @@ class StoplightsWindow(arcade.Window):
                 if self._lane_draw:
                     self._exit_lane_draw()
                 else:
-                    if self._place_draw:
-                        self._exit_place_draw()
+                    self._exit_active_draw_tool()
                     self._enter_lane_draw()
                 return
             if toolbar_action == "new_place":
                 if self._place_draw:
                     self._exit_place_draw()
                 else:
-                    if self._lane_draw:
-                        self._exit_lane_draw()
+                    self._exit_active_draw_tool()
                     self._enter_place_draw()
+                return
+            if toolbar_action == "new_intersection":
+                if self._ix_draw:
+                    self._exit_ix_draw()
+                else:
+                    self._exit_active_draw_tool()
+                    self._enter_ix_draw()
                 return
             if toolbar_action and self._draw_tool_active():
                 self._exit_active_draw_tool()
@@ -892,19 +1014,6 @@ class StoplightsWindow(arcade.Window):
                     on_edge_pan_change=lambda v: (
                         setattr(self, "_edge_pan_enabled", v),
                         persistence.request_debounced_save(),
-                    ),
-                )
-                dlg.set_on_close(lambda d: self._dialog_manager.close(d))
-                self._dialog_manager.open(dlg)
-                return
-            if toolbar_action == "new_intersection":
-                dlg_x = TOOLBAR_LEFT + 56
-                dlg_y = self.height / 2 + 100
-                dlg = NewIntersectionDialog(
-                    dlg_x, dlg_y, self.game,
-                    on_commit=lambda: (
-                        self._on_config_change(),
-                        self._dialog_manager.close(dlg),
                     ),
                 )
                 dlg.set_on_close(lambda d: self._dialog_manager.close(d))
@@ -955,6 +1064,21 @@ class StoplightsWindow(arcade.Window):
                 c1 = self._place_c1 or cell
                 c2 = self._place_c2 or cell
                 self._finish_place_from_aabb(aabb_from_edge_and_hover(c1, c2, cell))
+                return
+            if self._ix_draw:
+                cell = self._grid_cell_at(x, y)
+                if not self._cell_on_map(cell):
+                    self._exit_ix_draw()
+                    return
+                if self._ix_draw == "center":
+                    self._ix_center = cell
+                    self._ix_size = 2
+                    self._ix_draw = "size"
+                    self._sync_ix_dialog_geometry()
+                    return
+                self._ix_size = intersection_size_for_hover(self._ix_center or cell, cell)
+                self._sync_ix_dialog_geometry()
+                self._finish_ix_from_map()
                 return
             place = self._place_at_screen(x, y)
             if place is not None:
