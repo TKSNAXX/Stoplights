@@ -27,12 +27,19 @@ from sim.constants import (
 )
 from sim.game import GameState
 from sim import persistence, world
-from sim.map_data import build_lane_cells, snap_cardinal_end, _direction_from_tiles
+from sim.map_data import (
+    aabb_cells,
+    aabb_from_corners,
+    aabb_from_edge_and_hover,
+    build_lane_cells,
+    place_center_from_aabb,
+    snap_cardinal_end,
+    _direction_from_tiles,
+)
 from ui import (
     AddLaneDialog,
     CarDeetsDialog,
     DialogManager,
-    EscKeyChip,
     IntersectionVarsDialog,
     LaneVarsDialog,
     NewIntersectionDialog,
@@ -40,6 +47,7 @@ from ui import (
     NumberBox,
     PlaceVarsDialog,
     SettingsDialog,
+    SkeuoKeyChip,
     Toolbar,
     TOOLBAR_BOTTOM_DRAW,
     TOOLBAR_BOTTOM_IDLE,
@@ -110,11 +118,17 @@ class StoplightsWindow(arcade.Window):
         self._lane_dialogs: dict[int, LaneVarsDialog] = {}
         self._intersection_dialogs: dict[str, IntersectionVarsDialog] = {}
         self._toolbar = Toolbar(TOOLBAR_LEFT, self.height - TOOLBAR_BOTTOM_IDLE)
-        self._esc_chip = EscKeyChip()
+        self._esc_chip = SkeuoKeyChip("Esc", side="left")
+        self._back_chip = SkeuoKeyChip("<-", side="right")
         self._lane_draw: str | None = None
         self._lane_draw_start: tuple[int, int] | None = None
         self._lane_draw_end: tuple[int, int] | None = None
         self._lane_draw_dialog: AddLaneDialog | None = None
+        self._place_draw: str | None = None
+        self._place_c1: tuple[int, int] | None = None
+        self._place_c2: tuple[int, int] | None = None
+        self._place_aabb: tuple[int, int, int, int] | None = None
+        self._place_draw_dialog: NewPlaceDialog | None = None
 
         self._cam_x = 0.0
         self._cam_y = 0.0
@@ -130,6 +144,7 @@ class StoplightsWindow(arcade.Window):
         assets_dir = Path(__file__).resolve().parent / "assets"
         self._tile_set = TileSet(assets_dir / "ortho")
         self._toolbar.set_lane_icon(self._tile_set.get("road_n"))
+        self._toolbar.set_place_icon(self._tile_set.get("place_zone"))
         self._tile_sprite_list: arcade.SpriteList | None = None
         self._tile_cells: list[tuple[int, int]] = []
 
@@ -164,8 +179,11 @@ class StoplightsWindow(arcade.Window):
             self._place_texts[new] = label
 
     def _sync_toolbar_bottom(self) -> None:
-        inset = TOOLBAR_BOTTOM_DRAW if self._lane_draw else TOOLBAR_BOTTOM_IDLE
+        inset = TOOLBAR_BOTTOM_DRAW if self._draw_tool_active() else TOOLBAR_BOTTOM_IDLE
         self._toolbar.bottom = self.height - inset
+
+    def _draw_tool_active(self) -> bool:
+        return bool(self._lane_draw or self._place_draw)
 
     def _grid_cell_at(self, sx: float, sy: float) -> tuple[int, int]:
         center_x, center_y = self._effective_center()
@@ -270,6 +288,124 @@ class StoplightsWindow(arcade.Window):
             key = "road_n"
         tex = self._tile_set.get(key)
         if tex is None:
+            return
+        lst = arcade.SpriteList()
+        for gx, gy in cells:
+            spr = arcade.Sprite(tex, scale=self._zoom_scale)
+            spr.center_x, spr.center_y = self._to_screen(gx, gy, center_x, center_y)
+            spr.alpha = 170
+            lst.append(spr)
+        lst.draw(pixelated=True)
+
+    def _exit_active_draw_tool(self) -> None:
+        if self._lane_draw is not None or self._lane_draw_dialog is not None:
+            self._exit_lane_draw()
+        if self._place_draw is not None or self._place_draw_dialog is not None:
+            self._exit_place_draw()
+
+    def _placement_can_pop(self) -> bool:
+        return self._place_draw in ("c2", "c3") or self._lane_draw == "end"
+
+    def _placement_pop(self) -> None:
+        if self._place_draw == "c3":
+            self._place_draw = "c2"
+            self._place_c2 = None
+            self._update_place_draw_hover()
+            return
+        if self._place_draw == "c2":
+            self._place_draw = "c1"
+            self._place_c1 = None
+            self._update_place_draw_hover()
+            return
+        if self._lane_draw == "end":
+            self._lane_draw = "start"
+            self._lane_draw_start = None
+            self._update_lane_draw_hover()
+
+    def _enter_place_draw(self) -> None:
+        self._place_draw = "c1"
+        self._place_c1 = None
+        self._place_c2 = None
+        self._place_aabb = None
+        self._toolbar.active_action = "new_place"
+        self._sync_toolbar_bottom()
+        dlg_x = TOOLBAR_LEFT + 56
+        dlg_y = self.height / 2 + 100
+        dlg = NewPlaceDialog(
+            dlg_x, dlg_y, self.game,
+            on_commit=self._on_place_draw_committed,
+            on_geometry_change=self._on_place_draw_geometry,
+        )
+        self._place_draw_dialog = dlg
+        dlg.set_on_close(lambda d: self._exit_place_draw())
+        self._dialog_manager.open(dlg)
+        self._update_place_draw_hover()
+
+    def _exit_place_draw(self) -> None:
+        if self._place_draw is None and self._place_draw_dialog is None:
+            return
+        dlg = self._place_draw_dialog
+        self._place_draw = None
+        self._place_c1 = None
+        self._place_c2 = None
+        self._place_aabb = None
+        self._place_draw_dialog = None
+        self._toolbar.active_action = None
+        self._sync_toolbar_bottom()
+        if dlg is not None:
+            self._dialog_manager.close(dlg)
+
+    def _on_place_draw_committed(self) -> None:
+        self._on_config_change()
+        self._exit_place_draw()
+
+    def _on_place_draw_geometry(self, center: tuple[int, int], width: int, length: int) -> None:
+        if not self._place_draw:
+            return
+        x_lo = center[0] - width // 2
+        y_lo = center[1] - length // 2
+        self._place_aabb = (x_lo, y_lo, width, length)
+
+    def _sync_place_dialog_geometry(self) -> None:
+        if self._place_draw_dialog is None or self._place_aabb is None:
+            return
+        x_lo, y_lo, w, h = self._place_aabb
+        cx, cy = place_center_from_aabb(x_lo, y_lo, w, h)
+        self._place_draw_dialog.set_geometry((cx, cy), w, h)
+
+    def _update_place_draw_hover(self) -> None:
+        if not self._place_draw:
+            return
+        cell = self._grid_cell_at(self._mouse_x, self._mouse_y)
+        if self._place_draw == "c1":
+            self._place_c1 = cell
+            self._place_aabb = aabb_from_corners(cell, cell)
+        elif self._place_draw == "c2" and self._place_c1 is not None:
+            self._place_aabb = aabb_from_corners(self._place_c1, cell)
+        elif self._place_draw == "c3" and self._place_c1 is not None and self._place_c2 is not None:
+            self._place_aabb = aabb_from_edge_and_hover(self._place_c1, self._place_c2, cell)
+        self._sync_place_dialog_geometry()
+
+    def _finish_place_from_aabb(self, aabb: tuple[int, int, int, int]) -> None:
+        dlg = self._place_draw_dialog
+        name = dlg.try_name() if dlg is not None else None
+        if name is None:
+            return
+        x_lo, y_lo, w, h = aabb
+        cx, cy = place_center_from_aabb(x_lo, y_lo, w, h)
+        self.game.places[name] = places.Place(center_x=cx, center_y=cy, width=w, length=h)
+        self._on_config_change(rebuild_world=True)
+        self._exit_place_draw()
+
+    def _draw_place_preview(self, center_x: float, center_y: float) -> None:
+        if not self._place_draw or not self._mouse_in_window or self._place_aabb is None:
+            return
+        tex = self._tile_set.get("place_zone")
+        if tex is None:
+            return
+        x_lo, y_lo, w, h = self._place_aabb
+        cells = aabb_cells(x_lo, y_lo, w, h)
+        if not cells:
             return
         lst = arcade.SpriteList()
         for gx, gy in cells:
@@ -485,10 +621,13 @@ class StoplightsWindow(arcade.Window):
                     self._dialog_manager.set_focused_widget(None)
                 return
         if key == arcade.key.ESCAPE:
-            if self._lane_draw:
-                self._exit_lane_draw()
+            if self._draw_tool_active():
+                self._exit_active_draw_tool()
             else:
                 self._dialog_manager.close_top()
+        elif key == arcade.key.BACKSPACE:
+            if self._placement_can_pop():
+                self._placement_pop()
         elif key == arcade.key.V:
             self._show_visibility_fans = not self._show_visibility_fans
         elif key == arcade.key.LEFT:
@@ -533,6 +672,7 @@ class StoplightsWindow(arcade.Window):
         self._mouse_in_window = True
         if not self._dialog_manager.contains_point(x, y):
             self._update_lane_draw_hover()
+            self._update_place_draw_hover()
 
     def on_mouse_leave(self, x: float, y: float) -> None:
         self._mouse_in_window = False
@@ -596,6 +736,7 @@ class StoplightsWindow(arcade.Window):
             self._tile_sprite_list.draw(pixelated=True)
 
         self._draw_lane_preview(center_x, center_y)
+        self._draw_place_preview(center_x, center_y)
 
         for place in world.get_place_rects():
             if places.place_bounds(place):
@@ -652,7 +793,7 @@ class StoplightsWindow(arcade.Window):
         draw_ms = (time.perf_counter() - draw_start) * 1000.0
         self._draw_ms_ema = draw_ms if self._draw_ms_ema <= 0.0 else (0.9 * self._draw_ms_ema + 0.1 * draw_ms)
         perf = self.game.get_perf_stats()
-        self._perf_text.x = 64 if self._lane_draw else 10
+        self._perf_text.x = 64 if self._draw_tool_active() else 10
         self._perf_text.y = self.height - 10
         self._perf_text.value = (
             f"FPS~{self._fps_ema:5.1f} substeps:{self._last_substeps} draw:{self._draw_ms_ema:5.2f}ms "
@@ -662,8 +803,10 @@ class StoplightsWindow(arcade.Window):
         )
         self._perf_text.draw()
 
-        if self._lane_draw:
-            self._esc_chip.draw(self.height)
+        if self._draw_tool_active():
+            self._esc_chip.draw(self.width, self.height)
+        if self._placement_can_pop():
+            self._back_chip.draw(self.width, self.height)
         self._toolbar.draw()
         self._dialog_manager.draw_all()
 
@@ -715,18 +858,31 @@ class StoplightsWindow(arcade.Window):
                 self._dialog_manager.set_focused_widget(None)
             if self._dialog_manager.on_mouse_press(x, y):
                 return
-            if self._lane_draw and self._esc_chip.contains(x, y, self.height):
-                self._exit_lane_draw()
+            if self._draw_tool_active() and self._esc_chip.contains(x, y, self.width, self.height):
+                self._exit_active_draw_tool()
+                return
+            if self._placement_can_pop() and self._back_chip.contains(x, y, self.width, self.height):
+                self._placement_pop()
                 return
             toolbar_action = self._toolbar.on_press(x, y)
             if toolbar_action == "new_lane":
                 if self._lane_draw:
                     self._exit_lane_draw()
                 else:
+                    if self._place_draw:
+                        self._exit_place_draw()
                     self._enter_lane_draw()
                 return
-            if toolbar_action and self._lane_draw:
-                self._exit_lane_draw()
+            if toolbar_action == "new_place":
+                if self._place_draw:
+                    self._exit_place_draw()
+                else:
+                    if self._lane_draw:
+                        self._exit_lane_draw()
+                    self._enter_place_draw()
+                return
+            if toolbar_action and self._draw_tool_active():
+                self._exit_active_draw_tool()
             if toolbar_action == "settings":
                 dlg_x = TOOLBAR_LEFT + 56
                 dlg_y = self.height / 2 + 100
@@ -736,19 +892,6 @@ class StoplightsWindow(arcade.Window):
                     on_edge_pan_change=lambda v: (
                         setattr(self, "_edge_pan_enabled", v),
                         persistence.request_debounced_save(),
-                    ),
-                )
-                dlg.set_on_close(lambda d: self._dialog_manager.close(d))
-                self._dialog_manager.open(dlg)
-                return
-            if toolbar_action == "new_place":
-                dlg_x = TOOLBAR_LEFT + 56
-                dlg_y = self.height / 2 + 100
-                dlg = NewPlaceDialog(
-                    dlg_x, dlg_y, self.game,
-                    on_commit=lambda: (
-                        self._on_config_change(),
-                        self._dialog_manager.close(dlg),
                     ),
                 )
                 dlg.set_on_close(lambda d: self._dialog_manager.close(d))
@@ -782,6 +925,36 @@ class StoplightsWindow(arcade.Window):
                 end = snap_cardinal_end(self._lane_draw_start or cell, cell)
                 self._lane_draw_end = end
                 self._finish_lane_from_map()
+                return
+            if self._place_draw:
+                cell = self._grid_cell_at(x, y)
+                if not self._cell_on_map(cell):
+                    self._exit_place_draw()
+                    return
+                if self._place_draw == "c1":
+                    self._place_c1 = cell
+                    self._place_aabb = aabb_from_corners(cell, cell)
+                    self._place_draw = "c2"
+                    self._sync_place_dialog_geometry()
+                    return
+                if self._place_draw == "c2":
+                    c1 = self._place_c1 or cell
+                    same_x = cell[0] == c1[0]
+                    same_y = cell[1] == c1[1]
+                    if same_x and same_y:
+                        self._finish_place_from_aabb(aabb_from_corners(c1, cell))
+                        return
+                    if same_x or same_y:
+                        self._place_c2 = cell
+                        self._place_draw = "c3"
+                        self._place_aabb = aabb_from_edge_and_hover(c1, cell, cell)
+                        self._sync_place_dialog_geometry()
+                        return
+                    self._finish_place_from_aabb(aabb_from_corners(c1, cell))
+                    return
+                c1 = self._place_c1 or cell
+                c2 = self._place_c2 or cell
+                self._finish_place_from_aabb(aabb_from_edge_and_hover(c1, c2, cell))
                 return
             place = self._place_at_screen(x, y)
             if place is not None:

@@ -966,19 +966,21 @@ class NewPlaceDialog(Dialog):
         y: float,
         game,
         on_commit: Callable[[], None] | None = None,
+        on_geometry_change: Callable[[tuple[int, int], int, int], None] | None = None,
     ):
         name = _next_place_name(game.places)
         super().__init__(x, y, 220, 202, f"New Place: {name}")
         self._game = game
         self._on_commit = on_commit
+        self._on_geometry_change = on_geometry_change
 
         control_width = 140
         self._name_box = TextBox(0, 0, 140, NUMBER_BOX_HEIGHT, name)
         self._center_compass = CompassSelect(
-            0, 0, control_width, DROPDOWN_ROW_HEIGHT, (20, 20), on_change=None,
+            0, 0, control_width, DROPDOWN_ROW_HEIGHT, (20, 20), on_change=lambda _: self._notify_geometry(),
         )
-        self._w_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, 5, 1, 16, 1)
-        self._l_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, 5, 1, 16, 1)
+        self._w_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, 5, 1, 16, 1, on_change=lambda _: self._notify_geometry())
+        self._l_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, 5, 1, 16, 1, on_change=lambda _: self._notify_geometry())
         self._commit_btn = CommitButton(0, 0, 70, 22, on_click=self._do_commit)
 
         self.widgets = [self._name_box, self._center_compass, self._w_box, self._l_box, self._commit_btn]
@@ -987,13 +989,35 @@ class NewPlaceDialog(Dialog):
         self._w_label = arcade.Text("Width:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._l_label = arcade.Text("Length:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
 
-    def _do_commit(self) -> None:
-        from sim import places
-        from sim.places import PLACE_SIZE_MIN, PLACE_SIZE_MAX
+    def set_geometry(self, center: tuple[int, int], width: int, length: int) -> None:
+        """Update readout from the map tool without fighting a focused field."""
+        if not self._center_compass._focused:
+            self._center_compass.set_value(center)
+        if not self._w_box._focused:
+            self._w_box.value = width
+            self._w_box._text_buffer = str(width)
+        if not self._l_box._focused:
+            self._l_box.value = length
+            self._l_box._text_buffer = str(length)
+
+    def try_name(self) -> str | None:
+        """Flush the name box; return a unique name or None if empty/colliding."""
         if self._name_box._focused:
             self._name_box.set_focus(False)
         name = self._name_box.value.strip()
         if not name or name in self._game.places or name in self._game.intersections:
+            return None
+        return name
+
+    def _notify_geometry(self) -> None:
+        if self._on_geometry_change:
+            self._on_geometry_change(self._center_compass.value, self._w_box.value, self._l_box.value)
+
+    def _do_commit(self) -> None:
+        from sim import places
+        from sim.places import PLACE_SIZE_MIN, PLACE_SIZE_MAX
+        name = self.try_name()
+        if name is None:
             return
         center_x, center_y = self._center_compass.value
         w = max(PLACE_SIZE_MIN, min(PLACE_SIZE_MAX, self._w_box.value))
@@ -1888,28 +1912,32 @@ ESC_CHIP_LEFT = 8
 ESC_CHIP_MARGIN_TOP = 8
 ESC_CHIP_WIDTH = 48
 ESC_CHIP_HEIGHT = 28
+ESC_CHIP_MARGIN_SIDE = 8
 
 
-def esc_chip_rect(window_height: float) -> tuple[float, float, float, float]:
-    """(left, bottom, width, height) for the skeuomorphic Esc key chip."""
-    bottom = window_height - ESC_CHIP_MARGIN_TOP - ESC_CHIP_HEIGHT
-    return (ESC_CHIP_LEFT, bottom, ESC_CHIP_WIDTH, ESC_CHIP_HEIGHT)
+class SkeuoKeyChip:
+    """Skeuomorphic keyboard-key control. side is 'left' or 'right' (top of the window)."""
 
-
-class EscKeyChip:
-    """Small keyboard-key control labeled Esc. Visible only while a draw tool is active."""
-
-    def __init__(self) -> None:
+    def __init__(self, label: str, side: str = "left"):
+        self._side = side
         self._label = arcade.Text(
-            "Esc", 0, 0, color=(30, 30, 35), font_size=12, anchor_x="center", anchor_y="center"
+            label, 0, 0, color=(30, 30, 35), font_size=12, anchor_x="center", anchor_y="center"
         )
 
-    def contains(self, x: float, y: float, window_height: float) -> bool:
-        left, bottom, width, height = esc_chip_rect(window_height)
+    def rect(self, window_width: float, window_height: float) -> tuple[float, float, float, float]:
+        bottom = window_height - ESC_CHIP_MARGIN_TOP - ESC_CHIP_HEIGHT
+        if self._side == "right":
+            left = window_width - ESC_CHIP_MARGIN_SIDE - ESC_CHIP_WIDTH
+        else:
+            left = ESC_CHIP_LEFT
+        return (left, bottom, ESC_CHIP_WIDTH, ESC_CHIP_HEIGHT)
+
+    def contains(self, x: float, y: float, window_width: float, window_height: float) -> bool:
+        left, bottom, width, height = self.rect(window_width, window_height)
         return left <= x <= left + width and bottom <= y <= bottom + height
 
-    def draw(self, window_height: float) -> None:
-        left, bottom, width, height = esc_chip_rect(window_height)
+    def draw(self, window_width: float, window_height: float) -> None:
+        left, bottom, width, height = self.rect(window_width, window_height)
         rect_filled(left, bottom, width, height, (70, 70, 80))
         rect_filled(left + 1, bottom + 4, width - 2, height - 5, (200, 200, 210))
         rect_outline(left, bottom, width, height, (110, 110, 125), 1)
@@ -1935,18 +1963,15 @@ class Toolbar:
         self.active_action: str | None = None
         self._lane_icon_list: arcade.SpriteList | None = None
         self._lane_icon_sprite: arcade.Sprite | None = None
+        self._place_icon_list: arcade.SpriteList | None = None
+        self._place_icon_sprite: arcade.Sprite | None = None
 
         self._settings_icon = arcade.Text("...", 0, 0, color=(220, 220, 220), font_size=16, anchor_x="center", anchor_y="center")
         self._inter_icon = arcade.Text("+", 0, 0, color=(220, 220, 220), font_size=18, anchor_x="center", anchor_y="center")
-        self._place_icon = arcade.Text("P", 0, 0, color=(220, 220, 220), font_size=18, anchor_x="center", anchor_y="center")
+        self._place_fallback = arcade.Text("P", 0, 0, color=(220, 220, 220), font_size=18, anchor_x="center", anchor_y="center")
         self._lane_fallback = arcade.Text("L", 0, 0, color=(220, 220, 220), font_size=18, anchor_x="center", anchor_y="center")
 
-    def set_lane_icon(self, tex: arcade.Texture | None) -> None:
-        """Use an iso road texture as the new-lane button icon."""
-        if tex is None:
-            self._lane_icon_list = None
-            self._lane_icon_sprite = None
-            return
+    def _icon_from_tex(self, tex: arcade.Texture) -> tuple[arcade.Sprite, arcade.SpriteList]:
         tw = max(1, getattr(tex, "width", 64))
         th = max(1, getattr(tex, "height", 32))
         pad = 4
@@ -1954,8 +1979,23 @@ class Toolbar:
         spr = arcade.Sprite(tex, scale=scale)
         lst = arcade.SpriteList()
         lst.append(spr)
-        self._lane_icon_sprite = spr
-        self._lane_icon_list = lst
+        return spr, lst
+
+    def set_lane_icon(self, tex: arcade.Texture | None) -> None:
+        """Use an iso road texture as the new-lane button icon."""
+        if tex is None:
+            self._lane_icon_list = None
+            self._lane_icon_sprite = None
+            return
+        self._lane_icon_sprite, self._lane_icon_list = self._icon_from_tex(tex)
+
+    def set_place_icon(self, tex: arcade.Texture | None) -> None:
+        """Use the green iso place_zone tile as the new-place button icon."""
+        if tex is None:
+            self._place_icon_list = None
+            self._place_icon_sprite = None
+            return
+        self._place_icon_sprite, self._place_icon_list = self._icon_from_tex(tex)
 
     def _button_rects(self) -> list[tuple[float, float, float, float, str]]:
         """Return list of (left, bottom, width, height, action) for each button."""
@@ -2005,6 +2045,14 @@ class Toolbar:
                 else:
                     self._lane_fallback.x, self._lane_fallback.y = cx, cy
                     self._lane_fallback.draw()
+            elif action == "new_place":
+                if self._place_icon_sprite is not None and self._place_icon_list is not None:
+                    self._place_icon_sprite.center_x = cx
+                    self._place_icon_sprite.center_y = cy
+                    self._place_icon_list.draw(pixelated=True)
+                else:
+                    self._place_fallback.x, self._place_fallback.y = cx, cy
+                    self._place_fallback.draw()
             else:
-                self._place_icon.x, self._place_icon.y = cx, cy
-                self._place_icon.draw()
+                self._place_fallback.x, self._place_fallback.y = cx, cy
+                self._place_fallback.draw()

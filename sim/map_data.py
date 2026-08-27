@@ -107,6 +107,58 @@ def snap_cardinal_end(
     return (sx, hy)
 
 
+def _clamped_axis(anchor: int, other: int, max_size: int) -> tuple[int, int]:
+    """Return (lo, size) for an inclusive span from anchor toward other, size in 1..max_size."""
+    from sim.places import PLACE_SIZE_MIN
+
+    size = abs(other - anchor) + 1
+    size = max(PLACE_SIZE_MIN, min(max_size, size))
+    if other >= anchor:
+        return (anchor, size)
+    return (anchor - size + 1, size)
+
+
+def aabb_from_corners(
+    a: tuple[int, int], b: tuple[int, int]
+) -> tuple[int, int, int, int]:
+    """Inclusive-cell AABB (x_lo, y_lo, w, h), clamped to place size, anchored on a."""
+    from sim.places import PLACE_SIZE_MAX
+
+    x_lo, w = _clamped_axis(a[0], b[0], PLACE_SIZE_MAX)
+    y_lo, h = _clamped_axis(a[1], b[1], PLACE_SIZE_MAX)
+    return (x_lo, y_lo, w, h)
+
+
+def aabb_from_edge_and_hover(
+    c1: tuple[int, int], c2: tuple[int, int], hover: tuple[int, int]
+) -> tuple[int, int, int, int]:
+    """
+    3-corner AABB: C1–C2 is the locked edge; hover supplies the missing axis.
+    Hover on the edge (including C2) yields a 1×N strip. Anchored on C1, clamped.
+    """
+    from sim.places import PLACE_SIZE_MAX
+
+    if c1[0] == c2[0]:
+        x_lo, w = _clamped_axis(c1[0], hover[0], PLACE_SIZE_MAX)
+        y_lo, h = _clamped_axis(c1[1], c2[1], PLACE_SIZE_MAX)
+        return (x_lo, y_lo, w, h)
+    if c1[1] == c2[1]:
+        x_lo, w = _clamped_axis(c1[0], c2[0], PLACE_SIZE_MAX)
+        y_lo, h = _clamped_axis(c1[1], hover[1], PLACE_SIZE_MAX)
+        return (x_lo, y_lo, w, h)
+    return aabb_from_corners(c1, hover)
+
+
+def place_center_from_aabb(x_lo: int, y_lo: int, w: int, h: int) -> tuple[int, int]:
+    """Center matching place_rects_from_places: cx = x_lo + w//2."""
+    return (x_lo + w // 2, y_lo + h // 2)
+
+
+def aabb_cells(x_lo: int, y_lo: int, w: int, h: int) -> list[tuple[int, int]]:
+    """Inclusive-origin exclusive-end cell list for an AABB."""
+    return [(x, y) for x in range(x_lo, x_lo + w) for y in range(y_lo, y_lo + h)]
+
+
 def _direction_from_tiles(start: tuple[int, int], end: tuple[int, int]) -> str:
     sx, sy = start
     ex, ey = end

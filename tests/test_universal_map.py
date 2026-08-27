@@ -7,7 +7,13 @@ from __future__ import annotations
 from sim import places, world
 from sim.cop import _home_at_lane_start
 from sim.game import GameState
-from sim.map_data import place_rects_from_places, snap_cardinal_end
+from sim.map_data import (
+    aabb_from_corners,
+    aabb_from_edge_and_hover,
+    place_center_from_aabb,
+    place_rects_from_places,
+    snap_cardinal_end,
+)
 from sim.paths import is_straight_path
 from sim.scenario import (
     SCHEMA_VERSION,
@@ -282,6 +288,29 @@ def test_snap_cardinal_end() -> None:
     assert snap_cardinal_end(origin, (7, 13)) == (7, 10)
 
 
+def test_place_aabb_from_corners() -> None:
+    assert aabb_from_corners((10, 10), (10, 10)) == (10, 10, 1, 1)
+    assert aabb_from_corners((10, 10), (14, 13)) == (10, 10, 5, 4)
+    assert place_center_from_aabb(10, 10, 5, 4) == (12, 12)
+    # reverse order, no clamp: still the min-corner AABB
+    assert aabb_from_corners((14, 13), (10, 10)) == (10, 10, 5, 4)
+    # clamp to 16, anchored on corner 1
+    assert aabb_from_corners((0, 0), (20, 0)) == (0, 0, 16, 1)
+    assert aabb_from_corners((20, 0), (0, 0)) == (5, 0, 16, 1)
+
+
+def test_place_aabb_from_edge_and_hover() -> None:
+    c1, c2 = (10, 10), (10, 14)
+    # C3 on C2 → 1×N strip
+    assert aabb_from_edge_and_hover(c1, c2, c2) == (10, 10, 1, 5)
+    # off the line → 2D rect
+    assert aabb_from_edge_and_hover(c1, c2, (15, 12)) == (10, 10, 6, 5)
+    # horizontal edge
+    c1, c2 = (8, 3), (12, 3)
+    assert aabb_from_edge_and_hover(c1, c2, (12, 3)) == (8, 3, 5, 1)
+    assert aabb_from_edge_and_hover(c1, c2, (10, 7)) == (8, 3, 5, 5)
+
+
 def main() -> None:
     tests = [
         test_migrate_schema_3_snippet,
@@ -296,6 +325,8 @@ def main() -> None:
         test_tee_layout_for_sides,
         test_rename_place,
         test_snap_cardinal_end,
+        test_place_aabb_from_corners,
+        test_place_aabb_from_edge_and_hover,
     ]
     failed = 0
     for fn in tests:

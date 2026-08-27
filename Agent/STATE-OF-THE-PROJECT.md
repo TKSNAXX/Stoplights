@@ -1,6 +1,6 @@
 # Stoplights — State of the Project
 
-**As of:** 2026-08-26 (mouse-drawn lanes)  
+**As of:** 2026-08-26 (mouse-drawn places)  
 **Status:** Playable prototype / in-game editor-lite. Not a shippable game.  
 **Stack:** Python 3 + Arcade (`arcade>=2.6.0`). Entry point: `python main.py` from `Stoplights/`.
 
@@ -55,6 +55,7 @@ Headless check: `python -m tests.test_universal_map`.
 - **Persistence.** Schema 4 `config.json`. Cars not saved. Debounced save + save-on-close.
 - **Editable place names.** Place dialog `TextBox` commits via `rename_place` (keys, hints, live cars). Intersection rename is out of scope.
 - **Mouse-drawn lanes.** Toolbar iso-road button enters a two-click cardinal tool (ghost preview; Add Lane dialog is a live readout). One lane per activation. Cancel via Esc (key or upper-left Esc chip), the lane button, or a click off the map island.
+- **Mouse-drawn places.** Toolbar green iso `place_zone` button: two opposite corners finish a rect; a colinear second corner waits for a third (1×1 if C2 is the same cell; 1×N strip if C3 sits on the locked edge). New Place dialog is a readout. Backspace / upper-right `<-` undoes the last placement click for **both** place and lane tools.
 - **Perf overlay.** Always on; `V` toggles visibility fans.
 
 ### Present in data / UI but not wired
@@ -114,7 +115,7 @@ python main.py
 python -m tests.test_universal_map
 ```
 
-**Controls:** Click entities for dialogs; toolbar for new intersection/place/lane/settings. Lane tool: click start cell, stretch cardinal, click end (or Commit on the readout). Esc / Esc chip / lane button / off-island click cancel. Scroll zooms; arrows pan; `V` visibility fans.
+**Controls:** Click entities for dialogs; toolbar for new intersection/place/lane/settings. Lane: two-click cardinal. Place: two or three corners. Esc / Esc chip / tool button / off-island cancel. Backspace or `<-` pops the last placement click. Scroll zooms; arrows pan; `V` visibility fans.
 
 ---
 
@@ -129,6 +130,7 @@ python -m tests.test_universal_map
 - **Authored = world:** JSON lane tiles and centres are the sim cells after rebuild. Draw iterates `get_bounds()`.
 - **Place id = name:** Renaming retargets `places`, spawn maps, `route_hints`, and live cars. Empty or colliding names are no-ops. Intersection ids share that namespace.
 - **Lane draw is one-shot:** finishing a lane exits the tool; it does not chain another draw.
+- **Place draw:** 2-corner AABB or 3-corner extrude; Backspace/<- is a universal placement undo (does not cancel).
 
 ---
 
