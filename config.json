@@ -410,6 +410,9 @@
     "out_lane_balance_coeff": 1.0
   },
   "user_settings": {
-    "edge_pan_enabled": false
+    "edge_pan_enabled": false,
+    "grass_close_enabled": true,
+    "color_hue": 320,
+    "color_sat": 0.9
   }
 }

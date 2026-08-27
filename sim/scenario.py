@@ -63,6 +63,26 @@ def clamp_intersection_size(n: int) -> int:
     return n if n % 2 == 0 else (n // 2) * 2
 
 
+def clamp_color_hue(value: Any) -> int:
+    """Hue in degrees, snapped to 10°, wrapped to 0–359. 360 becomes 0."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return 0
+    n = int(v / 10.0 + (0.5 if v >= 0 else -0.5)) * 10
+    return n % 360
+
+
+def clamp_color_sat(value: Any) -> float:
+    """Saturation 0–2 (100% = 1.0), snapped to 0.1."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return 1.0
+    v = max(0.0, min(2.0, v))
+    return int(v * 10.0 + 0.5) / 10.0
+
+
 def migrate_to_schema_4(data: dict) -> dict:
     """
     Normalize any supported save/map dict to schema 4.
@@ -131,7 +151,12 @@ def _normalize_schema_4(data: dict) -> dict:
             pass
     us = data.get("user_settings")
     if isinstance(us, dict):
-        out["user_settings"] = dict(us)
+        cleaned = dict(us)
+        if "color_hue" in cleaned:
+            cleaned["color_hue"] = clamp_color_hue(cleaned["color_hue"])
+        if "color_sat" in cleaned:
+            cleaned["color_sat"] = clamp_color_sat(cleaned["color_sat"])
+        out["user_settings"] = cleaned
     return out
 
 
@@ -444,6 +469,9 @@ def game_to_scenario(game: "GameState", window=None) -> dict:
     if window is not None:
         user_settings = {
             "edge_pan_enabled": getattr(window, "_edge_pan_enabled", True),
+            "grass_close_enabled": getattr(window, "_grass_close_enabled", True),
+            "color_hue": clamp_color_hue(getattr(window, "_color_hue", 0)),
+            "color_sat": clamp_color_sat(getattr(window, "_color_sat", 1.0)),
         }
     return {
         "schema_version": SCHEMA_VERSION,

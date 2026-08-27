@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from sim import places, scenario
+from sim.scenario import clamp_color_hue, clamp_color_sat
 
 if TYPE_CHECKING:
     from sim.game import GameState
@@ -38,6 +39,12 @@ def load_config(game: "GameState", window=None) -> None:
     if window is not None and isinstance(us, dict):
         if "edge_pan_enabled" in us and isinstance(us["edge_pan_enabled"], bool):
             window._edge_pan_enabled = us["edge_pan_enabled"]
+        if "grass_close_enabled" in us and isinstance(us["grass_close_enabled"], bool):
+            window._grass_close_enabled = us["grass_close_enabled"]
+        if "color_hue" in us:
+            window._color_hue = clamp_color_hue(us["color_hue"])
+        if "color_sat" in us:
+            window._color_sat = clamp_color_sat(us["color_sat"])
 
     scenario.apply_scenario_to_game(game, data)
     places.set_route_hints(game.route_hints)

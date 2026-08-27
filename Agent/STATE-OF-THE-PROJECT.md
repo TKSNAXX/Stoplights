@@ -1,6 +1,6 @@
 # Stoplights — State of the Project
 
-**As of:** 2026-08-26 (mouse-drawn intersections)  
+**As of:** 2026-08-27 (world colour grade)  
 **Status:** Playable prototype / in-game editor-lite. Not a shippable game.  
 **Stack:** Python 3 + Arcade (`arcade>=2.6.0`). Entry point: `python main.py` from `Stoplights/`.
 
@@ -35,7 +35,7 @@ The engine no longer special-cases `main` / `bypass` / “extra” or the origin
 
 - **Schema 4** is the lingua franca for `assets/maps/default.json` and `config.json`. Runtime `GameState.places` is one `Place` record per id (geometry + spawn/attract + `protected`) — same shape as JSON. `spawn_places` is derived (outbound-lane eligibility), not a second store.
 - Place names **are** those ids (map labels, `route_hints`, car origin/destination). They are editable in the place dialog; `GameState.rename_place` retargets the identity. Collision with another place or an intersection id is refused. `protected` still means delete-only.
-- Places, intersections, and lanes are uniform records with a **`protected`** flag (delete refused when true).
+- Places, intersections, and lanes are **infrastructure**: the authored occupancy cars use. Uniform records with a **`protected`** flag (delete refused when true). Types stay `Place` / `LaneConfig` / `IntersectionConfig`. Cars are not infrastructure.
 - **`traffic_in` / `traffic_out`** derived from occupancy at lane endpoints.
 - **Straight / turn / U-turn** from tangents and place identity — not hardcoded `(0,1)` tables.
 - **Police home ends** derived from which end of the lane is a place.
@@ -57,6 +57,9 @@ Headless check: `python -m tests.test_universal_map`.
 - **Mouse-drawn lanes.** Toolbar iso-road button enters a two-click cardinal tool (ghost preview; Add Lane dialog is a live readout). One lane per activation. Cancel via Esc (key or upper-left Esc chip), the lane button, or a click off the map island.
 - **Mouse-drawn places.** Toolbar green iso `place_zone` button: two opposite corners finish a rect; a colinear second corner waits for a third (1×1 if C2 is the same cell; 1×N strip if C3 sits on the locked edge). New Place dialog is a readout. Backspace / upper-right `<-` undoes the last placement click for place, lane, and intersection tools.
 - **Mouse-drawn intersections.** Toolbar iso `road_cross` button: a 2×2 ghost follows the cursor as centre; first click locks it, second click sets even size (2..12) to the smallest stamp whose occupancy contains the hover cell (`bounds_from_center`). New Intersection dialog is a readout (type / centre / size). One junction per activation. Backend stays `center_x/y` + even `size_cells`.
+- **Infrastructure selection rim.** Opening a place / lane / intersection vars dialog rims that occupancy with an iso bevel: SW inner highlight, NE outer shadow, fading over a few screen pixels. Shadow multiplies the tiles; highlight screens — the pavement colour stays, only the edge contrast changes.
+- **Grass close.** Clicking an empty grass cell dismisses open dialogs (Settings toggle; on by default). Not used while a draw tool is placing.
+- **World colour grade.** Settings **Colors** (Hue 0–360°, Sat 0–200%) grade the map — tiles, cars, draw ghosts, selection rims, visibility fans — in one post-process pass. Dialogs, toolbar, Esc/`<-` chips, place/cardinal labels, and the perf overlay stay ungraded. Hue 0° and sat 100% skip the extra pass.
 - **Perf overlay.** Always on; `V` toggles visibility fans.
 
 ### Present in data / UI but not wired
@@ -78,6 +81,8 @@ Headless check: `python -m tests.test_universal_map`.
 ```
 main.py          Window, game loop, input, draw
 ui.py            Dialogs, toolbar, widgets
+render/selection.py  Infra selection silhouette / rim bands
+render/color_grade.py  World hue/sat post-process (FBO + HSV shader)
 sim/
   scenario.py    Schema 4 load / migrate / apply / serialize
   game.py        GameState.places / intersections / lanes; reset loads default.json
@@ -116,7 +121,7 @@ python main.py
 python -m tests.test_universal_map
 ```
 
-**Controls:** Click entities for dialogs; toolbar for new intersection/place/lane/settings. Lane: two-click cardinal. Place: two or three corners. Intersection: 2×2 centre, then size. Esc / Esc chip / tool button / off-island cancel. Backspace or `<-` pops the last placement click. Scroll zooms; arrows pan; `V` visibility fans.
+**Controls:** Click infrastructure for dialogs (selection rim); toolbar for new intersection/place/lane/settings. Lane: two-click cardinal. Place: two or three corners. Intersection: 2×2 centre, then size. Esc / Esc chip / tool button / off-island cancel. Backspace or `<-` pops the last placement click. Scroll zooms; arrows pan; `V` visibility fans. Settings: edge pan, grass close (click grass to dismiss dialogs).
 
 ---
 
@@ -133,6 +138,7 @@ python -m tests.test_universal_map
 - **Lane draw is one-shot:** finishing a lane exits the tool; it does not chain another draw.
 - **Place draw:** 2-corner AABB or 3-corner extrude; Backspace/<- is a universal placement undo (does not cancel).
 - **Intersection draw is one-shot:** 2×2 ghost while aiming; second click sizes. Even-size occupancy is slightly asymmetric (size 2 is `cx-1` and `cx`). Ghost uses `bounds_from_center`.
+- **Infrastructure:** places, lanes, and intersections. Selection rim follows open vars dialogs, not draw-tool ghosts or cars.
 
 ---
 

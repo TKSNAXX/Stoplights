@@ -7,7 +7,9 @@ from pathlib import Path
 import arcade
 
 from render.camera import grid_to_screen, screen_to_grid
+from render.color_grade import WorldColorGrade, is_identity_grade
 from render.debug import visibility_fan_vertices
+from render.selection import iso_aabb_silhouette, occupancy_aabb, rim_quads
 from render.sprites import CarSpritePool, load_car_textures
 from render.intersection_topology import (
     classify_intersection_sides,
@@ -27,6 +29,7 @@ from sim.constants import (
 )
 from sim.game import GameState
 from sim import persistence, world
+from sim.scenario import clamp_color_hue, clamp_color_sat
 from sim.map_data import (
     aabb_cells,
     aabb_from_corners,
@@ -90,6 +93,10 @@ class StoplightsWindow(arcade.Window):
         arcade.set_background_color(arcade.color.BLACK)
         self.game = GameState()
         self._edge_pan_enabled = True
+        self._grass_close_enabled = True
+        self._color_hue = 0
+        self._color_sat = 1.0
+        self._color_grade = WorldColorGrade(self.ctx)
         persistence.load_config(self.game, window=self)
         self.game.rebuild_world_from_config()
         self._tick_accumulator = 0.0
@@ -200,6 +207,25 @@ class StoplightsWindow(arcade.Window):
     def _cell_on_map(self, cell: tuple[int, int]) -> bool:
         x_lo, y_lo, x_hi, y_hi = world.get_bounds()
         return x_lo <= cell[0] < x_hi and y_lo <= cell[1] < y_hi
+
+    def _cell_is_grass(self, cell: tuple[int, int]) -> bool:
+        """True for an on-map cell with no place, lane, or intersection occupancy."""
+        if not self._cell_on_map(cell):
+            return False
+        if world.get_intersection_at_cell(cell) is not None:
+            return False
+        gx, gy = cell
+        for rect in world.get_place_rects().values():
+            x0 = int(rect.get("x", 0))
+            y0 = int(rect.get("y", 0))
+            w = int(rect.get("w", 0))
+            h = int(rect.get("h", 0))
+            if x0 <= gx < x0 + w and y0 <= gy < y0 + h:
+                return False
+        for i in world.lane_ids():
+            if cell in world.get_lane_cells(i):
+                return False
+        return True
 
     def _enter_lane_draw(self) -> None:
         self._lane_draw = "start"
@@ -530,6 +556,50 @@ class StoplightsWindow(arcade.Window):
             lst.append(spr)
         lst.draw(pixelated=True)
 
+    def _infra_occupancy_cells(self, dlg):
+        if isinstance(dlg, PlaceVarsDialog):
+            return places.place_bounds(dlg.place)
+        if isinstance(dlg, LaneVarsDialog):
+            return world.get_lane_cells(dlg.lane_index)
+        if isinstance(dlg, IntersectionVarsDialog):
+            return world.get_intersection_cells_by_key(dlg.intersection_key)
+        return None
+
+    def _draw_infra_selection_rims(self, center_x: float, center_y: float) -> None:
+        half_w = TILE_W * self._zoom_scale
+        half_h = TILE_H * self._zoom_scale
+
+        def cell_center(gx: int, gy: int) -> tuple[float, float]:
+            return self._to_screen(gx, gy, center_x, center_y)
+
+        shadows: list = []
+        highlights: list = []
+        for dlg in self._dialog_manager.iter_open():
+            cells = self._infra_occupancy_cells(dlg)
+            if not cells:
+                continue
+            aabb = occupancy_aabb(cells)
+            if aabb is None:
+                continue
+            x_lo, y_lo, w, h = aabb
+            poly = iso_aabb_silhouette(x_lo, y_lo, w, h, cell_center, half_w, half_h)
+            s, hlt = rim_quads(poly)
+            shadows.extend(s)
+            highlights.extend(hlt)
+        if not shadows and not highlights:
+            return
+        ctx = self.ctx
+        prev = ctx.blend_func
+        try:
+            ctx.blend_func = (ctx.DST_COLOR, ctx.ZERO)
+            for pts, color in shadows:
+                arcade.draw_polygon_filled(pts, color)
+            ctx.blend_func = (ctx.ONE, ctx.ONE_MINUS_SRC_COLOR)
+            for pts, color in highlights:
+                arcade.draw_polygon_filled(pts, color)
+        finally:
+            ctx.blend_func = prev
+
     def _update_zoom_scale(self) -> None:
         """Compute zoom scale from current zoom level and window size."""
         map_w = (world.get_grid_w() + world.get_grid_h()) * TILE_W
@@ -848,12 +918,15 @@ class StoplightsWindow(arcade.Window):
             self._update_text_positions(center_x, center_y)
             self._cached_center = (center_x, center_y, self._zoom_scale)
 
-        if self._tile_sprite_list is not None:
-            self._tile_sprite_list.draw(pixelated=True)
-
-        self._draw_lane_preview(center_x, center_y)
-        self._draw_place_preview(center_x, center_y)
-        self._draw_ix_preview(center_x, center_y)
+        grade_world = not is_identity_grade(self._color_hue, self._color_sat)
+        if grade_world:
+            self._color_grade.begin(self.width, self.height)
+            self.default_camera.use()
+        self._draw_world_pass(center_x, center_y)
+        if grade_world:
+            self._color_grade.end_and_blit(self._color_hue, self._color_sat)
+            self.use()
+            self.default_camera.use()
 
         for place in world.get_place_rects():
             if places.place_bounds(place):
@@ -865,6 +938,36 @@ class StoplightsWindow(arcade.Window):
                 self._place_texts[place].draw()
         for txt in self._cardinal_texts.values():
             txt.draw()
+
+        draw_ms = (time.perf_counter() - draw_start) * 1000.0
+        self._draw_ms_ema = draw_ms if self._draw_ms_ema <= 0.0 else (0.9 * self._draw_ms_ema + 0.1 * draw_ms)
+        perf = self.game.get_perf_stats()
+        self._perf_text.x = 64 if self._draw_tool_active() else 10
+        self._perf_text.y = self.height - 10
+        self._perf_text.value = (
+            f"FPS~{self._fps_ema:5.1f} substeps:{self._last_substeps} draw:{self._draw_ms_ema:5.2f}ms "
+            f"cars:{perf['cars']} tiles:{len(self._tile_sprite_list or [])} tick:{float(perf['tick_ms_ema']):5.2f}ms "
+            f"vis:{float(perf['visibility_ms_ema']):5.2f}ms checks:{perf['visibility_checks']} "
+            f"pair:{float(perf['pair_ms_ema']):5.2f}ms checks:{perf['pair_checks']}"
+        )
+        self._perf_text.draw()
+
+        if self._draw_tool_active():
+            self._esc_chip.draw(self.width, self.height)
+        if self._placement_can_pop():
+            self._back_chip.draw(self.width, self.height)
+        self._toolbar.draw()
+        self._dialog_manager.draw_all()
+
+    def _draw_world_pass(self, center_x: float, center_y: float) -> None:
+        """Tiles, draw ghosts, selection rims, cars, visibility fans. Graded as a unit."""
+        if self._tile_sprite_list is not None:
+            self._tile_sprite_list.draw(pixelated=True)
+
+        self._draw_lane_preview(center_x, center_y)
+        self._draw_place_preview(center_x, center_y)
+        self._draw_ix_preview(center_x, center_y)
+        self._draw_infra_selection_rims(center_x, center_y)
 
         if self._car_sprite_pool is not None:
             active_police = [p for p in self.game.police_list if p.state in ("deploying", "holding", "returning")]
@@ -907,25 +1010,10 @@ class StoplightsWindow(arcade.Window):
                 screen_pts = [self._to_screen(vx, vy, center_x, center_y) for vx, vy in verts]
                 arcade.draw_polygon_outline(screen_pts, fan_color, VIS_ZONE_LINE_WIDTH)
 
-        draw_ms = (time.perf_counter() - draw_start) * 1000.0
-        self._draw_ms_ema = draw_ms if self._draw_ms_ema <= 0.0 else (0.9 * self._draw_ms_ema + 0.1 * draw_ms)
-        perf = self.game.get_perf_stats()
-        self._perf_text.x = 64 if self._draw_tool_active() else 10
-        self._perf_text.y = self.height - 10
-        self._perf_text.value = (
-            f"FPS~{self._fps_ema:5.1f} substeps:{self._last_substeps} draw:{self._draw_ms_ema:5.2f}ms "
-            f"cars:{perf['cars']} tiles:{len(self._tile_sprite_list or [])} tick:{float(perf['tick_ms_ema']):5.2f}ms "
-            f"vis:{float(perf['visibility_ms_ema']):5.2f}ms checks:{perf['visibility_checks']} "
-            f"pair:{float(perf['pair_ms_ema']):5.2f}ms checks:{perf['pair_checks']}"
-        )
-        self._perf_text.draw()
-
-        if self._draw_tool_active():
-            self._esc_chip.draw(self.width, self.height)
-        if self._placement_can_pop():
-            self._back_chip.draw(self.width, self.height)
-        self._toolbar.draw()
-        self._dialog_manager.draw_all()
+    def _on_color_grade_change(self, hue: int, sat: float) -> None:
+        self._color_hue = clamp_color_hue(hue)
+        self._color_sat = clamp_color_sat(sat)
+        persistence.request_debounced_save()
 
     def _place_at_screen(self, sx: float, sy: float) -> str | None:
         """Return place name if (sx, sy) screen coords hit a place, else None."""
@@ -1011,10 +1099,18 @@ class StoplightsWindow(arcade.Window):
                 dlg = SettingsDialog(
                     dlg_x, dlg_y,
                     edge_pan_enabled=self._edge_pan_enabled,
+                    grass_close_enabled=self._grass_close_enabled,
+                    color_hue=self._color_hue,
+                    color_sat=self._color_sat,
                     on_edge_pan_change=lambda v: (
                         setattr(self, "_edge_pan_enabled", v),
                         persistence.request_debounced_save(),
                     ),
+                    on_grass_close_change=lambda v: (
+                        setattr(self, "_grass_close_enabled", v),
+                        persistence.request_debounced_save(),
+                    ),
+                    on_color_change=self._on_color_grade_change,
                 )
                 dlg.set_on_close(lambda d: self._dialog_manager.close(d))
                 self._dialog_manager.open(dlg)
@@ -1148,6 +1244,9 @@ class StoplightsWindow(arcade.Window):
                     self._intersection_dialogs[inter_key] = dlg
                     dlg.set_on_close(lambda d: self._dialog_manager.close(d))
                     self._dialog_manager.open(dlg)
+                return
+            if self._grass_close_enabled and self._cell_is_grass(self._grid_cell_at(x, y)):
+                self._dialog_manager.close_all()
                 return
 
     def on_mouse_drag(self, x: float, y: float, dx: float, dy: float, buttons: int, modifiers: int):

@@ -16,9 +16,21 @@ from sim.map_data import (
     place_rects_from_places,
     snap_cardinal_end,
 )
+from sim.constants import TILE_H, TILE_W
+from render.selection import (
+    edge_faces_sw,
+    ensure_ccw,
+    iso_aabb_silhouette,
+    occupancy_aabb,
+    offset_polygon,
+    rim_quads,
+)
 from sim.paths import is_straight_path
 from sim.scenario import (
     SCHEMA_VERSION,
+    clamp_color_hue,
+    clamp_color_sat,
+    game_to_scenario,
     load_default_scenario,
     migrate_to_schema_4,
     apply_scenario_to_game,
@@ -327,6 +339,74 @@ def test_place_aabb_from_edge_and_hover() -> None:
     assert aabb_from_edge_and_hover(c1, c2, (10, 7)) == (8, 3, 5, 5)
 
 
+def _iso_center(gx: int, gy: int) -> tuple[float, float]:
+    return ((gx - gy) * TILE_W, (gx + gy) * TILE_H)
+
+
+def test_iso_aabb_silhouette() -> None:
+    d1 = iso_aabb_silhouette(0, 0, 1, 1, _iso_center)
+    assert len(d1) == 4
+    strip = iso_aabb_silhouette(0, 0, 2, 1, _iso_center)
+    assert len(strip) == 4
+    square = iso_aabb_silhouette(0, 0, 2, 2, _iso_center)
+    assert len(square) == 4
+    assert occupancy_aabb([(3, 5), (4, 5), (5, 5)]) == (3, 5, 3, 1)
+
+
+def test_selection_rim_offset_and_facing() -> None:
+    poly = iso_aabb_silhouette(0, 0, 1, 1, _iso_center)
+    cx = sum(p[0] for p in poly) / 4
+    cy = sum(p[1] for p in poly) / 4
+    inset = offset_polygon(poly, -1.0)
+    assert len(inset) == 4
+    for p, q in zip(poly, inset):
+        d_out = (p[0] - cx) ** 2 + (p[1] - cy) ** 2
+        d_in = (q[0] - cx) ** 2 + (q[1] - cy) ** 2
+        assert d_in < d_out
+    ccw = ensure_ccw(poly)
+    sw_hits = [edge_faces_sw(ccw[i], ccw[(i + 1) % len(ccw)]) for i in range(len(ccw))]
+    assert any(sw_hits)
+    assert any(not h for h in sw_hits)
+    assert rim_quads(ccw)[0]
+    assert rim_quads(ccw)[1]
+
+
+def test_color_settings_clamp_roundtrip() -> None:
+    """Hue/sat snap and wrap; persist via game_to_scenario and migrate."""
+    assert clamp_color_hue(0) == 0
+    assert clamp_color_hue(360) == 0
+    assert clamp_color_hue(125) == 130
+    assert clamp_color_hue(-10) == 350
+    assert clamp_color_sat(1.0) == 1.0
+    assert clamp_color_sat(0) == 0.0
+    assert clamp_color_sat(2.4) == 2.0
+    assert clamp_color_sat(0.14) == 0.1
+
+    class Win:
+        _edge_pan_enabled = True
+        _grass_close_enabled = False
+        _color_hue = 360
+        _color_sat = 1.94
+
+    g = GameState()
+    data = game_to_scenario(g, window=Win())
+    assert data["user_settings"]["color_hue"] == 0
+    assert data["user_settings"]["color_sat"] == 1.9
+    assert data["user_settings"]["grass_close_enabled"] is False
+
+    migrated = migrate_to_schema_4(
+        {
+            "schema_version": 4,
+            "places": {},
+            "intersections": {},
+            "lanes": {},
+            "user_settings": {"color_hue": 370, "color_sat": -1, "edge_pan_enabled": True},
+        }
+    )
+    assert migrated["user_settings"]["color_hue"] == 10
+    assert migrated["user_settings"]["color_sat"] == 0.0
+
+
 def main() -> None:
     tests = [
         test_migrate_schema_3_snippet,
@@ -344,6 +424,9 @@ def main() -> None:
         test_place_aabb_from_corners,
         test_place_aabb_from_edge_and_hover,
         test_intersection_size_for_hover,
+        test_iso_aabb_silhouette,
+        test_selection_rim_offset_and_facing,
+        test_color_settings_clamp_roundtrip,
     ]
     failed = 0
     for fn in tests:

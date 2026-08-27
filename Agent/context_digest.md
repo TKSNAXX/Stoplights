@@ -18,6 +18,9 @@
 - **2026-08-26 (lane draw):** Toolbar lane button is an iso road tile. Two-click cardinal draw (ghost preview; Add Lane dialog is readout). One lane per activation. Cancel: Esc key/chip, lane button, click off `get_bounds()`.
 - **2026-08-26 (place draw):** Place button is the green iso `place_zone` tile. Two-or-three-corner AABB (1×1 same-cell C2; 1×N if C3 is on the locked edge). Backspace/`<-` pops the last click for place, lane, and intersection.
 - **2026-08-26 (intersection draw):** Toolbar iso `road_cross`. Two-click centre-size: 2×2 ghost while aiming, second click is smallest even size whose `bounds_from_center` AABB contains hover (clamp 12). New Intersection dialog is a readout. Backspace/`<-` pops size back to centre.
+- **2026-08-27 (infra rim):** Places, lanes, and intersections are **infrastructure**. Open vars dialogs get an iso-bevel selection rim (SW highlight, NE shadow).
+- **2026-08-27 (grass close):** Clicking a grass cell dismisses open dialogs. Settings **Grass close** (default on). Draw tools still use map clicks for placement.
+- **2026-08-27 (world colour grade):** Settings Colors (hue/sat) grade the world; UI ungraded; identity skips the pass.
 
 ---
 
@@ -29,7 +32,7 @@ Stoplights is an isometric traffic simulation (Python + Arcade). Cars spawn at p
 
 - **Schema 4 scenario.** Places / intersections / lanes / police / route_hints. `protected` replaces base_lane_count / core id sets.
 - **Places and intersections are movable.** Center-based geometry. Commit rebuilds the world via `rebuild_world(place_rects, intersections, lanes)`. Overlapping intersections are allowed. Place names are the ids and can be renamed in the place dialog.
-- **NumberBox, dialogs, toolbar editor, ortho→iso tiles, zoom/pan.** Lane tool is two-click cardinal draw; place tool is 2/3-corner AABB; intersection tool is two-click centre-size (min 2×2). Dialogs are live readouts. Backspace/`<-` undoes the last placement click.
+- **NumberBox, dialogs, toolbar editor, ortho→iso tiles, zoom/pan.** Lane tool is two-click cardinal draw; place tool is 2/3-corner AABB; intersection tool is two-click centre-size (min 2×2). Dialogs are live readouts. Backspace/`<-` undoes the last placement click. Open infrastructure vars dialogs show an iso-bevel selection rim. Settings Colors (hue/sat) grade the world; UI stays ungraded.
 - **Default map** in `assets/maps/default.json` (not reconstructed in Python).
 
 ---
@@ -46,6 +49,10 @@ Stoplights is an isometric traffic simulation (Python + Arcade). Cars spawn at p
 - **`cop.py`** — Home end derived from place occupancy on the lane.
 - **`persistence.py`** — Schema 4 `config.json`.
 
+### Display (`render/`)
+- **`selection.py`** — Arcade-free iso AABB silhouette and iso-bevel rim bands (multiply shadow, screen highlight).
+- **`color_grade.py`** — Window FBO + HSV shader. Settings hue/sat grade the world pass; identity (0° / 100%) skips it. UI draws after the blit.
+
 ### Key Conventions (updated)
 
 1. Isometric grid: `ORTHO_TILE_SIZE=32`, `TILE_W=32`, `TILE_H=16`. Grid y increases north. Authored JSON cells = live world cells; `get_bounds()` is the AABB (hi exclusive).
@@ -55,6 +62,7 @@ Stoplights is an isometric traffic simulation (Python + Arcade). Cars spawn at p
 5. Place names are the ids (shared routing-node namespace with intersections). Rename retargets identity; it is not a display alias.
 6. Police home: place end of deploy/return lane.
 7. Cop dismiss: red count ≤ 1.
+8. **Infrastructure** = places, lanes, intersections (not cars). Selection rim follows open vars dialogs.
 
 ### Gotchas (still true / updated)
 
