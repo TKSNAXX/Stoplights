@@ -65,6 +65,12 @@ class NumberBox:
         self._text = arcade.Text(
             "", 0, 0, color=(220, 220, 220), font_size=11, anchor_x="left", anchor_y="center"
         )
+        self._arrow_up = arcade.Text(
+            "▲", 0, 0, color=(180, 180, 180), font_size=10, anchor_x="center", anchor_y="center"
+        )
+        self._arrow_dn = arcade.Text(
+            "▼", 0, 0, color=(180, 180, 180), font_size=10, anchor_x="center", anchor_y="center"
+        )
 
     def contains(self, x: float, y: float) -> bool:
         left, bottom, width, height = self.rect
@@ -168,14 +174,16 @@ class NumberBox:
         ul, ub, uw, uh = self._up_arrow_rect()
         rect_filled(ul, ub, uw, uh, (100, 100, 110))
         rect_outline(ul, ub, uw, uh, DIALOG_BORDER, 1)
-        arrow_up = arcade.Text("▲", ul + uw / 2, ub + uh / 2, color=(180, 180, 180), font_size=10, anchor_x="center", anchor_y="center")
-        arrow_up.draw()
+        self._arrow_up.x = ul + uw / 2
+        self._arrow_up.y = ub + uh / 2
+        self._arrow_up.draw()
         # Down arrow
         dl, db, dw, dh = self._down_arrow_rect()
         rect_filled(dl, db, dw, dh, (100, 100, 110))
         rect_outline(dl, db, dw, dh, DIALOG_BORDER, 1)
-        arrow_dn = arcade.Text("▼", dl + dw / 2, db + dh / 2, color=(180, 180, 180), font_size=10, anchor_x="center", anchor_y="center")
-        arrow_dn.draw()
+        self._arrow_dn.x = dl + dw / 2
+        self._arrow_dn.y = db + dh / 2
+        self._arrow_dn.draw()
 
 
 TEXT_BOX_MAX_LEN = 24
@@ -375,6 +383,11 @@ class Dropdown:
             "", 0, 0, color=(220, 220, 220), font_size=10,
             anchor_x="left", anchor_y="center",
         )
+        self._arrow = arcade.Text(
+            "▼", 0, 0, color=(180, 180, 180), font_size=9, anchor_x="center", anchor_y="center"
+        )
+        self._option_texts: list[arcade.Text] = []
+        self._option_texts_key: tuple[str, ...] | None = None
 
     def contains(self, x: float, y: float) -> bool:
         left, bottom, width, height = self.rect
@@ -411,14 +424,25 @@ class Dropdown:
         self._text.x = left + 6
         self._text.y = bottom + height / 2
         self._text.draw()
-        arrow = arcade.Text("▼", left + width - 12, bottom + height / 2,
-                            color=(180, 180, 180), font_size=9, anchor_x="center", anchor_y="center")
-        arrow.draw()
+        self._arrow.x = left + width - 12
+        self._arrow.y = bottom + height / 2
+        self._arrow.draw()
+
+    def _ensure_option_texts(self) -> None:
+        key = tuple(self.options)
+        if key == self._option_texts_key:
+            return
+        self._option_texts_key = key
+        self._option_texts = [
+            arcade.Text(opt, 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+            for opt in self.options
+        ]
 
     def draw_expanded_list(self) -> None:
         """Draw open option rows on top of sibling widgets; Dialog calls this after all widget.draw()."""
         if not self._open or not self.options:
             return
+        self._ensure_option_texts()
         left, bottom, width, height = self.rect
         list_top = bottom + height
         for i, opt in enumerate(self.options):
@@ -427,8 +451,10 @@ class Dropdown:
             rect_outline(left, row_bottom, width, DROPDOWN_ROW_HEIGHT, (80, 80, 95), 1)
             if i == self.value:
                 rect_filled(left + 1, row_bottom + 1, width - 2, DROPDOWN_ROW_HEIGHT - 2, (90, 90, 110))
-            item_text = arcade.Text(opt, left + 6, row_bottom + DROPDOWN_ROW_HEIGHT / 2,
-                                    color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+            item_text = self._option_texts[i]
+            item_text.value = opt
+            item_text.x = left + 6
+            item_text.y = row_bottom + DROPDOWN_ROW_HEIGHT / 2
             item_text.draw()
 
     def on_press(self, x: float, y: float) -> bool:
@@ -478,6 +504,12 @@ class Dialog:
         self._drag_start: tuple[float, float] | None = None
         self._on_close: Callable | None = None
         self._dialog_manager: DialogManager | None = None
+        self._title_text = arcade.Text(
+            title, 0, 0, color=(220, 220, 220), font_size=12, anchor_x="left", anchor_y="center",
+        )
+        self._x_text = arcade.Text(
+            "X", 0, 0, color=(220, 220, 220), font_size=11, anchor_x="center", anchor_y="center",
+        )
 
     def set_dialog_manager(self, manager: "DialogManager") -> None:
         self._dialog_manager = manager
@@ -535,15 +567,15 @@ class Dialog:
         rect_filled(left, bottom, self.width, self.height, DIALOG_BG)
         rect_outline(left, bottom, self.width, self.height, DIALOG_BORDER, 1)
         rect_filled(left, self.y - TITLE_BAR_HEIGHT, self.width, TITLE_BAR_HEIGHT, DIALOG_TITLE_BG)
-        title_text = arcade.Text(
-            self.title, left + 8, bottom + self.height - TITLE_BAR_HEIGHT / 2 - 4,
-            color=(220, 220, 220), font_size=12, anchor_x="left", anchor_y="center",
-        )
-        title_text.draw()
+        self._title_text.value = self.title
+        self._title_text.x = left + 8
+        self._title_text.y = bottom + self.height - TITLE_BAR_HEIGHT / 2 - 4
+        self._title_text.draw()
         xl, xb, xw, xh = self._x_button_rect()
         rect_filled(xl, xb, xw, xh, (120, 80, 80))
-        x_text = arcade.Text("X", xl + xw / 2, xb + xh / 2, color=(220, 220, 220), font_size=11, anchor_x="center", anchor_y="center")
-        x_text.draw()
+        self._x_text.x = xl + xw / 2
+        self._x_text.y = xb + xh / 2
+        self._x_text.draw()
         for w in self.widgets:
             w.draw()
         for w in self.widgets:
@@ -836,11 +868,21 @@ class IntersectionVarsDialog(Dialog):
 
     def _apply_config(self) -> None:
         """Apply type, center, size from widgets to config and call on_commit."""
-        self._config.intersection_type = INTERSECTION_TYPE_VALUES[self._type_dropdown.value]
-        self._config.center_x, self._config.center_y = self._center_compass.value
-        self._config.size_cells = max(2, min(12, self._size_box.value))
-        if self._config.size_cells % 2 != 0:
-            self._config.size_cells = (self._config.size_cells // 2) * 2
+        new_type = INTERSECTION_TYPE_VALUES[self._type_dropdown.value]
+        new_cx, new_cy = self._center_compass.value
+        new_size = max(2, min(12, self._size_box.value))
+        if new_size % 2 != 0:
+            new_size = (new_size // 2) * 2
+        if (
+            self._config.intersection_type == new_type
+            and self._config.center_x == new_cx
+            and self._config.center_y == new_cy
+            and self._config.size_cells == new_size
+        ):
+            return
+        self._config.intersection_type = new_type
+        self._config.center_x, self._config.center_y = new_cx, new_cy
+        self._config.size_cells = new_size
         if self._on_commit:
             self._on_commit()
 
@@ -886,6 +928,8 @@ class IntersectionVarsDialog(Dialog):
 
     def on_mouse_drag(self, x: float, y: float, dx: float, dy: float) -> bool:
         result = super().on_mouse_drag(x, y, dx, dy)
+        if self._dragging:
+            return result
         self._apply_config()
         return result
 
@@ -1215,6 +1259,13 @@ class PlaceVarsDialog(Dialog):
         center_x, center_y = self._center_compass.value
         w = max(PLACE_SIZE_MIN, min(PLACE_SIZE_MAX, self._w_box.value))
         l = max(PLACE_SIZE_MIN, min(PLACE_SIZE_MAX, self._l_box.value))
+        if (
+            self._place.center_x == center_x
+            and self._place.center_y == center_y
+            and self._place.width == w
+            and self._place.length == l
+        ):
+            return
         self._place.center_x = center_x
         self._place.center_y = center_y
         self._place.width = w
@@ -1291,6 +1342,8 @@ class PlaceVarsDialog(Dialog):
 
     def on_mouse_drag(self, x: float, y: float, dx: float, dy: float) -> bool:
         result = super().on_mouse_drag(x, y, dx, dy)
+        if self._dragging:
+            return result
         self._sync_from_sliders()
         return result
 
@@ -1300,8 +1353,12 @@ class PlaceVarsDialog(Dialog):
         return result
 
     def _sync_from_sliders(self) -> None:
-        self._place.spawn_interval = PLACE_SPAWN_VALUES[self._spawn_slider.value]
-        self._place.attract_weight = PLACE_ATTRACT_VALUES[self._attract_slider.value]
+        spawn = PLACE_SPAWN_VALUES[self._spawn_slider.value]
+        attract = PLACE_ATTRACT_VALUES[self._attract_slider.value]
+        if self._place.spawn_interval == spawn and self._place.attract_weight == attract:
+            return
+        self._place.spawn_interval = spawn
+        self._place.attract_weight = attract
         if self._on_change:
             self._on_change()
 
@@ -1792,6 +1849,8 @@ class LaneVarsDialog(Dialog):
 
     def on_mouse_drag(self, x: float, y: float, dx: float, dy: float) -> bool:
         result = super().on_mouse_drag(x, y, dx, dy)
+        if self._dragging:
+            return result
         self._sync_from_widgets()
         return result
 
@@ -1801,10 +1860,22 @@ class LaneVarsDialog(Dialog):
         return result
 
     def _sync_from_widgets(self) -> None:
-        self._config.speed_limit = LANE_SPEED_VALUES[self._speed_slider.value]
-        self._config.lane_type = LANE_TYPE_VALUES[self._type_slider.value]
+        speed = LANE_SPEED_VALUES[self._speed_slider.value]
+        lane_type = LANE_TYPE_VALUES[self._type_slider.value]
         start = self._start_compass.value
         end = self._end_compass.value
+        old_start = (int(self._config.start_tile[0]), int(self._config.start_tile[1]))
+        old_end = (int(self._config.end_tile[0]), int(self._config.end_tile[1]))
+        if (
+            self._config.speed_limit == speed
+            and self._config.lane_type == lane_type
+            and old_start == start
+            and old_end == end
+        ):
+            self._update_locked_axes()
+            return
+        self._config.speed_limit = speed
+        self._config.lane_type = lane_type
         self._update_locked_axes()
         self._config.start_tile = start
         self._config.end_tile = end
@@ -2001,6 +2072,8 @@ class SettingsDialog(Dialog):
         return result
 
     def on_mouse_drag(self, x: float, y: float, dx: float, dy: float) -> bool:
+        if self._dragging:
+            return super().on_mouse_drag(x, y, dx, dy)
         self._layout_widgets()
         result = super().on_mouse_drag(x, y, dx, dy)
         self._emit_colors()
