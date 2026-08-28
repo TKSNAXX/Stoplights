@@ -22,10 +22,6 @@ SCHEMA_VERSION = 4
 _LEGACY_PROTECTED_PLACES = frozenset({"Housing", "Office", "Park", "Shopping"})
 _LEGACY_CORE_INTERSECTIONS = frozenset({"main", "bypass"})
 _LEGACY_BASE_LANE_COUNT = 12
-_LEGACY_POLICE = [
-    {"deploy_lane": 7, "return_lane": 7, "red_trigger": 10},
-    {"deploy_lane": 5, "return_lane": 5, "red_trigger": 20},
-]
 _LEGACY_ROUTE_HINTS = [
     ["Housing", "Park", "bypass"],
     ["Park", "Housing", "bypass"],
@@ -125,9 +121,6 @@ def _normalize_schema_4(data: dict) -> dict:
         except (TypeError, ValueError):
             continue
         out["lanes"][str(idx)] = _normalize_lane(raw)
-    police = data.get("police")
-    if isinstance(police, list):
-        out["police"] = [_normalize_police(p) for p in police if isinstance(p, dict)]
     hints = data.get("route_hints")
     if isinstance(hints, list):
         out["route_hints"] = [
@@ -221,22 +214,6 @@ def _normalize_lane(raw: dict) -> dict:
     }
 
 
-def _normalize_police(raw: dict) -> dict:
-    try:
-        deploy = int(raw.get("deploy_lane", 0))
-    except (TypeError, ValueError):
-        deploy = 0
-    try:
-        ret = int(raw.get("return_lane", deploy))
-    except (TypeError, ValueError):
-        ret = deploy
-    try:
-        trigger = int(raw.get("red_trigger", 10))
-    except (TypeError, ValueError):
-        trigger = 10
-    return {"deploy_lane": deploy, "return_lane": ret, "red_trigger": trigger}
-
-
 def _migrate_schema_3(data: dict) -> dict:
     places_out: dict[str, dict] = {}
     geometry = data.get("place_geometry") or {}
@@ -296,12 +273,6 @@ def _migrate_schema_3(data: dict) -> dict:
             }
         )
 
-    police = data.get("police")
-    if not isinstance(police, list) or not police:
-        tmpl = data.get("template") if isinstance(data.get("template"), dict) else {}
-        routes = tmpl.get("police_routes") if isinstance(tmpl, dict) else None
-        police = routes if isinstance(routes, list) and routes else copy.deepcopy(_LEGACY_POLICE)
-
     hints = data.get("route_hints")
     if not isinstance(hints, list) or not hints:
         tmpl = data.get("template") if isinstance(data.get("template"), dict) else {}
@@ -325,7 +296,7 @@ def _migrate_schema_3(data: dict) -> dict:
             "places": places_out,
             "intersections": intersections_out,
             "lanes": lanes_out,
-            "police": police,
+            "police": [],
             "route_hints": hints,
             "spawn_balance": sb,
             "user_settings": us,
@@ -380,7 +351,7 @@ def scenario_to_game_dicts(scenario: dict) -> tuple[
             protected=bool(raw.get("protected", False)),
         )
 
-    police = [_normalize_police(p) for p in scenario.get("police", []) if isinstance(p, dict)]
+    police: list[dict] = []
     hints = [
         (str(h[0]), str(h[1]), str(h[2]))
         for h in scenario.get("route_hints", [])
@@ -406,7 +377,7 @@ def apply_scenario_to_game(game: "GameState", scenario: dict) -> None:
         places_by_id,
         intersections_by_id,
         lanes_by_id,
-        police,
+        _police,
         hints,
         origin_bal,
         out_bal,
@@ -417,16 +388,7 @@ def apply_scenario_to_game(game: "GameState", scenario: dict) -> None:
     game.route_hints = hints
     game.origin_spawn_balance_coeff = origin_bal
     game.out_lane_balance_coeff = out_bal
-    from sim import cop
-
-    game.police_list = [
-        cop.PoliceCar(
-            deploy_lane=int(p["deploy_lane"]),
-            return_lane=int(p["return_lane"]),
-            red_trigger=int(p["red_trigger"]),
-        )
-        for p in police
-    ]
+    game.police_list = []
     game.spawn_places = tuple(places_by_id.keys())
 
 
@@ -463,14 +425,6 @@ def game_to_scenario(game: "GameState", window=None) -> dict:
             "lane_type": cfg.lane_type,
             "protected": bool(getattr(cfg, "protected", False)),
         }
-    police = [
-        {
-            "deploy_lane": p.deploy_lane,
-            "return_lane": p.return_lane,
-            "red_trigger": p.red_trigger,
-        }
-        for p in getattr(game, "police_list", [])
-    ]
     hints = [[a, b, c] for (a, b, c) in getattr(game, "route_hints", [])]
     user_settings = {}
     if window is not None:
@@ -485,7 +439,7 @@ def game_to_scenario(game: "GameState", window=None) -> dict:
         "places": places_out,
         "intersections": intersections_out,
         "lanes": lanes_out,
-        "police": police,
+        "police": [],
         "route_hints": hints,
         "spawn_balance": {
             "origin_spawn_balance_coeff": float(getattr(game, "origin_spawn_balance_coeff", 1.0)),

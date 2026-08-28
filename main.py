@@ -1022,7 +1022,7 @@ class StoplightsWindow(arcade.Window):
             overlay.append((inst.depth, 1, spr))
 
         if self._car_sprite_pool is not None:
-            active_police = [p for p in self.game.police_list if p.state in ("deploying", "holding", "returning")]
+            active_police = [p for p in self.game.police_list if p.state in ("deploying", "holding", "diverting", "returning")]
             car_data: list[tuple[float, object, int, float, float, tuple[int, int, int]]] = []
             for car in self.game.cars:
                 if car.pose_gx is None or car.pose_gy is None:

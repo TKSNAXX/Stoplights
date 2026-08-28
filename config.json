@@ -17,7 +17,7 @@
       "center_y": 71,
       "width": 16,
       "length": 11,
-      "spawn_interval": 1.0,
+      "spawn_interval": 2.0,
       "attract_weight": 0.5,
       "protected": true,
       "building_kind": "commercial",
@@ -28,7 +28,7 @@
       "center_y": 1,
       "width": 16,
       "length": 7,
-      "spawn_interval": 1.0,
+      "spawn_interval": 4.0,
       "attract_weight": 1.0,
       "protected": true,
       "building_kind": "residential",
@@ -39,7 +39,7 @@
       "center_y": 28,
       "width": 2,
       "length": 2,
-      "spawn_interval": 1.0,
+      "spawn_interval": 4.0,
       "attract_weight": 0.5,
       "protected": false,
       "building_kind": "residential",
@@ -50,7 +50,7 @@
       "center_y": 76,
       "width": 5,
       "length": 5,
-      "spawn_interval": 1.0,
+      "spawn_interval": 4.0,
       "attract_weight": 1.0,
       "protected": false,
       "building_kind": "residential",
@@ -77,6 +77,61 @@
       "protected": false,
       "building_kind": "residential",
       "building_seed": 1421209930
+    },
+    "Todds": {
+      "center_x": 18,
+      "center_y": 32,
+      "width": 4,
+      "length": 3,
+      "spawn_interval": 8.0,
+      "attract_weight": 1.0,
+      "protected": false,
+      "building_kind": "residential",
+      "building_seed": 1807451763
+    },
+    "Garys": {
+      "center_x": 23,
+      "center_y": 32,
+      "width": 3,
+      "length": 3,
+      "spawn_interval": 8.0,
+      "attract_weight": 1.0,
+      "protected": false,
+      "building_kind": "residential",
+      "building_seed": 25198321
+    },
+    "Judys": {
+      "center_x": 29,
+      "center_y": 32,
+      "width": 2,
+      "length": 3,
+      "spawn_interval": 8.0,
+      "attract_weight": 1.0,
+      "protected": false,
+      "building_kind": "residential",
+      "building_seed": 0
+    },
+    "Joshs": {
+      "center_x": 27,
+      "center_y": 22,
+      "width": 8,
+      "length": 6,
+      "spawn_interval": 8.0,
+      "attract_weight": 1.0,
+      "protected": false,
+      "building_kind": "residential",
+      "building_seed": 720571912
+    },
+    "Marcies": {
+      "center_x": 18,
+      "center_y": 22,
+      "width": 4,
+      "length": 5,
+      "spawn_interval": 8.0,
+      "attract_weight": 1.0,
+      "protected": false,
+      "building_kind": "residential",
+      "building_seed": 894872415
     }
   },
   "intersections": {
@@ -109,7 +164,7 @@
       "protected": false
     },
     "intersection_4": {
-      "type": "tee",
+      "type": "x",
       "center_x": 36,
       "center_y": 28,
       "size_cells": 2,
@@ -140,6 +195,27 @@
       "type": "corner",
       "center_x": 56,
       "center_y": 52,
+      "size_cells": 2,
+      "protected": false
+    },
+    "intersection_9": {
+      "type": "x",
+      "center_x": 29,
+      "center_y": 28,
+      "size_cells": 2,
+      "protected": false
+    },
+    "intersection_10": {
+      "type": "tee",
+      "center_x": 24,
+      "center_y": 28,
+      "size_cells": 2,
+      "protected": false
+    },
+    "intersection_11": {
+      "type": "tee",
+      "center_x": 18,
+      "center_y": 28,
       "size_cells": 2,
       "protected": false
     }
@@ -586,20 +662,217 @@
       "speed_limit": 1.0,
       "lane_type": "normal",
       "protected": false
+    },
+    "34": {
+      "start_tile": [
+        17,
+        30
+      ],
+      "end_tile": [
+        17,
+        29
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "35": {
+      "start_tile": [
+        18,
+        29
+      ],
+      "end_tile": [
+        18,
+        30
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "36": {
+      "start_tile": [
+        23,
+        30
+      ],
+      "end_tile": [
+        23,
+        29
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "37": {
+      "start_tile": [
+        24,
+        29
+      ],
+      "end_tile": [
+        24,
+        30
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "38": {
+      "start_tile": [
+        28,
+        30
+      ],
+      "end_tile": [
+        28,
+        29
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "39": {
+      "start_tile": [
+        29,
+        29
+      ],
+      "end_tile": [
+        29,
+        30
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "40": {
+      "start_tile": [
+        18,
+        25
+      ],
+      "end_tile": [
+        18,
+        26
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "41": {
+      "start_tile": [
+        17,
+        26
+      ],
+      "end_tile": [
+        17,
+        25
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "44": {
+      "start_tile": [
+        29,
+        25
+      ],
+      "end_tile": [
+        29,
+        26
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "45": {
+      "start_tile": [
+        28,
+        26
+      ],
+      "end_tile": [
+        28,
+        25
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "46": {
+      "start_tile": [
+        19,
+        27
+      ],
+      "end_tile": [
+        22,
+        27
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "47": {
+      "start_tile": [
+        22,
+        28
+      ],
+      "end_tile": [
+        19,
+        28
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "48": {
+      "start_tile": [
+        25,
+        27
+      ],
+      "end_tile": [
+        27,
+        27
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "49": {
+      "start_tile": [
+        27,
+        28
+      ],
+      "end_tile": [
+        25,
+        28
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "50": {
+      "start_tile": [
+        30,
+        27
+      ],
+      "end_tile": [
+        34,
+        27
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "51": {
+      "start_tile": [
+        34,
+        28
+      ],
+      "end_tile": [
+        30,
+        28
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
     }
   },
-  "police": [
-    {
-      "deploy_lane": 7,
-      "return_lane": 7,
-      "red_trigger": 10
-    },
-    {
-      "deploy_lane": 5,
-      "return_lane": 5,
-      "red_trigger": 20
-    }
-  ],
+  "police": [],
   "route_hints": [
     [
       "Housing",

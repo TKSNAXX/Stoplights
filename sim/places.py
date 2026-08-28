@@ -218,13 +218,34 @@ def spawn_lanes_for_place(place: str, destination: str | None = None) -> list[in
     return outgoing
 
 
+def lane_is_full(lane_idx: int, occupancy: list) -> bool:
+    """True if cell 0 is taken or the number of on-lane cars is at least the cell count."""
+    cells = world.get_lane_cells(lane_idx)
+    if not cells:
+        return True
+    n = 0
+    cell0 = False
+    for car in occupancy:
+        if getattr(car, "motion_mode", "lane") != "lane":
+            continue
+        if getattr(car, "lane_index", None) != lane_idx:
+            continue
+        n += 1
+        if getattr(car, "position_in_lane", -1) == 0:
+            cell0 = True
+    return cell0 or n >= len(cells)
+
+
 def choose_spawn_lane(
     place: str,
     destination: str | None = None,
     lane_usage_counts: dict[tuple[str, int], int] | None = None,
     out_lane_balance_coeff: float = 0.0,
+    occupancy: list | None = None,
 ) -> int | None:
     candidates = spawn_lanes_for_place(place, destination)
+    if occupancy is not None:
+        candidates = [i for i in candidates if not lane_is_full(i, occupancy)]
     if not candidates:
         return None
     if not lane_usage_counts or out_lane_balance_coeff <= 0.0:

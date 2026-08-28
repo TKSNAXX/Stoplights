@@ -1,6 +1,6 @@
 # Stoplights — State of the Project
 
-**As of:** 2026-08-27 (world colour grade)  
+**As of:** 2026-08-28 (cop linger, graph divert, full-lane spawn)  
 **Status:** Playable prototype / in-game editor-lite. Not a shippable game.  
 **Stack:** Python 3 + Arcade (`arcade>=2.6.0`). Entry point: `python main.py` from `Stoplights/`.
 
@@ -19,7 +19,7 @@ This is the current-state snapshot. Read it first. The other Agent files are sup
 
 **Vision:** A Chris Sawyer / RCT-scale isometric sandbox about micromanaging traffic — lane by lane, hour by hour — that eventually captures the mess of real road construction. Cars have origins and destinations. Places generate and attract demand. Roads are discrete directed lanes that start and stop at intersections. Long-term flavour: scheduled demand, backups, crashes, emergency vehicles, construction, Steam if it is fun.
 
-**What it is today:** A self-running isometric traffic sim with a working (if rough) in-game editor. There is still **no stoplight**. Cars use a visibility cone (green / yellow / red), an impasse white-override when two cars deadlock, and police cars that deploy on gridlock. Demand is steady, not time-of-day.
+**What it is today:** A self-running isometric traffic sim with a working (if rough) in-game editor. There is still **no stoplight**. Cars use a visibility cone (green / yellow / red), an impasse white-override when two cars deadlock, and police that spawn on demand from the nearest place into a jammed intersection (max two per node at local scores 10/20). After a 2s dismiss confirm they linger 5s, then graph-divert as a second cop to another jammed node or go home. Places do not spawn onto a packed outbound lane. Demand is steady, not time-of-day.
 
 The name is a promise, not a feature.
 
@@ -38,7 +38,7 @@ The engine no longer special-cases `main` / `bypass` / “extra” or the origin
 - Places, intersections, and lanes are **infrastructure**: the authored occupancy cars use. Uniform records with a **`protected`** flag (delete refused when true). Types stay `Place` / `LaneConfig` / `IntersectionConfig`. Cars are not infrastructure.
 - **`traffic_in` / `traffic_out`** derived from occupancy at lane endpoints.
 - **Straight / turn / U-turn** from tangents and place identity — not hardcoded `(0,1)` tables.
-- **Police home ends** derived from which end of the lane is a place.
+- **Police** spawn on demand from the nearest place into a jammed intersection (max two per node at local 10/20). Home end of the deploy lane is the place. After 2s confirm + 5s linger they may graph-divert once as a second cop, else go home. `police` in schema 4 is empty (not authored units).
 - **Route hints** (e.g. Housing↔Park via bypass) live in map data, not Python names.
 - Stable **lane ids** as a dict (gaps allowed). `reset_to_defaults()` reloads `default.json`.
 - Schema 3 saves migrate on load (living sandbox extras kept).
@@ -90,7 +90,7 @@ sim/
   map_data.py    Geometry helpers only (no named default map)
   places.py      Place record + graph routing + route_hints
   paths.py       Tangents, straight-by-dot, turn arcs
-  cop.py         Police; home end derived from traffic meta
+  cop.py         On-demand cops; jam score per intersection; place-end home
   persistence.py config.json schema 4
   …
 assets/maps/default.json   Authored default scenario
@@ -98,7 +98,7 @@ config.json                Living session save (schema 4)
 tests/test_universal_map.py
 ```
 
-**Scenario contract (schema 4):** `places`, `intersections`, `lanes`, `police`, `route_hints`, `spawn_balance`, `user_settings`. Entity ids may be named `main` / `Housing` in data; the engine treats them as opaque strings.
+**Scenario contract (schema 4):** `places`, `intersections`, `lanes`, `police` (always `[]`; cops are spawned at runtime), `route_hints`, `spawn_balance`, `user_settings`. Entity ids may be named `main` / `Housing` in data; the engine treats them as opaque strings.
 
 **Conventions:** Grid y increases north. Eight directions 0=N … 7=NW. Iterate lanes with `world.lane_ids()`, not `range(lane_count())`.
 
@@ -129,7 +129,7 @@ python -m tests.test_universal_map
 
 - **U-turns:** Semantic (same place on approach in and exit out). No index tables.
 - **Police home:** Place end of the lane (`traffic_in` place → pos 0; `traffic_out` place → len−1).
-- **Cop dismiss:** Red count ≤ 1.
+- **Cop dismiss:** Remaining red jam for **that node** (red-in-box + red inbound tails in the last 8 cells; if an inbound is shorter, that attached intersection’s box as well, not its lanes) ≤ 1 for 2s confirm, then 5s linger (no mid-linger cancel; re-assess once at the end). Then graph-divert as 2nd cop to another jammed node with fewer than 2 cops, else home; abort divert if dest clears. Spawn occupancy 10/20 per node. No spawn onto a packed outbound lane (cell 0 taken or car count ≥ length; timer unspent). Path-in-box is occupancy membership (overlaps count). Holding or arriving-at-mouth cyans that node’s jam; in-transit (including divert) uses the cop’s fan. Rebuild prunes invalid cops instead of wiping the list.
 - **Car dataclass:** `slots=True`; non-default fields first.
 - **Draw crashes:** Missing texture / `pixelated=True`.
 - **New junctions:** Only matter if lanes pierce them (occupancy at endpoints).

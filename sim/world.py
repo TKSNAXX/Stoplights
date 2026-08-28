@@ -125,6 +125,12 @@ def get_intersection_at_cell(cell: tuple[int, int]) -> str | None:
     return None
 
 
+def cell_in_intersection(cell: tuple[int, int], key: str) -> bool:
+    """True if cell is in this intersection's occupancy (overlaps allowed)."""
+    inter = _state.intersections.get(key)
+    return bool(inter) and cell in inter.cells_set
+
+
 def get_intersection_keys() -> list[str]:
     """Return all intersection ids in sorted order."""
     return sorted(_state.intersections.keys())

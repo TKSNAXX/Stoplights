@@ -79,8 +79,12 @@ def spawn_car(
     attract_weights: dict[str, float] | None = None,
     lane_usage_counts: dict[tuple[str, int], int] | None = None,
     out_lane_balance_coeff: float = 0.0,
-) -> Car:
-    """Create a car at the start of a lane leaving origin. destination defaults to weighted random other place."""
+    occupancy: list | None = None,
+) -> Car | None:
+    """Create a car at the start of a lane leaving origin. destination defaults to weighted random other place.
+
+    Returns None when every candidate outbound lane is full (caller should not consume the spawn timer).
+    """
     lane_index: int | None = None
     if destination is None or destination == origin:
         lane_index = choose_spawn_lane(
@@ -88,7 +92,10 @@ def spawn_car(
             None,
             lane_usage_counts=lane_usage_counts,
             out_lane_balance_coeff=out_lane_balance_coeff,
+            occupancy=occupancy,
         )
+        if lane_index is None:
+            return None
         others = [p for p in world.get_place_rects().keys() if p != origin]
         if not others:
             destination = origin
@@ -111,10 +118,10 @@ def spawn_car(
             destination,
             lane_usage_counts=lane_usage_counts,
             out_lane_balance_coeff=out_lane_balance_coeff,
+            occupancy=occupancy,
         )
     if lane_index is None:
-        fallback = [i for i in world.lane_ids() if world.lane_traffic_in(i) == origin]
-        lane_index = random.choice(fallback) if fallback else (world.lane_ids()[0] if world.lane_ids() else 0)
+        return None
     color = random.choice(_CAR_COLOR_PALETTE)
     base_speed_multiplier = random.uniform(0.6, 1.2)
     return Car(origin=origin, destination=destination, lane_index=lane_index, position_in_lane=0, color=color, base_speed_multiplier=base_speed_multiplier)

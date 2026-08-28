@@ -115,6 +115,7 @@ class GameState:
         place_rects = place_rects_from_places(self.places)
         places.set_route_hints(self.route_hints)
         world.rebuild_world(place_rects, self.intersections, self.lanes)
+        self._prune_police()
         self._refresh_spawn_places_from_world()
 
     def _refresh_spawn_places_from_world(self) -> None:
@@ -201,34 +202,28 @@ class GameState:
                 car.police_hold_until_exit = False
 
         for police in self.police_list:
-            if police.state not in ("deploying", "holding", "returning"):
+            if police.state not in ("deploying", "holding", "diverting", "returning"):
                 continue
-            px, py, _ = police.get_pose()
-            if police.state in ("deploying", "returning"):
+            px, py, pdi = police.get_pose()
+            if police.at_mouth():
+                for car in self.cars:
+                    if not cop.in_node_jam(car, police.target_intersection):
+                        continue
+                    if car.motion_mode == "path":
+                        car.police_hold_until_exit = True
+                    else:
+                        car.police_priority_active = True
+            elif police.state in ("deploying", "diverting", "returning"):
                 for i in nearby_for(px, py):
                     car = self.cars[i]
                     pose = poses[i]
                     if pose is None:
                         continue
-                    gx, gy, di = pose
-                    band = visibility_zone_band(gx, gy, di, px, py, VIS_ZONE_LENGTH_CELLS, half_width)
+                    gx, gy, _ = pose
+                    band = visibility_zone_band(px, py, pdi, gx, gy, VIS_ZONE_LENGTH_CELLS, half_width)
                     visibility_checks += 1
                     if band in ("near", "far"):
                         car.police_priority_active = True
-            else:
-                in_intersection: list[tuple[float, cars.Car]] = []
-                for i, car in enumerate(self.cars):
-                    if car.motion_mode != "path":
-                        continue
-                    pose = poses[i]
-                    if pose is None:
-                        continue
-                    gx, gy, _ = pose
-                    dist_sq = (gx - px) ** 2 + (gy - py) ** 2
-                    in_intersection.append((dist_sq, car))
-                in_intersection.sort(key=lambda item: item[0])
-                for _, car in in_intersection[:3]:
-                    car.police_hold_until_exit = True
         return visibility_checks
 
     def _apply_visibility(
@@ -282,6 +277,102 @@ class GameState:
                 candidates.add(i)
         return candidates
 
+    def _cops_on_node(self, node: str) -> int:
+        n = 0
+        for p in self.police_list:
+            if p.state in ("despawned", "returning"):
+                continue
+            if p.target_intersection == node:
+                n += 1
+        return n
+
+    def _pick_divert_dest(self, police: cop.PoliceCar, remaining: dict[str, int]) -> str | None:
+        if not police.can_divert:
+            return None
+        current = police.target_intersection
+        best: str | None = None
+        best_score = 1
+        for node, score in remaining.items():
+            if node == current or score <= 1:
+                continue
+            if self._cops_on_node(node) >= cop.COPS_PER_INTERSECTION:
+                continue
+            if score > best_score:
+                best_score = score
+                best = node
+        return best
+
+    def _update_police(self, dt: float) -> None:
+        """Spawn on occupancy 10/20; linger then divert or home; drop despawned."""
+        keys = world.get_intersection_keys()
+        occupancy = {key: cop.intersection_jam_score(self.cars, key) for key in keys}
+        remaining = {key: cop.intersection_dismiss_score(self.cars, key) for key in keys}
+        for node, score in occupancy.items():
+            active = [
+                p
+                for p in self.police_list
+                if p.target_intersection == node and p.state != "despawned"
+            ]
+            n = len(active)
+            want = False
+            if n < 1 and score >= cop.JAM_TRIGGER:
+                want = True
+            elif n < cop.COPS_PER_INTERSECTION and score >= cop.JAM_TRIGGER_SECOND:
+                want = True
+            if not want:
+                continue
+            used = {p.deploy_lane for p in active}
+            lane = cop.pick_deploy_lane(node, used)
+            if lane is None:
+                continue
+            self.police_list.append(cop.spawn_police(node, lane))
+        for police in self.police_list:
+            if police.state == "diverting" and remaining.get(police.target_intersection, 0) <= 1:
+                police.begin_return_home()
+            police.tick(dt, remaining.get(police.target_intersection, 0))
+            if police.depart_pending:
+                dest = self._pick_divert_dest(police, remaining)
+                if dest:
+                    police.begin_divert(dest)
+                else:
+                    police.begin_return_home()
+        self.police_list = [p for p in self.police_list if p.state != "despawned"]
+
+    def _prune_police(self) -> None:
+        """Drop cops whose node or travel lane no longer exists."""
+        keys = set(world.get_intersection_keys())
+        place_ids = set(world.get_place_rects().keys())
+        lane_ids = set(world.lane_ids())
+        kept: list[cop.PoliceCar] = []
+        for p in self.police_list:
+            if p.motion == "path":
+                if p.path_in not in lane_ids or p.path_out not in lane_ids:
+                    continue
+            else:
+                lane = p.travel_lane if p.travel_lane in lane_ids else p.deploy_lane
+                if lane not in lane_ids:
+                    continue
+                if p._lane_len(lane) < 2:
+                    continue
+            if p.state in ("deploying", "holding", "diverting"):
+                if p.target_intersection not in keys:
+                    continue
+            if p.state == "deploying":
+                tin = world.lane_traffic_in(p.deploy_lane)
+                tout = world.lane_traffic_out(p.deploy_lane)
+                if p.target_intersection not in (tin, tout):
+                    continue
+            if p.state == "holding":
+                hold_lane = p.travel_lane if p.travel_lane in lane_ids else p.deploy_lane
+                tin = world.lane_traffic_in(hold_lane)
+                tout = world.lane_traffic_out(hold_lane)
+                if p.target_intersection not in (tin, tout):
+                    continue
+            if p.state == "returning" and p.home_place and p.home_place not in place_ids:
+                continue
+            kept.append(p)
+        self.police_list = kept
+
     def tick(self, dt: float, current_time: float, base_duration: float = 0.2) -> None:
         tick_start = time.perf_counter()
         self._accumulated_time += dt
@@ -307,6 +398,8 @@ class GameState:
         spatial_buckets = rebuild_spatial_buckets_inplace(self._spatial_buckets, poses)
         nearby_for = lambda gx, gy: nearby_indices(gx, gy, spatial_buckets, SPATIAL_QUERY_RADIUS_CELLS)
 
+        self._update_police(dt)
+
         visibility_start = time.perf_counter()
         visibility_checks = self._apply_police_influence(poses, nearby_for, half_width)
         visibility_checks += self._apply_visibility(poses, nearby_for, half_width)
@@ -322,10 +415,6 @@ class GameState:
             self._impasse_timers,
             self._collect_impasse_candidates(),
         )
-
-        red_count = self.count_red_cars()
-        for police in self.police_list:
-            police.tick(dt, red_count)
 
         to_remove: list[cars.Car] = []
         for car in self.cars:

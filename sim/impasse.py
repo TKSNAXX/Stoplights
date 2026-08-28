@@ -97,9 +97,12 @@ def apply_impasse(
             cars_list[idx_hi].impasse_active = True
             cars_list[idx_hi].impasse_partner_id = id_lo
 
-    # Apply white override after visibility computation
+    # Apply white override after visibility; police cyan wins.
     for car in cars_list:
-        if getattr(car, "impasse_active", False):
-            car.visibility_state = "white"
-            car.speed_scale = IMPASSE_SPEED_SCALE
+        if not getattr(car, "impasse_active", False):
+            continue
+        if getattr(car, "police_priority_active", False) or getattr(car, "police_hold_until_exit", False):
+            continue
+        car.visibility_state = "white"
+        car.speed_scale = IMPASSE_SPEED_SCALE
     return pair_checks

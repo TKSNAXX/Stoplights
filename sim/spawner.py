@@ -68,7 +68,11 @@ def update_spawns(
             attract_weights=attract_weights,
             lane_usage_counts=lane_spawn_counts,
             out_lane_balance_coeff=out_lane_balance_coeff,
+            occupancy=out_cars,
         )
+        if car is None:
+            spawn_timers[place] += interval
+            continue
         out_cars.append(car)
         if origin_spawn_counts is not None:
             origin_spawn_counts[place] = origin_spawn_counts.get(place, 0) + 1

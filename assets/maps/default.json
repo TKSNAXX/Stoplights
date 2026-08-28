@@ -144,10 +144,7 @@
       "protected": true
     }
   },
-  "police": [
-    {"deploy_lane": 7, "return_lane": 7, "red_trigger": 10},
-    {"deploy_lane": 5, "return_lane": 5, "red_trigger": 20}
-  ],
+  "police": [],
   "route_hints": [
     ["Housing", "Park", "bypass"],
     ["Park", "Housing", "bypass"]
