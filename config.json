@@ -6,70 +6,77 @@
       "center_y": 46,
       "width": 8,
       "length": 16,
-      "spawn_interval": 2.0,
+      "spawn_interval": 1.0,
       "attract_weight": 1.0,
       "protected": true,
-      "building_kind": "commercial"
+      "building_kind": "commercial",
+      "building_seed": 1038649245
     },
     "Office": {
       "center_x": 36,
       "center_y": 71,
       "width": 16,
       "length": 11,
-      "spawn_interval": 2.0,
-      "attract_weight": 1.0,
+      "spawn_interval": 1.0,
+      "attract_weight": 0.5,
       "protected": true,
-      "building_kind": "commercial"
+      "building_kind": "commercial",
+      "building_seed": 481893302
     },
     "Housing": {
       "center_x": 40,
       "center_y": 1,
       "width": 16,
       "length": 7,
-      "spawn_interval": 2.0,
+      "spawn_interval": 1.0,
       "attract_weight": 1.0,
       "protected": true,
-      "building_kind": "residential"
+      "building_kind": "residential",
+      "building_seed": 0
     },
     "Your Moms House": {
       "center_x": 40,
       "center_y": 28,
       "width": 2,
       "length": 2,
-      "spawn_interval": 2.0,
-      "attract_weight": 1.0,
+      "spawn_interval": 1.0,
+      "attract_weight": 0.5,
       "protected": false,
-      "building_kind": "residential"
+      "building_kind": "residential",
+      "building_seed": 0
     },
     "Escape": {
       "center_x": 19,
       "center_y": 76,
       "width": 5,
       "length": 5,
-      "spawn_interval": 2.0,
+      "spawn_interval": 1.0,
       "attract_weight": 1.0,
       "protected": false,
-      "building_kind": "residential"
+      "building_kind": "residential",
+      "building_seed": 0
     },
     "Park": {
       "center_x": 58,
       "center_y": 42,
       "width": 16,
       "length": 13,
-      "spawn_interval": 2.0,
+      "spawn_interval": 1.0,
       "attract_weight": 1.0,
       "protected": true,
-      "building_kind": "commercial"
+      "building_kind": "none",
+      "building_seed": 0
     },
     "The Hood": {
       "center_x": 54,
       "center_y": 63,
       "width": 12,
       "length": 16,
-      "spawn_interval": 2.0,
+      "spawn_interval": 1.0,
       "attract_weight": 1.0,
       "protected": false,
-      "building_kind": "residential"
+      "building_kind": "residential",
+      "building_seed": 1421209930
     }
   },
   "intersections": {
@@ -109,14 +116,14 @@
       "protected": false
     },
     "intersection_5": {
-      "type": "x",
+      "type": "tee",
       "center_x": 36,
       "center_y": 60,
       "size_cells": 2,
       "protected": false
     },
     "intersection_6": {
-      "type": "x",
+      "type": "tee",
       "center_x": 46,
       "center_y": 48,
       "size_cells": 2,

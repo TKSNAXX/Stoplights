@@ -180,6 +180,7 @@ def _normalize_place(raw: dict, place_id: str = "") -> dict:
         "attract_weight": attract,
         "protected": bool(raw.get("protected", False)),
         "building_kind": places.clamp_building_kind(raw.get("building_kind"), place_id),
+        "building_seed": places.clamp_building_seed(raw.get("building_seed", 0)),
     }
 
 
@@ -353,6 +354,7 @@ def scenario_to_game_dicts(scenario: dict) -> tuple[
             attract_weight=float(raw.get("attract_weight", 1.0)),
             protected=bool(raw.get("protected", False)),
             building_kind=places.clamp_building_kind(raw.get("building_kind"), key),
+            building_seed=places.clamp_building_seed(raw.get("building_seed", 0)),
         )
 
     intersections_by_id: dict[str, places.IntersectionConfig] = {}
@@ -441,6 +443,7 @@ def game_to_scenario(game: "GameState", window=None) -> dict:
             "attract_weight": p.attract_weight,
             "protected": bool(getattr(p, "protected", False)),
             "building_kind": places.clamp_building_kind(getattr(p, "building_kind", None), key),
+            "building_seed": places.clamp_building_seed(getattr(p, "building_seed", 0)),
         }
     intersections_out: dict[str, dict] = {}
     for key, cfg in game.intersections.items():

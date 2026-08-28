@@ -36,7 +36,13 @@ from sim.scenario import (
     apply_scenario_to_game,
     scenario_to_game_dicts,
 )
-from render.buildings import BuildingDef, instances_overlap_ok, load_catalog, pack_place
+from render.buildings import (
+    BuildingDef,
+    instances_overlap_ok,
+    load_catalog,
+    pack_place,
+    shuffle_building_seed,
+)
 
 
 def test_migrate_schema_3_snippet() -> None:
@@ -434,6 +440,7 @@ def test_building_pack_counts() -> None:
     defs = _pack_test_defs()
     assert pack_place(0, 0, 1, 1, "residential", defs, "A") == []
     assert pack_place(0, 0, 1, 2, "residential", defs, "A") == []
+    assert pack_place(0, 0, 5, 5, "none", defs, "Park") == []
     p22 = pack_place(0, 0, 2, 2, "residential", defs, "A")
     assert len(p22) == 1
     _assert_inside_place(p22, 0, 0, 2, 2)
@@ -523,6 +530,76 @@ def test_building_kind_roundtrip() -> None:
     )
     assert migrated["places"]["Housing"]["building_kind"] == "residential"
     assert migrated["places"]["Office"]["building_kind"] == "commercial"
+    g2 = GameState()
+    g2.places["Park"].building_kind = "none"
+    data2 = game_to_scenario(g2)
+    assert data2["places"]["Park"]["building_kind"] == "none"
+    places2, *_ = scenario_to_game_dicts(migrate_to_schema_4(data2))
+    assert places2["Park"].building_kind == "none"
+
+
+def test_building_seed_shuffle() -> None:
+    defs = load_catalog(persist=True)
+    a = pack_place(0, 0, 5, 5, "residential", defs, "Housing", seed=0)
+    b = pack_place(0, 0, 5, 5, "residential", defs, "Housing")
+    assert a and a[0].asset_id == b[0].asset_id
+    ids = {
+        pack_place(0, 0, 5, 5, "residential", defs, "Housing", seed=s)[0].asset_id
+        for s in range(1, 48)
+    }
+    assert len(ids) > 1
+    g = GameState()
+    assert getattr(g.places["Housing"], "building_seed", 0) == 0
+    g.places["Housing"].building_seed = 7
+    data = game_to_scenario(g)
+    assert data["places"]["Housing"]["building_seed"] == 7
+    places_by_id, *_ = scenario_to_game_dicts(migrate_to_schema_4(data))
+    assert places_by_id["Housing"].building_seed == 7
+    migrated = migrate_to_schema_4(
+        {
+            "schema_version": 4,
+            "places": {
+                "Housing": {
+                    "center_x": 36, "center_y": 2, "width": 5, "length": 5,
+                    "building_kind": "residential",
+                },
+            },
+            "intersections": {},
+            "lanes": {},
+        }
+    )
+    assert migrated["places"]["Housing"]["building_seed"] == 0
+    new_seed = shuffle_building_seed(defs, "residential", "Housing", 5, 5, 0)
+    assert new_seed != 0
+    shuffled = pack_place(0, 0, 5, 5, "residential", defs, "Housing", seed=new_seed)
+    assert shuffled
+
+
+def test_building_layout_shuffle() -> None:
+    defs = load_catalog(persist=True)
+    house0 = pack_place(0, 0, 5, 5, "residential", defs, "Housing", seed=0)
+    assert len(house0) == 1
+    assert house0[0].asset_id == "house"
+    assert house0[0].cells_e == 3 and house0[0].cells_n == 3
+    layouts = {
+        (inst.origin_x, inst.origin_y, inst.cells_e, inst.cells_n)
+        for s in range(1, 48)
+        for inst in pack_place(0, 0, 5, 5, "residential", defs, "Housing", seed=s)
+    }
+    assert len(layouts) > 1
+    p99 = pack_place(0, 0, 9, 9, "residential", defs, "Housing", seed=0)
+    assert len(p99) == 4
+    merged = None
+    for s in range(1, 120):
+        packed = pack_place(0, 0, 9, 9, "residential", defs, "Estate", seed=s)
+        if len(packed) < 4:
+            merged = packed
+            break
+    assert merged is not None
+    _assert_inside_place(merged, 0, 0, 9, 9)
+    for inst in merged:
+        if inst.asset_id.startswith("house"):
+            assert inst.fit_scale <= 1.0 + 1e-9
 
 
 def test_building_catalog_natural_scale() -> None:
@@ -558,6 +635,8 @@ def main() -> None:
         test_building_pack_counts,
         test_building_pack_long_variants,
         test_building_kind_roundtrip,
+        test_building_seed_shuffle,
+        test_building_layout_shuffle,
         test_building_catalog_natural_scale,
     ]
     failed = 0

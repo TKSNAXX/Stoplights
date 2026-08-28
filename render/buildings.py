@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import secrets
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from sim.constants import ORTHO_TILE_SIZE, TILE_H, TILE_W
 from sim.places import (
     BUILDING_KIND_COMMERCIAL,
+    BUILDING_KIND_NONE,
     BUILDING_KIND_RESIDENTIAL,
     default_building_kind,
 )
@@ -239,10 +241,6 @@ def _spread(count: int, foot: int, size: int, gap: int = GAP_CELLS) -> list[int]
     return out
 
 
-def _slot_hash(place_id: str, kind: str, slot: int) -> int:
-    return int(hashlib.md5(f"{place_id}:{kind}:{slot}".encode("utf-8")).hexdigest(), 16)
-
-
 def _sit_on_lot(ce: int, cn: int, w: int, l: int) -> tuple[int, int, float, int, int]:
     """Building first: natural plate if it fits; leftover cells are yard.
 
@@ -264,8 +262,116 @@ def _sit_on_lot(ce: int, cn: int, w: int, l: int) -> tuple[int, int, float, int,
     return occ_e, occ_n, fit, ox, oy
 
 
-def _slot_hash(place_id: str, kind: str, slot: int) -> int:
-    return int(hashlib.md5(f"{place_id}:{kind}:{slot}".encode("utf-8")).hexdigest(), 16)
+def _layout_hash(place_id: str, seed: int, *parts: object) -> int:
+    key = f"{place_id}:{int(seed)}:" + ":".join(str(p) for p in parts)
+    return int(hashlib.md5(key.encode("utf-8")).hexdigest(), 16)
+
+
+def _is_house_art(asset_id: str) -> bool:
+    return str(asset_id).startswith("house")
+
+
+def _fill_t(place_id: str, slot: int, seed: int) -> float:
+    return 0.6 + 0.4 * ((_layout_hash(place_id, seed, "fill", slot) % 1000) / 999.0)
+
+
+def _offset_in_plate(
+    occ_e: int, occ_n: int, pw: int, ph: int, place_id: str, slot: int, seed: int
+) -> tuple[int, int]:
+    ex = max(0, pw - occ_e)
+    ey = max(0, ph - occ_n)
+    h = _layout_hash(place_id, seed, "off", slot) % 9
+    fx = (0.5, 0.0, 1.0, 0.5, 0.5, 0.0, 1.0, 0.0, 1.0)[h]
+    fy = (0.5, 0.5, 0.5, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0)[h]
+    ox = ex // 2 if fx == 0.5 else int(round(ex * fx))
+    oy = ey // 2 if fy == 0.5 else int(round(ey * fy))
+    return max(0, min(ex, ox)), max(0, min(ey, oy))
+
+
+def _sit_shuffled(
+    ce: int,
+    cn: int,
+    pw: int,
+    ph: int,
+    asset_id: str,
+    place_id: str,
+    slot: int,
+    seed: int,
+) -> tuple[int, int, float, int, int]:
+    """Fill 60–100% of allowed occupancy; houses never exceed natural scale. Offset by hash."""
+    ce, cn = max(1, int(ce)), max(1, int(cn))
+    pw, ph = max(1, int(pw)), max(1, int(ph))
+    t = _fill_t(place_id, slot, seed)
+    if _is_house_art(asset_id):
+        if ce <= pw and cn <= ph:
+            hi_e, hi_n = ce, cn
+        else:
+            fit_hi = min(1.0, (pw + ph) / (ce + cn))
+            hi_e = min(pw, max(1, int(round(ce * fit_hi))))
+            hi_n = min(ph, max(1, int(round(cn * fit_hi))))
+        cap = 1.0
+    else:
+        fit_hi = min(pw / ce, ph / cn)
+        hi_e = min(pw, max(1, int(round(ce * fit_hi))))
+        hi_n = min(ph, max(1, int(round(cn * fit_hi))))
+        cap = None
+    lo_e = max(1, int(round(min(ce, pw, hi_e) * 0.6)))
+    lo_n = max(1, int(round(min(cn, ph, hi_n) * 0.6)))
+    lo_e, lo_n = min(lo_e, hi_e), min(lo_n, hi_n)
+    occ_e = max(1, int(round(lo_e + (hi_e - lo_e) * t)))
+    occ_n = max(1, int(round(lo_n + (hi_n - lo_n) * t)))
+    occ_e, occ_n = min(occ_e, hi_e, pw), min(occ_n, hi_n, ph)
+    fit = min(occ_e / ce, occ_n / cn)
+    if cap is not None:
+        fit = min(fit, cap)
+    occ_e = min(pw, max(1, int(round(ce * fit))))
+    occ_n = min(ph, max(1, int(round(cn * fit))))
+    ox, oy = _offset_in_plate(occ_e, occ_n, pw, ph, place_id, slot, seed)
+    return occ_e, occ_n, fit, ox, oy
+
+
+def _merge_slot_plates(
+    xs: list[int],
+    ys: list[int],
+    foot: int,
+    place_id: str,
+    seed: int,
+) -> list[tuple[int, int, int, int, int]]:
+    """Union 1, 2-adj, or 2×2 slot rects (alleys included). Returns (px, py, pw, ph, slot)."""
+    nx, ny = len(xs), len(ys)
+    cells = [(ix, iy) for iy in range(ny) for ix in range(nx)]
+    cells.sort(key=lambda c: _layout_hash(place_id, seed, "ord", c[0], c[1]))
+    claimed: set[tuple[int, int]] = set()
+    plates: list[tuple[int, int, int, int, int]] = []
+    slot = 0
+    for ix, iy in cells:
+        if (ix, iy) in claimed:
+            continue
+        roll = _layout_hash(place_id, seed, "mrg", ix, iy) % 4
+        members = [(ix, iy)]
+        if roll == 3 and ix + 1 < nx and iy + 1 < ny:
+            quad = ((ix, iy), (ix + 1, iy), (ix, iy + 1), (ix + 1, iy + 1))
+            if all(p not in claimed for p in quad):
+                members = list(quad)
+        elif roll == 1 and ix + 1 < nx and (ix + 1, iy) not in claimed:
+            members = [(ix, iy), (ix + 1, iy)]
+        elif roll == 2 and iy + 1 < ny and (ix, iy + 1) not in claimed:
+            members = [(ix, iy), (ix, iy + 1)]
+        for p in members:
+            claimed.add(p)
+        ixs = [p[0] for p in members]
+        iys = [p[1] for p in members]
+        px, py = xs[min(ixs)], ys[min(iys)]
+        pw = xs[max(ixs)] + foot - px
+        ph = ys[max(iys)] + foot - py
+        plates.append((px, py, pw, ph, slot))
+        slot += 1
+    return plates
+
+
+def _slot_hash(place_id: str, kind: str, slot: int, seed: int = 0) -> int:
+    key = f"{place_id}:{kind}:{slot}" if not seed else f"{place_id}:{kind}:{slot}:{int(seed)}"
+    return int(hashlib.md5(key.encode("utf-8")).hexdigest(), 16)
 
 
 def _pick_def(
@@ -277,6 +383,7 @@ def _pick_def(
     prefer_n: int,
     max_e: int | None = None,
     max_n: int | None = None,
+    seed: int = 0,
 ) -> BuildingDef | None:
     pool = [d for d in defs if d.kind == kind]
     if not pool:
@@ -295,7 +402,32 @@ def _pick_def(
         oriented = []
     if oriented:
         pool = oriented
-    return pool[_slot_hash(place_id, kind, slot) % len(pool)]
+    return pool[_slot_hash(place_id, kind, slot, seed) % len(pool)]
+
+
+def _append_instance(
+    packed: list[PackedBuilding],
+    d: BuildingDef,
+    x0: int,
+    y0: int,
+    px: int,
+    py: int,
+    occ_e: int,
+    occ_n: int,
+    fit: float,
+    lx: int,
+    ly: int,
+) -> None:
+    packed.append(
+        PackedBuilding(
+            asset_id=d.asset_id,
+            origin_x=x0 + px + lx,
+            origin_y=y0 + py + ly,
+            cells_e=occ_e,
+            cells_n=occ_n,
+            fit_scale=fit,
+        )
+    )
 
 
 def pack_place(
@@ -306,12 +438,17 @@ def pack_place(
     kind: str,
     defs: list[BuildingDef],
     place_id: str,
+    seed: int = 0,
 ) -> list[PackedBuilding]:
     """Lay out buildings on a place AABB with yards and gaps. Does not overstuff."""
     w, l = int(width), int(length)
     if min(w, l) < 2:
         return []
-    kind = kind if kind in (BUILDING_KIND_RESIDENTIAL, BUILDING_KIND_COMMERCIAL) else default_building_kind(place_id)
+    if kind == BUILDING_KIND_NONE:
+        return []
+    if kind not in (BUILDING_KIND_RESIDENTIAL, BUILDING_KIND_COMMERCIAL):
+        kind = default_building_kind(place_id)
+    seed = int(seed or 0)
     foot = NATURAL_SQUARE_CELLS
     small_lot = w <= 5 and l <= 5
     nx, _ = count_along(w, foot)
@@ -323,31 +460,72 @@ def pack_place(
     xs = _spread(nx, foot, w)
     ys = _spread(ny, foot, l)
     packed: list[PackedBuilding] = []
-    slot = 0
     single = nx == 1 and ny == 1
-    for sx in xs:
-        for sy in ys:
-            d = _pick_def(defs, kind, place_id, slot, w if single else foot, l if single else foot)
-            if d is None:
-                continue
-            ce, cn = max(1, d.world_cells_e), max(1, d.world_cells_n)
-            if single:
-                occ_e, occ_n, fit, ox, oy = _sit_on_lot(ce, cn, w, l)
-            else:
-                occ_e, occ_n, fit, lx, ly = _sit_on_lot(ce, cn, foot, foot)
-                ox, oy = sx + lx, sy + ly
-            packed.append(
-                PackedBuilding(
-                    asset_id=d.asset_id,
-                    origin_x=x0 + ox,
-                    origin_y=y0 + oy,
-                    cells_e=occ_e,
-                    cells_n=occ_n,
-                    fit_scale=fit,
+    if seed == 0:
+        slot = 0
+        for sx in xs:
+            for sy in ys:
+                d = _pick_def(
+                    defs, kind, place_id, slot,
+                    w if single else foot, l if single else foot,
+                    seed=seed,
                 )
-            )
-            slot += 1
+                if d is None:
+                    continue
+                ce, cn = max(1, d.world_cells_e), max(1, d.world_cells_n)
+                if single:
+                    occ_e, occ_n, fit, lx, ly = _sit_on_lot(ce, cn, w, l)
+                    _append_instance(packed, d, x0, y0, 0, 0, occ_e, occ_n, fit, lx, ly)
+                else:
+                    occ_e, occ_n, fit, lx, ly = _sit_on_lot(ce, cn, foot, foot)
+                    _append_instance(packed, d, x0, y0, sx, sy, occ_e, occ_n, fit, lx, ly)
+                slot += 1
+        return packed
+
+    if single:
+        plates = [(0, 0, w, l, 0)]
+    else:
+        plates = _merge_slot_plates(xs, ys, foot, place_id, seed)
+    for px, py, pw, ph, slot in plates:
+        d = _pick_def(defs, kind, place_id, slot, pw, ph, seed=seed)
+        if d is None:
+            continue
+        ce, cn = max(1, d.world_cells_e), max(1, d.world_cells_n)
+        occ_e, occ_n, fit, lx, ly = _sit_shuffled(ce, cn, pw, ph, d.asset_id, place_id, slot, seed)
+        _append_instance(packed, d, x0, y0, px, py, occ_e, occ_n, fit, lx, ly)
     return packed
+
+
+def _next_distinct_seed(current: int) -> int:
+    cur = max(0, int(current or 0))
+    for _ in range(16):
+        n = secrets.randbelow(2**31 - 1) + 1
+        if n != cur:
+            return n
+    return 1 if cur >= 2**31 - 1 else cur + 1
+
+
+def _layout_key(items: list[PackedBuilding]) -> tuple:
+    return tuple((p.asset_id, p.origin_x, p.origin_y, p.cells_e, p.cells_n, round(p.fit_scale, 4)) for p in items)
+
+
+def shuffle_building_seed(
+    defs: list[BuildingDef],
+    kind: str,
+    place_id: str,
+    width: int,
+    length: int,
+    current_seed: int = 0,
+) -> int:
+    """Pick a new nonzero seed; retry a few times if the layout does not change."""
+    seed = max(0, int(current_seed or 0))
+    before = _layout_key(pack_place(0, 0, width, length, kind, defs, place_id, seed=seed))
+    for _ in range(12):
+        seed = _next_distinct_seed(seed)
+        after = _layout_key(pack_place(0, 0, width, length, kind, defs, place_id, seed=seed))
+        if after != before:
+            return seed
+    return seed
 
 
 def pack_all_places(
@@ -359,12 +537,15 @@ def pack_all_places(
     out: list[PackedBuilding] = []
     for name, rect in place_rects.items():
         rec = places_by_id.get(name)
-        kind = getattr(rec, "building_kind", None) or default_building_kind(name)
+        kind = getattr(rec, "building_kind", None) if rec is not None else None
+        if kind not in (BUILDING_KIND_NONE, BUILDING_KIND_RESIDENTIAL, BUILDING_KIND_COMMERCIAL):
+            kind = default_building_kind(name)
+        seed = int(getattr(rec, "building_seed", 0) or 0) if rec is not None else 0
         x0 = int(rect.get("x", 0))
         y0 = int(rect.get("y", 0))
         w = int(rect.get("w", 0))
         h = int(rect.get("h", 0))
-        out.extend(pack_place(x0, y0, w, h, kind, defs, name))
+        out.extend(pack_place(x0, y0, w, h, kind, defs, name, seed=seed))
     return out
 
 

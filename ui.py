@@ -733,8 +733,8 @@ class DialogManager:
 PLACE_SPAWN_VALUES = (0.5, 1.0, 2.0, 4.0, 8.0)
 # Attract weight steps: 0.2, 0.5, 1.0, 2.0, 5.0
 PLACE_ATTRACT_VALUES = (0.2, 0.5, 1.0, 2.0, 5.0)
-PLACE_BUILDING_KIND_LABELS = ("Residential", "Commercial")
-PLACE_BUILDING_KIND_VALUES = ("residential", "commercial")
+PLACE_BUILDING_KIND_LABELS = ("None", "Residential", "Commercial")
+PLACE_BUILDING_KIND_VALUES = ("none", "residential", "commercial")
 # Lane speed limit steps: 0.5, 0.75, 1.0, 1.25, 1.5
 LANE_SPEED_VALUES = (0.5, 0.75, 1.0, 1.25, 1.5)
 # Lane type: normal, passing (more types in future)
@@ -802,6 +802,40 @@ class RemoveButton:
         left, bottom, width, height = self.rect
         rect_filled(left, bottom, width, height, (120, 80, 80))
         rect_outline(left, bottom, width, height, (140, 100, 100), 1)
+        self._text.x = left + width / 2
+        self._text.y = bottom + height / 2
+        self._text.draw()
+
+    def on_press(self, x: float, y: float) -> bool:
+        if not self.contains(x, y):
+            return False
+        if self._on_click:
+            self._on_click()
+        return True
+
+    def on_drag(self, x: float) -> bool:
+        return False
+
+    def on_release(self) -> bool:
+        return False
+
+
+class ShuffleButton:
+    """Neutral Shuffle button for re-seeding place buildings."""
+
+    def __init__(self, left: float, bottom: float, width: float, height: float, on_click: Callable[[], None] | None = None):
+        self.rect = (left, bottom, width, height)
+        self._on_click = on_click
+        self._text = arcade.Text("Shuffle", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="center", anchor_y="center")
+
+    def contains(self, x: float, y: float) -> bool:
+        left, bottom, width, height = self.rect
+        return left <= x <= left + width and bottom <= y <= bottom + height
+
+    def draw(self) -> None:
+        left, bottom, width, height = self.rect
+        rect_filled(left, bottom, width, height, (90, 90, 100))
+        rect_outline(left, bottom, width, height, (120, 120, 130), 1)
         self._text.x = left + width / 2
         self._text.y = bottom + height / 2
         self._text.draw()
@@ -1229,16 +1263,17 @@ class PlaceVarsDialog(Dialog):
         kind = clamp_building_kind(getattr(place_obj, "building_kind", None), place)
         kind_idx = 0 if kind not in BUILDING_KIND_VALUES else BUILDING_KIND_VALUES.index(kind)
         self._kind_dropdown = Dropdown(
-            0, 0, 140, DROPDOWN_ROW_HEIGHT,
+            0, 0, 78, DROPDOWN_ROW_HEIGHT,
             list(PLACE_BUILDING_KIND_LABELS),
             initial_index=kind_idx,
             on_change=lambda _: self._apply_kind(),
         )
+        self._shuffle_btn = ShuffleButton(0, 0, 56, DROPDOWN_ROW_HEIGHT, on_click=self._do_shuffle)
         self._remove_btn = RemoveButton(0, 0, 70, 22, on_click=self._do_remove)
 
         self.widgets = [
             self._name_box, self._spawn_slider, self._attract_slider, self._kind_dropdown,
-            self._center_compass, self._w_box, self._l_box,
+            self._shuffle_btn, self._center_compass, self._w_box, self._l_box,
         ]
         if self._can_remove:
             self.widgets.append(self._remove_btn)
@@ -1299,6 +1334,20 @@ class PlaceVarsDialog(Dialog):
         elif self._on_change:
             self._on_change()
 
+    def _do_shuffle(self) -> None:
+        from render.buildings import load_catalog, shuffle_building_seed
+        from sim.places import clamp_building_kind
+        kind = clamp_building_kind(getattr(self._place, "building_kind", None), self.place)
+        current = int(getattr(self._place, "building_seed", 0) or 0)
+        defs = load_catalog(persist=False)
+        self._place.building_seed = shuffle_building_seed(
+            defs, kind, self.place, self._place.width, self._place.length, current,
+        )
+        if self._on_commit:
+            self._on_commit()
+        elif self._on_change:
+            self._on_change()
+
     def _do_remove(self) -> None:
         """Remove this place from game and call on_remove."""
         if self._game is not None:
@@ -1330,7 +1379,8 @@ class PlaceVarsDialog(Dialog):
         self._name_box.rect = (control_left, content_top - 24, 140, NUMBER_BOX_HEIGHT)
         self._spawn_slider.rect = (left, content_top - 52, 160, 20)
         self._attract_slider.rect = (left, content_top - 80, 160, 20)
-        self._kind_dropdown.rect = (control_left, content_top - 106, 140, DROPDOWN_ROW_HEIGHT)
+        self._kind_dropdown.rect = (control_left, content_top - 106, 78, DROPDOWN_ROW_HEIGHT)
+        self._shuffle_btn.rect = (control_left + 84, content_top - 106, 56, DROPDOWN_ROW_HEIGHT)
         self._center_compass.rect = (control_left, content_top - 132, 140, DROPDOWN_ROW_HEIGHT)
         self._w_box.rect = (control_left, content_top - 158, box_w, NUMBER_BOX_HEIGHT)
         self._l_box.rect = (control_left, content_top - 184, box_w, NUMBER_BOX_HEIGHT)
