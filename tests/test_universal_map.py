@@ -451,7 +451,7 @@ def test_building_pack_counts() -> None:
 
 
 def test_building_pack_long_variants() -> None:
-    """Wings/blocks may use the full lot; 3×3 is not a hard cap."""
+    """Natural size first; leftover is yard. Long art is not crushed to the long AABB."""
     wing = BuildingDef(
         "house_wing_e", "house_wing_e.png", "residential",
         5, 15, 2, 6, 161.5, 530.0, 643, 531,
@@ -460,8 +460,9 @@ def test_building_pack_long_variants() -> None:
     assert len(p) == 1
     _assert_inside_place(p, 0, 0, 5, 5)
     assert p[0].asset_id == "house_wing_e"
+    assert p[0].fit_scale == 1.0
     assert p[0].cells_e == 5
-    assert p[0].fit_scale == 5 / 6
+    assert p[0].cells_n == 2
 
     house = BuildingDef(
         "house", "house.png", "residential",
@@ -470,8 +471,18 @@ def test_building_pack_long_variants() -> None:
     grown = pack_place(0, 0, 6, 6, "residential", [house], "Lot")
     assert len(grown) == 1
     _assert_inside_place(grown, 0, 0, 6, 6)
-    assert grown[0].fit_scale > 1.0
-    assert grown[0].cells_e == 4 and grown[0].cells_n == 4
+    assert grown[0].fit_scale == 1.0
+    assert grown[0].cells_e == 3 and grown[0].cells_n == 3
+
+    stepped = BuildingDef(
+        "block_stepped_e", "block_stepped_e.png", "commercial",
+        8, 29, 3, 11, 257.5, 964.0, 1186, 965,
+    )
+    mall = pack_place(0, 0, 5, 5, "commercial", [stepped], "Office")
+    assert len(mall) == 1
+    _assert_inside_place(mall, 0, 0, 5, 5)
+    assert mall[0].fit_scale == 10 / 14
+    assert mall[0].fit_scale > 5 / 11
 
     defs = load_catalog(persist=True)
     res_ids = {

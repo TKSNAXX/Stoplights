@@ -31,16 +31,6 @@
       "protected": true,
       "building_kind": "residential"
     },
-    "Stan": {
-      "center_x": 58,
-      "center_y": 42,
-      "width": 16,
-      "length": 16,
-      "spawn_interval": 2.0,
-      "attract_weight": 1.0,
-      "protected": true,
-      "building_kind": "commercial"
-    },
     "Your Moms House": {
       "center_x": 40,
       "center_y": 28,
@@ -56,6 +46,26 @@
       "center_y": 76,
       "width": 5,
       "length": 5,
+      "spawn_interval": 2.0,
+      "attract_weight": 1.0,
+      "protected": false,
+      "building_kind": "residential"
+    },
+    "Park": {
+      "center_x": 58,
+      "center_y": 42,
+      "width": 16,
+      "length": 13,
+      "spawn_interval": 2.0,
+      "attract_weight": 1.0,
+      "protected": true,
+      "building_kind": "commercial"
+    },
+    "The Hood": {
+      "center_x": 54,
+      "center_y": 63,
+      "width": 12,
+      "length": 16,
       "spawn_interval": 2.0,
       "attract_weight": 1.0,
       "protected": false,
@@ -97,6 +107,34 @@
       "center_y": 28,
       "size_cells": 2,
       "protected": false
+    },
+    "intersection_5": {
+      "type": "x",
+      "center_x": 36,
+      "center_y": 60,
+      "size_cells": 2,
+      "protected": false
+    },
+    "intersection_6": {
+      "type": "x",
+      "center_x": 46,
+      "center_y": 48,
+      "size_cells": 2,
+      "protected": false
+    },
+    "intersection_7": {
+      "type": "corner",
+      "center_x": 46,
+      "center_y": 52,
+      "size_cells": 4,
+      "protected": false
+    },
+    "intersection_8": {
+      "type": "corner",
+      "center_x": 56,
+      "center_y": 52,
+      "size_cells": 2,
+      "protected": false
     }
   },
   "lanes": {
@@ -120,7 +158,7 @@
       ],
       "end_tile": [
         36,
-        65
+        58
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -129,7 +167,7 @@
     "2": {
       "start_tile": [
         35,
-        65
+        58
       ],
       "end_tile": [
         35,
@@ -154,7 +192,7 @@
     },
     "4": {
       "start_tile": [
-        49,
+        44,
         48
       ],
       "end_tile": [
@@ -171,7 +209,7 @@
         47
       ],
       "end_tile": [
-        49,
+        44,
         47
       ],
       "speed_limit": 1.0,
@@ -224,7 +262,7 @@
       ],
       "end_tile": [
         64,
-        33
+        35
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -233,7 +271,7 @@
     "10": {
       "start_tile": [
         63,
-        33
+        35
       ],
       "end_tile": [
         63,
@@ -385,6 +423,162 @@
       "speed_limit": 1.0,
       "lane_type": "normal",
       "protected": false
+    },
+    "22": {
+      "start_tile": [
+        35,
+        65
+      ],
+      "end_tile": [
+        35,
+        61
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "23": {
+      "start_tile": [
+        36,
+        61
+      ],
+      "end_tile": [
+        36,
+        65
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "24": {
+      "start_tile": [
+        47,
+        60
+      ],
+      "end_tile": [
+        37,
+        60
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "25": {
+      "start_tile": [
+        37,
+        59
+      ],
+      "end_tile": [
+        47,
+        59
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "26": {
+      "start_tile": [
+        47,
+        47
+      ],
+      "end_tile": [
+        49,
+        47
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "27": {
+      "start_tile": [
+        49,
+        48
+      ],
+      "end_tile": [
+        47,
+        48
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "28": {
+      "start_tile": [
+        46,
+        49
+      ],
+      "end_tile": [
+        46,
+        50
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "29": {
+      "start_tile": [
+        45,
+        50
+      ],
+      "end_tile": [
+        45,
+        49
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "30": {
+      "start_tile": [
+        47,
+        51
+      ],
+      "end_tile": [
+        54,
+        51
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "31": {
+      "start_tile": [
+        54,
+        52
+      ],
+      "end_tile": [
+        47,
+        52
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "32": {
+      "start_tile": [
+        56,
+        53
+      ],
+      "end_tile": [
+        56,
+        54
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "33": {
+      "start_tile": [
+        55,
+        54
+      ],
+      "end_tile": [
+        55,
+        53
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
     }
   },
   "police": [
@@ -402,11 +596,11 @@
   "route_hints": [
     [
       "Housing",
-      "Stan",
+      "Park",
       "bypass"
     ],
     [
-      "Stan",
+      "Park",
       "Housing",
       "bypass"
     ]

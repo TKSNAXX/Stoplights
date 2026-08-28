@@ -211,32 +211,57 @@ def load_catalog(dir_path: Path | None = None, persist: bool = True) -> list[Bui
 
 
 def count_along(size: int, foot: int, gap: int = GAP_CELLS) -> tuple[int, bool]:
-    """How many footprints fit on one axis. Second flag: must scale to fit."""
+    """How many footprints fit on one axis. Leftover becomes yard, not a reserved inner hole."""
     if size < 2:
         return 0, False
-    outer = 1 if size >= 5 else 0
-    inner = size - 2 * outer
-    if inner < foot:
+    if size < foot:
         return 1, True
-    n = (inner + gap) // (foot + gap)
+    n = (size + gap) // (foot + gap)
     return max(1, n), False
 
 
-def _spread(count: int, foot: int, size: int, outer: int) -> list[int]:
-    inner_start = outer
-    inner_len = size - 2 * outer
+def _spread(count: int, foot: int, size: int, gap: int = GAP_CELLS) -> list[int]:
+    """Place `count` feet with at least `gap` between; leftover is outer yard plus extra alleys."""
     if count <= 1:
-        return [inner_start + max(0, (inner_len - foot) // 2)]
-    extra = inner_len - count * foot
+        return [max(0, (size - foot) // 2)]
+    used = count * foot + (count - 1) * gap
+    extra = max(0, size - used)
+    outer = extra // 2
+    alley_extra = extra - 2 * outer
     gaps = count - 1
-    base_gap = extra // gaps if gaps else 0
-    rem = extra % gaps if gaps else 0
-    pos = inner_start
+    base_gap = gap + (alley_extra // gaps if gaps else 0)
+    rem = alley_extra % gaps if gaps else 0
+    pos = outer
     out: list[int] = []
     for i in range(count):
         out.append(pos)
         pos += foot + base_gap + (1 if i < rem else 0)
     return out
+
+
+def _slot_hash(place_id: str, kind: str, slot: int) -> int:
+    return int(hashlib.md5(f"{place_id}:{kind}:{slot}".encode("utf-8")).hexdigest(), 16)
+
+
+def _sit_on_lot(ce: int, cn: int, w: int, l: int) -> tuple[int, int, float, int, int]:
+    """Building first: natural plate if it fits; leftover cells are yard.
+
+    If it will not sit on the lot, scale by iso span (e+n) so a long mall stays chunky
+    instead of being crushed by min(lot/long_axis). Occupancy is that plate clamped
+    to the lot; the sprite uses `fit` and may overhang by a cell or two.
+    """
+    ce, cn = max(1, int(ce)), max(1, int(cn))
+    w, l = max(1, int(w)), max(1, int(l))
+    if ce <= w and cn <= l:
+        occ_e, occ_n = ce, cn
+        fit = 1.0
+    else:
+        fit = min(1.0, (w + l) / (ce + cn))
+        occ_e = min(w, max(1, int(round(ce * fit))))
+        occ_n = min(l, max(1, int(round(cn * fit))))
+    ox = max(0, (w - occ_e) // 2)
+    oy = max(0, (l - occ_n) // 2)
+    return occ_e, occ_n, fit, ox, oy
 
 
 def _slot_hash(place_id: str, kind: str, slot: int) -> int:
@@ -287,54 +312,30 @@ def pack_place(
     if min(w, l) < 2:
         return []
     kind = kind if kind in (BUILDING_KIND_RESIDENTIAL, BUILDING_KIND_COMMERCIAL) else default_building_kind(place_id)
-    foot_e = foot_n = NATURAL_SQUARE_CELLS
+    foot = NATURAL_SQUARE_CELLS
     small_lot = w <= 5 and l <= 5
-    nx, scale_x = count_along(w, foot_e)
-    ny, scale_y = count_along(l, foot_n)
+    nx, _ = count_along(w, foot)
+    ny, _ = count_along(l, foot)
     if small_lot:
         nx, ny = 1, 1
-        need_scale = True
-    else:
-        need_scale = scale_x or scale_y
-        if need_scale:
-            nx, ny = 1, 1
     if nx < 1 or ny < 1:
         return []
-    yard_e = 1 if w >= 5 else 0
-    yard_n = 1 if l >= 5 else 0
-    inner_e = max(1, w - 2 * yard_e)
-    inner_n = max(1, l - 2 * yard_n)
-    spread_e = foot_e if not need_scale else min(foot_e, inner_e)
-    spread_n = foot_n if not need_scale else min(foot_n, inner_n)
-    xs = _spread(nx, spread_e, w, yard_e)
-    ys = _spread(ny, spread_n, l, yard_n)
+    xs = _spread(nx, foot, w)
+    ys = _spread(ny, foot, l)
     packed: list[PackedBuilding] = []
     slot = 0
     single = nx == 1 and ny == 1
     for sx in xs:
         for sy in ys:
-            d = _pick_def(defs, kind, place_id, slot, w if single else spread_e, l if single else spread_n)
+            d = _pick_def(defs, kind, place_id, slot, w if single else foot, l if single else foot)
             if d is None:
                 continue
             ce, cn = max(1, d.world_cells_e), max(1, d.world_cells_n)
             if single:
-                if ce <= inner_e and cn <= inner_n:
-                    avail_e, avail_n = inner_e, inner_n
-                    base_x, base_y = yard_e, yard_n
-                else:
-                    avail_e, avail_n = w, l
-                    base_x, base_y = 0, 0
-                fit = min(avail_e / ce, avail_n / cn)
-                occ_e = min(avail_e, max(1, int(round(ce * fit))))
-                occ_n = min(avail_n, max(1, int(round(cn * fit))))
-                ox = base_x + max(0, (avail_e - occ_e) // 2)
-                oy = base_y + max(0, (avail_n - occ_n) // 2)
+                occ_e, occ_n, fit, ox, oy = _sit_on_lot(ce, cn, w, l)
             else:
-                fit = min(spread_e / ce, spread_n / cn, 1.0)
-                occ_e = min(spread_e, max(1, int(round(ce * fit))))
-                occ_n = min(spread_n, max(1, int(round(cn * fit))))
-                ox = sx + max(0, (spread_e - occ_e) // 2)
-                oy = sy + max(0, (spread_n - occ_n) // 2)
+                occ_e, occ_n, fit, lx, ly = _sit_on_lot(ce, cn, foot, foot)
+                ox, oy = sx + lx, sy + ly
             packed.append(
                 PackedBuilding(
                     asset_id=d.asset_id,
