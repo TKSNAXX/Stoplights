@@ -1,0 +1,108 @@
+{
+  "buildings": [
+    {
+      "asset_id": "block_long_e",
+      "file": "block_long_e.png",
+      "kind": "commercial",
+      "art_cells_n": 11,
+      "art_cells_e": 18,
+      "world_cells_n": 4,
+      "world_cells_e": 7,
+      "anchor_x": 353.5,
+      "anchor_y": 883.0,
+      "src_w": 932,
+      "src_h": 884
+    },
+    {
+      "asset_id": "block_long_n",
+      "file": "block_long_n.png",
+      "kind": "commercial",
+      "art_cells_n": 18,
+      "art_cells_e": 11,
+      "world_cells_n": 7,
+      "world_cells_e": 4,
+      "anchor_x": 577.5,
+      "anchor_y": 883.0,
+      "src_w": 932,
+      "src_h": 884
+    },
+    {
+      "asset_id": "block_stepped_e",
+      "file": "block_stepped_e.png",
+      "kind": "commercial",
+      "art_cells_n": 8,
+      "art_cells_e": 29,
+      "world_cells_n": 3,
+      "world_cells_e": 11,
+      "anchor_x": 257.5,
+      "anchor_y": 964.0,
+      "src_w": 1186,
+      "src_h": 965
+    },
+    {
+      "asset_id": "block_stepped_n",
+      "file": "block_stepped_n.png",
+      "kind": "commercial",
+      "art_cells_n": 29,
+      "art_cells_e": 8,
+      "world_cells_n": 11,
+      "world_cells_e": 3,
+      "anchor_x": 927.5,
+      "anchor_y": 964.0,
+      "src_w": 1186,
+      "src_h": 965
+    },
+    {
+      "asset_id": "cube",
+      "file": "cube.png",
+      "kind": "commercial",
+      "art_cells_n": 8,
+      "art_cells_e": 8,
+      "world_cells_n": 3,
+      "world_cells_e": 3,
+      "anchor_x": 256.5,
+      "anchor_y": 576.0,
+      "src_w": 515,
+      "src_h": 577
+    },
+    {
+      "asset_id": "house",
+      "file": "house.png",
+      "kind": "residential",
+      "art_cells_n": 8,
+      "art_cells_e": 8,
+      "world_cells_n": 3,
+      "world_cells_e": 3,
+      "anchor_x": 257.0,
+      "anchor_y": 482.0,
+      "src_w": 514,
+      "src_h": 483
+    },
+    {
+      "asset_id": "house_wing_e",
+      "file": "house_wing_e.png",
+      "kind": "residential",
+      "art_cells_n": 5,
+      "art_cells_e": 15,
+      "world_cells_n": 2,
+      "world_cells_e": 6,
+      "anchor_x": 161.5,
+      "anchor_y": 530.0,
+      "src_w": 643,
+      "src_h": 531
+    },
+    {
+      "asset_id": "house_wing_n",
+      "file": "house_wing_n.png",
+      "kind": "residential",
+      "art_cells_n": 15,
+      "art_cells_e": 5,
+      "world_cells_n": 6,
+      "world_cells_e": 2,
+      "anchor_x": 480.5,
+      "anchor_y": 530.0,
+      "src_w": 643,
+      "src_h": 531
+    }
+  ]
+}

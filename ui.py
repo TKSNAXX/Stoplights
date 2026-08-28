@@ -733,6 +733,8 @@ class DialogManager:
 PLACE_SPAWN_VALUES = (0.5, 1.0, 2.0, 4.0, 8.0)
 # Attract weight steps: 0.2, 0.5, 1.0, 2.0, 5.0
 PLACE_ATTRACT_VALUES = (0.2, 0.5, 1.0, 2.0, 5.0)
+PLACE_BUILDING_KIND_LABELS = ("Residential", "Commercial")
+PLACE_BUILDING_KIND_VALUES = ("residential", "commercial")
 # Lane speed limit steps: 0.5, 0.75, 1.0, 1.25, 1.5
 LANE_SPEED_VALUES = (0.5, 0.75, 1.0, 1.25, 1.5)
 # Lane type: normal, passing (more types in future)
@@ -1115,6 +1117,7 @@ class NewPlaceDialog(Dialog):
             center_y=center_y,
             width=w,
             length=l,
+            building_kind=places.default_building_kind(name),
         )
         self._game.places[name] = p
         self._game.rebuild_world_from_config()
@@ -1198,7 +1201,9 @@ class PlaceVarsDialog(Dialog):
         on_remove: Callable[[], None] | None = None,
         on_rename: Callable[[str, str], None] | None = None,
     ):
-        super().__init__(x, y, 240, 240, f"Place: {place}")
+        from sim.places import BUILDING_KIND_VALUES, clamp_building_kind
+        can_remove = bool(game is not None and hasattr(game, "can_remove_place") and game.can_remove_place(place))
+        super().__init__(x, y, 240, 296 if can_remove else 268, f"Place: {place}")
         self.place = place
         self._place = place_obj
         self._game = game
@@ -1206,7 +1211,7 @@ class PlaceVarsDialog(Dialog):
         self._on_commit = on_commit
         self._on_remove = on_remove
         self._on_rename = on_rename
-        self._can_remove = bool(game is not None and hasattr(game, "can_remove_place") and game.can_remove_place(place))
+        self._can_remove = can_remove
 
         spawn_step = self._step_for_spawn(place_obj.spawn_interval)
         attract_step = self._step_for_attract(place_obj.attract_weight)
@@ -1221,10 +1226,18 @@ class PlaceVarsDialog(Dialog):
         )
         self._w_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, w, 1, 16, 1, on_change=lambda _: self._apply_geometry(), on_unfocus=self._apply_geometry)
         self._l_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, l, 1, 16, 1, on_change=lambda _: self._apply_geometry(), on_unfocus=self._apply_geometry)
+        kind = clamp_building_kind(getattr(place_obj, "building_kind", None), place)
+        kind_idx = 0 if kind not in BUILDING_KIND_VALUES else BUILDING_KIND_VALUES.index(kind)
+        self._kind_dropdown = Dropdown(
+            0, 0, 140, DROPDOWN_ROW_HEIGHT,
+            list(PLACE_BUILDING_KIND_LABELS),
+            initial_index=kind_idx,
+            on_change=lambda _: self._apply_kind(),
+        )
         self._remove_btn = RemoveButton(0, 0, 70, 22, on_click=self._do_remove)
 
         self.widgets = [
-            self._name_box, self._spawn_slider, self._attract_slider,
+            self._name_box, self._spawn_slider, self._attract_slider, self._kind_dropdown,
             self._center_compass, self._w_box, self._l_box,
         ]
         if self._can_remove:
@@ -1232,6 +1245,7 @@ class PlaceVarsDialog(Dialog):
         self._name_label = arcade.Text("Name:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._spawn_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._attract_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._kind_label = arcade.Text("Buildings:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._center_label = arcade.Text("Center:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._w_label = arcade.Text("Width:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._l_label = arcade.Text("Length:", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
@@ -1273,6 +1287,18 @@ class PlaceVarsDialog(Dialog):
         if self._on_commit:
             self._on_commit()
 
+    def _apply_kind(self) -> None:
+        from sim.places import BUILDING_KIND_VALUES, clamp_building_kind
+        idx = self._kind_dropdown.value
+        kind = BUILDING_KIND_VALUES[idx] if 0 <= idx < len(BUILDING_KIND_VALUES) else clamp_building_kind(None, self.place)
+        if getattr(self._place, "building_kind", None) == kind:
+            return
+        self._place.building_kind = kind
+        if self._on_commit:
+            self._on_commit()
+        elif self._on_change:
+            self._on_change()
+
     def _do_remove(self) -> None:
         """Remove this place from game and call on_remove."""
         if self._game is not None:
@@ -1304,23 +1330,26 @@ class PlaceVarsDialog(Dialog):
         self._name_box.rect = (control_left, content_top - 24, 140, NUMBER_BOX_HEIGHT)
         self._spawn_slider.rect = (left, content_top - 52, 160, 20)
         self._attract_slider.rect = (left, content_top - 80, 160, 20)
-        self._center_compass.rect = (control_left, content_top - 106, 140, DROPDOWN_ROW_HEIGHT)
-        self._w_box.rect = (control_left, content_top - 132, box_w, NUMBER_BOX_HEIGHT)
-        self._l_box.rect = (control_left, content_top - 158, box_w, NUMBER_BOX_HEIGHT)
+        self._kind_dropdown.rect = (control_left, content_top - 106, 140, DROPDOWN_ROW_HEIGHT)
+        self._center_compass.rect = (control_left, content_top - 132, 140, DROPDOWN_ROW_HEIGHT)
+        self._w_box.rect = (control_left, content_top - 158, box_w, NUMBER_BOX_HEIGHT)
+        self._l_box.rect = (control_left, content_top - 184, box_w, NUMBER_BOX_HEIGHT)
         if self._can_remove:
-            self._remove_btn.rect = (left, content_top - 190, 70, 22)
+            self._remove_btn.rect = (left, content_top - 216, 70, 22)
         self._name_label.x = left
         self._name_label.y = content_top - 12
         self._spawn_label.x = left
         self._spawn_label.y = content_top - 40
         self._attract_label.x = left
         self._attract_label.y = content_top - 68
+        self._kind_label.x = left
+        self._kind_label.y = content_top - 94
         self._center_label.x = left
-        self._center_label.y = content_top - 94
+        self._center_label.y = content_top - 120
         self._w_label.x = left
-        self._w_label.y = content_top - 120
+        self._w_label.y = content_top - 146
         self._l_label.x = left
-        self._l_label.y = content_top - 146
+        self._l_label.y = content_top - 172
 
     def draw(self) -> None:
         self._layout_widgets()
@@ -1330,6 +1359,7 @@ class PlaceVarsDialog(Dialog):
         self._name_label.draw()
         self._spawn_label.draw()
         self._attract_label.draw()
+        self._kind_label.draw()
         self._center_label.draw()
         self._w_label.draw()
         self._l_label.draw()

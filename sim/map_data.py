@@ -25,7 +25,10 @@ def places_from_rects(place_rects: dict[str, dict]) -> dict[str, "Place"]:
             continue
         cx = x + w // 2
         cy = y + h // 2
-        result[name] = places.Place(center_x=cx, center_y=cy, width=w, length=h)
+        result[name] = places.Place(
+            center_x=cx, center_y=cy, width=w, length=h,
+            building_kind=places.default_building_kind(name),
+        )
     return result
 
 

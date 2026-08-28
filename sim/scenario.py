@@ -112,7 +112,7 @@ def _normalize_schema_4(data: dict) -> dict:
     for key, raw in (data.get("places") or {}).items():
         if not isinstance(raw, dict):
             continue
-        out["places"][str(key)] = _normalize_place(raw)
+        out["places"][str(key)] = _normalize_place(raw, str(key))
     for key, raw in (data.get("intersections") or {}).items():
         if not isinstance(raw, dict):
             continue
@@ -160,7 +160,7 @@ def _normalize_schema_4(data: dict) -> dict:
     return out
 
 
-def _normalize_place(raw: dict) -> dict:
+def _normalize_place(raw: dict, place_id: str = "") -> dict:
     w = max(places.PLACE_SIZE_MIN, min(places.PLACE_SIZE_MAX, int(raw.get("width", 5))))
     length = max(places.PLACE_SIZE_MIN, min(places.PLACE_SIZE_MAX, int(raw.get("length", 5))))
     try:
@@ -179,6 +179,7 @@ def _normalize_place(raw: dict) -> dict:
         "spawn_interval": spawn,
         "attract_weight": attract,
         "protected": bool(raw.get("protected", False)),
+        "building_kind": places.clamp_building_kind(raw.get("building_kind"), place_id),
     }
 
 
@@ -252,7 +253,8 @@ def _migrate_schema_3(data: dict) -> dict:
                 "spawn_interval": c.get("spawn_interval", 2.0),
                 "attract_weight": c.get("attract_weight", 1.0),
                 "protected": str(key) in _LEGACY_PROTECTED_PLACES,
-            }
+            },
+            str(key),
         )
 
     intersections_out: dict[str, dict] = {}
@@ -350,6 +352,7 @@ def scenario_to_game_dicts(scenario: dict) -> tuple[
             spawn_interval=float(raw.get("spawn_interval", 2.0)),
             attract_weight=float(raw.get("attract_weight", 1.0)),
             protected=bool(raw.get("protected", False)),
+            building_kind=places.clamp_building_kind(raw.get("building_kind"), key),
         )
 
     intersections_by_id: dict[str, places.IntersectionConfig] = {}
@@ -437,6 +440,7 @@ def game_to_scenario(game: "GameState", window=None) -> dict:
             "spawn_interval": p.spawn_interval,
             "attract_weight": p.attract_weight,
             "protected": bool(getattr(p, "protected", False)),
+            "building_kind": places.clamp_building_kind(getattr(p, "building_kind", None), key),
         }
     intersections_out: dict[str, dict] = {}
     for key, cfg in game.intersections.items():

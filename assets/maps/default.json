@@ -8,7 +8,8 @@
       "length": 5,
       "spawn_interval": 2.0,
       "attract_weight": 1.0,
-      "protected": true
+      "protected": true,
+      "building_kind": "residential"
     },
     "Office": {
       "center_x": 36,
@@ -17,7 +18,8 @@
       "length": 5,
       "spawn_interval": 2.0,
       "attract_weight": 1.0,
-      "protected": true
+      "protected": true,
+      "building_kind": "commercial"
     },
     "Park": {
       "center_x": 64,
@@ -26,7 +28,8 @@
       "length": 5,
       "spawn_interval": 2.0,
       "attract_weight": 1.0,
-      "protected": true
+      "protected": true,
+      "building_kind": "residential"
     },
     "Shopping": {
       "center_x": 2,
@@ -35,7 +38,8 @@
       "length": 5,
       "spawn_interval": 2.0,
       "attract_weight": 1.0,
-      "protected": true
+      "protected": true,
+      "building_kind": "commercial"
     }
   },
   "intersections": {

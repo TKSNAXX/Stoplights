@@ -34,7 +34,9 @@ from sim.scenario import (
     load_default_scenario,
     migrate_to_schema_4,
     apply_scenario_to_game,
+    scenario_to_game_dicts,
 )
+from render.buildings import BuildingDef, instances_overlap_ok, load_catalog, pack_place
 
 
 def test_migrate_schema_3_snippet() -> None:
@@ -407,6 +409,121 @@ def test_color_settings_clamp_roundtrip() -> None:
     assert migrated["user_settings"]["color_sat"] == 0.0
 
 
+def _pack_test_defs() -> list[BuildingDef]:
+    return [
+        BuildingDef(
+            "house", "house.png", "residential",
+            8, 8, 3, 3, 256.0, 500.0, 514, 514,
+        ),
+        BuildingDef(
+            "cube", "cube.png", "commercial",
+            8, 8, 3, 3, 256.0, 500.0, 514, 514,
+        ),
+    ]
+
+
+def _assert_inside_place(items, x0: int, y0: int, w: int, l: int) -> None:
+    x1, y1 = x0 + w, y0 + l
+    for inst in items:
+        assert inst.origin_x >= x0 and inst.origin_y >= y0
+        assert inst.origin_x + inst.cells_e <= x1
+        assert inst.origin_y + inst.cells_n <= y1
+
+
+def test_building_pack_counts() -> None:
+    defs = _pack_test_defs()
+    assert pack_place(0, 0, 1, 1, "residential", defs, "A") == []
+    assert pack_place(0, 0, 1, 2, "residential", defs, "A") == []
+    p22 = pack_place(0, 0, 2, 2, "residential", defs, "A")
+    assert len(p22) == 1
+    _assert_inside_place(p22, 0, 0, 2, 2)
+    p55 = pack_place(10, 20, 5, 5, "residential", defs, "Housing")
+    assert len(p55) == 1
+    _assert_inside_place(p55, 10, 20, 5, 5)
+    p99 = pack_place(0, 0, 9, 9, "residential", defs, "Housing")
+    assert len(p99) == 4
+    _assert_inside_place(p99, 0, 0, 9, 9)
+    assert instances_overlap_ok(p99)
+    res = pack_place(0, 0, 5, 5, "residential", defs, "Housing")
+    com = pack_place(0, 0, 5, 5, "commercial", defs, "Office")
+    assert res[0].asset_id == "house"
+    assert com[0].asset_id == "cube"
+
+
+def test_building_pack_long_variants() -> None:
+    """Wings/blocks may use the full lot; 3×3 is not a hard cap."""
+    wing = BuildingDef(
+        "house_wing_e", "house_wing_e.png", "residential",
+        5, 15, 2, 6, 161.5, 530.0, 643, 531,
+    )
+    p = pack_place(0, 0, 5, 5, "residential", [wing], "Housing")
+    assert len(p) == 1
+    _assert_inside_place(p, 0, 0, 5, 5)
+    assert p[0].asset_id == "house_wing_e"
+    assert p[0].cells_e == 5
+    assert p[0].fit_scale == 5 / 6
+
+    house = BuildingDef(
+        "house", "house.png", "residential",
+        8, 8, 3, 3, 256.0, 500.0, 514, 514,
+    )
+    grown = pack_place(0, 0, 6, 6, "residential", [house], "Lot")
+    assert len(grown) == 1
+    _assert_inside_place(grown, 0, 0, 6, 6)
+    assert grown[0].fit_scale > 1.0
+    assert grown[0].cells_e == 4 and grown[0].cells_n == 4
+
+    defs = load_catalog(persist=True)
+    res_ids = {
+        pack_place(0, 0, 5, 5, "residential", defs, f"Lot{i}")[0].asset_id
+        for i in range(24)
+    }
+    com_ids = {
+        pack_place(0, 0, 5, 5, "commercial", defs, f"Shop{i}")[0].asset_id
+        for i in range(24)
+    }
+    assert res_ids - {"house"}
+    assert com_ids - {"cube"}
+
+
+def test_building_kind_roundtrip() -> None:
+    g = GameState()
+    assert g.places["Housing"].building_kind == "residential"
+    assert g.places["Office"].building_kind == "commercial"
+    g.places["Housing"].building_kind = "commercial"
+    data = game_to_scenario(g)
+    assert data["places"]["Housing"]["building_kind"] == "commercial"
+    places_by_id, *_ = scenario_to_game_dicts(migrate_to_schema_4(data))
+    assert places_by_id["Housing"].building_kind == "commercial"
+    migrated = migrate_to_schema_4(
+        {
+            "schema_version": 3,
+            "place_configs": {
+                "Housing": {"spawn_interval": 2.0, "attract_weight": 1.0},
+                "Office": {"spawn_interval": 2.0, "attract_weight": 1.0},
+            },
+            "place_geometry": {
+                "Housing": {"center_x": 36, "center_y": 2, "width": 5, "length": 5},
+                "Office": {"center_x": 36, "center_y": 70, "width": 5, "length": 5},
+            },
+            "intersection_configs": {},
+            "lane_configs": {},
+        }
+    )
+    assert migrated["places"]["Housing"]["building_kind"] == "residential"
+    assert migrated["places"]["Office"]["building_kind"] == "commercial"
+
+
+def test_building_catalog_natural_scale() -> None:
+    defs = load_catalog(persist=True)
+    by_id = {d.asset_id: d for d in defs}
+    assert "cube" in by_id and "house" in by_id
+    assert by_id["cube"].world_cells_n == 3
+    assert by_id["cube"].world_cells_e == 3
+    assert by_id["house"].world_cells_n == 3
+    assert by_id["house"].world_cells_e == 3
+
+
 def main() -> None:
     tests = [
         test_migrate_schema_3_snippet,
@@ -427,6 +544,10 @@ def main() -> None:
         test_iso_aabb_silhouette,
         test_selection_rim_offset_and_facing,
         test_color_settings_clamp_roundtrip,
+        test_building_pack_counts,
+        test_building_pack_long_variants,
+        test_building_kind_roundtrip,
+        test_building_catalog_natural_scale,
     ]
     failed = 0
     for fn in tests:

@@ -22,6 +22,26 @@ SOUTH = HOUSING
 NORTH = OFFICE
 
 
+BUILDING_KIND_RESIDENTIAL = "residential"
+BUILDING_KIND_COMMERCIAL = "commercial"
+BUILDING_KIND_VALUES = (BUILDING_KIND_RESIDENTIAL, BUILDING_KIND_COMMERCIAL)
+
+_COMMERCIAL_DEFAULT_IDS = frozenset({"Office", "Shopping"})
+
+
+def default_building_kind(place_id: str) -> str:
+    """Office/Shopping default commercial; everything else residential."""
+    if place_id in _COMMERCIAL_DEFAULT_IDS:
+        return BUILDING_KIND_COMMERCIAL
+    return BUILDING_KIND_RESIDENTIAL
+
+
+def clamp_building_kind(value: str | None, place_id: str = "") -> str:
+    if value in BUILDING_KIND_VALUES:
+        return value
+    return default_building_kind(place_id)
+
+
 @dataclasses.dataclass
 class Place:
     """Center-based place rectangle plus spawn/attract. Bounds: [cx - w//2, cx + w//2), [cy - l//2, cy + l//2)."""
@@ -32,6 +52,7 @@ class Place:
     spawn_interval: float = 2.0
     attract_weight: float = 1.0
     protected: bool = False
+    building_kind: str = BUILDING_KIND_RESIDENTIAL
 
 
 PLACE_SIZE_MIN = 1

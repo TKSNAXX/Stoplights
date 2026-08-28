@@ -60,3 +60,6 @@ class CarSpritePool:
         spr.center_y = center_y
         spr.color = color
         spr.alpha = 255
+
+    def sprite_at(self, index: int) -> arcade.Sprite:
+        return self._pool[index]

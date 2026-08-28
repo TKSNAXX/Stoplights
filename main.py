@@ -18,6 +18,14 @@ from render.intersection_topology import (
     tee_layout_for_sides,
 )
 from render.tiles import TileSet, generate_corner_texture, generate_straight_texture, generate_tee_texture
+from render.buildings import (
+    buildings_dir,
+    load_catalog,
+    natural_sprite_scale,
+    pack_all_places,
+    south_vertex_screen,
+    sprite_center_from_anchor,
+)
 from sim import places
 from sim.constants import (
     CAR_DEFAULT,
@@ -165,6 +173,17 @@ class StoplightsWindow(arcade.Window):
         self._car_textures_by_dir = load_car_textures(assets_dir)
         self._car_sprite_pool = CarSpritePool(self._car_textures_by_dir, scale=2.0) if self._car_textures_by_dir else None
         self._car_draw_order: list[object] = []
+
+        self._building_defs = load_catalog(persist=True)
+        self._building_defs_by_id = {d.asset_id: d for d in self._building_defs}
+        self._building_textures: dict[str, arcade.Texture] = {}
+        root = buildings_dir()
+        for d in self._building_defs:
+            try:
+                self._building_textures[d.asset_id] = arcade.load_texture(str(root / d.file))
+            except Exception as e:
+                print(f"[Buildings] Failed to load '{d.asset_id}': {e}")
+        self._building_draw_items: list[tuple[object, arcade.Sprite, object]] = []
 
         self._update_zoom_scale()
         if self._car_sprite_pool is not None:
@@ -434,7 +453,10 @@ class StoplightsWindow(arcade.Window):
             return
         x_lo, y_lo, w, h = aabb
         cx, cy = place_center_from_aabb(x_lo, y_lo, w, h)
-        self.game.places[name] = places.Place(center_x=cx, center_y=cy, width=w, length=h)
+        self.game.places[name] = places.Place(
+            center_x=cx, center_y=cy, width=w, length=h,
+            building_kind=places.default_building_kind(name),
+        )
         self._on_config_change(rebuild_world=True)
         self._exit_place_draw()
 
@@ -757,6 +779,7 @@ class StoplightsWindow(arcade.Window):
                 centered_tex = generate_tee_texture(size_cells, axis=axis, stem=stem)
             self._overlay_intersection(cells, centered_tex, road_cross_tex, center_x, center_y)
 
+        self._rebuild_building_sprites(center_x, center_y)
         self._update_text_positions(center_x, center_y)
 
     def _update_text_positions(self, center_x: float, center_y: float) -> None:
@@ -787,13 +810,38 @@ class StoplightsWindow(arcade.Window):
 
     def _update_tile_positions(self, center_x: float, center_y: float) -> None:
         """Update sprite screen positions without rebuilding. Requires _tile_cells and _tile_sprite_list."""
-        if self._tile_sprite_list is None or not self._tile_cells:
-            return
-        to_screen = self._to_screen
-        for i, (gx, gy) in enumerate(self._tile_cells):
-            sx, sy = to_screen(gx, gy, center_x, center_y)
-            spr = self._tile_sprite_list[i]
-            spr.center_x, spr.center_y = sx, sy
+        if self._tile_sprite_list is not None and self._tile_cells:
+            to_screen = self._to_screen
+            for i, (gx, gy) in enumerate(self._tile_cells):
+                sx, sy = to_screen(gx, gy, center_x, center_y)
+                spr = self._tile_sprite_list[i]
+                spr.center_x, spr.center_y = sx, sy
+        self._update_building_positions(center_x, center_y)
+
+    def _rebuild_building_sprites(self, center_x: float, center_y: float) -> None:
+        """Pack lots and allocate sprites when the tile cache rebuilds."""
+        packed = pack_all_places(world.get_place_rects(), self.game.places, self._building_defs)
+        items: list[tuple[object, arcade.Sprite, object]] = []
+        for inst in packed:
+            defn = self._building_defs_by_id.get(inst.asset_id)
+            tex = self._building_textures.get(inst.asset_id)
+            if defn is None or tex is None:
+                continue
+            scale = natural_sprite_scale(defn) * inst.fit_scale * self._zoom_scale
+            spr = arcade.Sprite(tex, scale=scale)
+            items.append((inst, spr, defn))
+        self._building_draw_items = items
+        self._update_building_positions(center_x, center_y)
+
+    def _update_building_positions(self, center_x: float, center_y: float) -> None:
+        zoom = self._zoom_scale
+        for inst, spr, defn in self._building_draw_items:
+            sx, sy = self._to_screen(inst.origin_x, inst.origin_y, center_x, center_y)
+            south_sx, south_sy = south_vertex_screen(sx, sy, zoom)
+            scale = natural_sprite_scale(defn) * inst.fit_scale * zoom
+            spr.scale = scale
+            cx, cy = sprite_center_from_anchor(south_sx, south_sy, defn, scale)
+            spr.center_x, spr.center_y = cx, cy
 
     def on_key_press(self, key: int, modifiers: int) -> None:
         fw = self._dialog_manager.get_focused_widget()
@@ -969,6 +1017,10 @@ class StoplightsWindow(arcade.Window):
         self._draw_ix_preview(center_x, center_y)
         self._draw_infra_selection_rims(center_x, center_y)
 
+        overlay: list[tuple[float, int, arcade.Sprite]] = []
+        for inst, spr, _defn in self._building_draw_items:
+            overlay.append((inst.depth, 1, spr))
+
         if self._car_sprite_pool is not None:
             active_police = [p for p in self.game.police_list if p.state in ("deploying", "holding", "returning")]
             car_data: list[tuple[float, object, int, float, float, tuple[int, int, int]]] = []
@@ -989,9 +1041,12 @@ class StoplightsWindow(arcade.Window):
             car_data.sort(key=lambda t: t[0], reverse=True)
             self._car_draw_order = [t[1] for t in car_data]
             self._car_sprite_pool.begin_frame(len(car_data))
-            for idx, (_, _, di, sx, sy, color) in enumerate(car_data):
+            for idx, (depth, _, di, sx, sy, color) in enumerate(car_data):
                 self._car_sprite_pool.set_sprite(idx, di, sx, sy, color)
-            self._car_sprite_pool.sprite_list.draw(pixelated=True)
+                overlay.append((depth, 0, self._car_sprite_pool.sprite_at(idx)))
+        overlay.sort(key=lambda t: (t[0], t[1]), reverse=True)
+        for _, _, spr in overlay:
+            arcade.draw_sprite(spr, pixelated=True)
 
         if self._show_visibility_fans:
             half = VIS_ZONE_WIDTH_CELLS / 2.0
