@@ -17,7 +17,13 @@ from render.intersection_topology import (
     straight_axis_for_intersection,
     tee_layout_for_sides,
 )
-from render.tiles import TileSet, generate_corner_texture, generate_straight_texture, generate_tee_texture
+from render.tiles import (
+    TileSet,
+    generate_corner_texture,
+    generate_cross_texture,
+    generate_straight_texture,
+    generate_tee_texture,
+)
 from render.buildings import (
     buildings_dir,
     load_catalog,
@@ -763,11 +769,17 @@ class StoplightsWindow(arcade.Window):
 
         for key, cells in intersection_cells_map.items():
             cfg = self.game.intersections.get(key)
-            itype = cfg.intersection_type if cfg else places.INTERSECTION_TYPE_X
+            itype = places.clamp_intersection_type(
+                cfg.intersection_type if cfg else places.INTERSECTION_TYPE_CROSS
+            )
             size_cells = cfg.size_cells if cfg else 4
             active, _, _ = classify_intersection_sides(key, cells)
             centered_tex: arcade.Texture | None = None
-            if itype == places.INTERSECTION_TYPE_CORNER:
+            if itype == places.INTERSECTION_TYPE_NONE:
+                pass
+            elif itype == places.INTERSECTION_TYPE_CROSS:
+                centered_tex = generate_cross_texture(size_cells)
+            elif itype == places.INTERSECTION_TYPE_CORNER:
                 q = corner_quadrant_for_sides(active)
                 centered_tex = generate_corner_texture(size_cells, quadrant=q)
             elif itype == places.INTERSECTION_TYPE_STRAIGHT:

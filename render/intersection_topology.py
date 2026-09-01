@@ -196,6 +196,17 @@ _OPPOSITE_CARDINAL: dict[Cardinal, Cardinal] = {"N": "S", "S": "N", "E": "W", "W
 _ALL_CARDINALS: frozenset[Cardinal] = frozenset({"N", "S", "E", "W"})
 
 
+def tee_corner_quadrants(stem: Cardinal) -> tuple[int, int]:
+    """Two make_corner quadrants that include the tee stem."""
+    if stem == "E":
+        return (1, 2)
+    if stem == "W":
+        return (0, 3)
+    if stem == "N":
+        return (0, 1)
+    return (2, 3)
+
+
 def tee_layout_for_sides(
     active: frozenset[Cardinal],
     through_fallback: StraightAxis = "ns",

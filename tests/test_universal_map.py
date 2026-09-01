@@ -95,6 +95,7 @@ def test_migrate_schema_3_snippet() -> None:
     assert out["places"]["Housing"]["protected"] is True
     assert out["places"]["Extra"]["protected"] is False
     assert out["intersections"]["main"]["protected"] is True
+    assert out["intersections"]["main"]["type"] == "cross"
     assert out["intersections"]["intersection_3"]["protected"] is False
     assert out["lanes"]["0"]["protected"] is True
     assert out["lanes"]["12"]["protected"] is False
@@ -113,7 +114,7 @@ def test_tangent_straight_turn_uturn() -> None:
     }
     intersections = {
         "hub": places.IntersectionConfig(
-            intersection_type=places.INTERSECTION_TYPE_X,
+            intersection_type=places.INTERSECTION_TYPE_CROSS,
             size_cells=4,
             center_x=11,
             center_y=15,
@@ -701,6 +702,50 @@ def test_tee_layout_for_sides() -> None:
     assert tee_layout_for_sides(frozenset({"N", "E"}), through_fallback="ns") == ("ns", "E")
 
 
+def test_tee_corner_quadrants() -> None:
+    from render.intersection_topology import tee_corner_quadrants
+
+    assert tee_corner_quadrants("E") == (1, 2)
+    assert tee_corner_quadrants("W") == (0, 3)
+    assert tee_corner_quadrants("N") == (0, 1)
+    assert tee_corner_quadrants("S") == (2, 3)
+
+
+def test_filleted_cross_tee_transparency() -> None:
+    from render.corner_gen import WHITE, YELLOW, make_cross, make_tee
+
+    cross = make_cross(4)
+    w, h = cross.size
+    assert cross.getpixel((0, 0))[3] == 0
+    assert cross.getpixel((w - 1, 0))[3] == 0
+    assert cross.getpixel((0, h - 1))[3] == 0
+    assert cross.getpixel((w - 1, h - 1))[3] == 0
+    cx, cy = w // 2, h // 2
+    centre = cross.getpixel((cx, cy))
+    assert centre[3] == 255
+    assert centre[:3] != WHITE
+    # Dual yellows continue through (ns band at split-4).
+    y_mid = cross.getpixel((cx, 60))
+    assert y_mid[:3] == YELLOW
+    for dx in range(-8, 9):
+        for dy in range(-8, 9):
+            assert cross.getpixel((cx + dx, cy + dy))[:3] != WHITE
+
+    tee = make_tee(4, axis="ns", stem="E")
+    tw, th = tee.size
+    # Open west AABB corners stay clear; east AABB corners are fillet holes, not a grey slab.
+    assert tee.getpixel((0, 0))[3] == 0
+    assert tee.getpixel((0, th - 1))[3] == 0
+    assert tee.getpixel((tw - 1, 0))[3] == 0
+    assert tee.getpixel((tw - 1, th - 1))[3] == 0
+    tee_c = tee.getpixel((tw // 2, th // 2))
+    assert tee_c[3] == 255
+    assert tee_c[:3] != WHITE
+    # Stem yellows meet the through (ew stub, top half).
+    assert tee.getpixel((60, 16))[:3] == YELLOW
+    assert tee.getpixel((tw // 2, 60))[:3] == YELLOW
+
+
 def test_snap_cardinal_end() -> None:
     origin = (10, 10)
     assert snap_cardinal_end(origin, origin) == origin
@@ -1036,6 +1081,8 @@ def main() -> None:
         test_place_spawn_survives_rebuild,
         test_camera_roundtrip,
         test_tee_layout_for_sides,
+        test_tee_corner_quadrants,
+        test_filleted_cross_tee_transparency,
         test_rename_place,
         test_snap_cardinal_end,
         test_place_aabb_from_corners,

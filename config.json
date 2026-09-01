@@ -136,7 +136,7 @@
   },
   "intersections": {
     "main": {
-      "type": "x",
+      "type": "cross",
       "center_x": 36,
       "center_y": 48,
       "size_cells": 6,
@@ -157,14 +157,14 @@
       "protected": false
     },
     "intersection_3": {
-      "type": "x",
+      "type": "cross",
       "center_x": 36,
       "center_y": 48,
       "size_cells": 4,
       "protected": false
     },
     "intersection_4": {
-      "type": "x",
+      "type": "cross",
       "center_x": 36,
       "center_y": 28,
       "size_cells": 2,
@@ -199,7 +199,7 @@
       "protected": false
     },
     "intersection_9": {
-      "type": "x",
+      "type": "cross",
       "center_x": 29,
       "center_y": 28,
       "size_cells": 2,

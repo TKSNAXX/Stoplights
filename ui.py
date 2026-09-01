@@ -739,15 +739,17 @@ PLACE_BUILDING_KIND_VALUES = ("none", "residential", "commercial")
 LANE_SPEED_VALUES = (0.5, 0.75, 1.0, 1.25, 1.5)
 # Lane type: normal, passing (more types in future)
 LANE_TYPE_VALUES = ("normal", "passing")
-# Intersection type: x (cross), corner, straight (dual lane through), tee
-INTERSECTION_TYPE_VALUES = ("x", "corner", "straight", "tee")
+# Intersection type: none (full grey), cross, corner, straight, tee
+INTERSECTION_TYPE_VALUES = ("none", "cross", "corner", "straight", "tee")
 
 
 def _intersection_type_index(intersection_type: str) -> int:
+    if intersection_type == "x":
+        intersection_type = "cross"
     try:
         return INTERSECTION_TYPE_VALUES.index(intersection_type)
     except ValueError:
-        return 0
+        return INTERSECTION_TYPE_VALUES.index("cross")
 # Intersection size: 2, 4, 6, 8, 10, 12 cells
 INTERSECTION_SIZE_VALUES = (2, 4, 6, 8, 10, 12)
 
@@ -877,7 +879,7 @@ class IntersectionVarsDialog(Dialog):
         self._on_remove = on_remove
         self._can_remove = bool(game is not None and hasattr(game, "can_remove_intersection") and game.can_remove_intersection(intersection_key))
 
-        type_idx = _intersection_type_index(getattr(intersection_config, "intersection_type", "x"))
+        type_idx = _intersection_type_index(getattr(intersection_config, "intersection_type", "cross"))
         cx = getattr(intersection_config, "center_x", 18)
         cy = getattr(intersection_config, "center_y", 24)
         size_val = getattr(intersection_config, "size_cells", 4)
@@ -996,7 +998,7 @@ class NewIntersectionDialog(Dialog):
         self._type_dropdown = Dropdown(
             0, 0, 140, DROPDOWN_ROW_HEIGHT,
             list(INTERSECTION_TYPE_VALUES),
-            initial_index=0,
+            initial_index=INTERSECTION_TYPE_VALUES.index("cross"),
             on_change=None,
         )
         control_width = 140

@@ -48,18 +48,11 @@ def _arc_center(quadrant: int, size: int) -> tuple[int, int, int, int]:
     return arc_cx, arc_cy, start_a, end_a
 
 
-def make_corner(cells: int = 4, quadrant: int = 0):
-    """
-    Generate corner ortho image for given cell count. Size = cells * 32.
-    quadrant 0..3 selects arc corner / sweep (W+N, N+E, E+S, S+W connectivity).
-    """
-    if Image is None or ImageDraw is None:
-        raise RuntimeError("Pillow required for corner generation: pip install Pillow")
-
+def _corner_bands(cells: int) -> tuple[int, list[tuple[tuple[int, int, int], int, int]]]:
+    """Return (size, bands) with the same radii as make_corner."""
     cells = max(2, min(12, cells))
     if cells % 2 != 0:
         cells = (cells // 2) * 2
-
     size = cells * ORTHO_TILE_SIZE
     radius_offset = (cells - 4) * 16
     align = _CORNER_ALIGN_OFFSET_BASE
@@ -75,9 +68,22 @@ def make_corner(cells: int = 4, quadrant: int = 0):
         if ro <= ri:
             ro = ri + 2
         bands.append((color, ri, ro))
+    return size, bands
 
+
+def make_corner(cells: int = 4, quadrant: int = 0):
+    """
+    Generate corner ortho image for given cell count. Size = cells * 32.
+    quadrant 0..3 selects arc corner / sweep (W+N, N+E, E+S, S+W connectivity).
+    """
+    if Image is None or ImageDraw is None:
+        raise RuntimeError("Pillow required for corner generation: pip install Pillow")
+
+    cells = max(2, min(12, cells))
+    if cells % 2 != 0:
+        cells = (cells // 2) * 2
+    size, bands = _corner_bands(cells)
     arc_cx, arc_cy, start_angle, end_angle = _arc_center(quadrant, size)
-
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
@@ -96,7 +102,42 @@ def make_corner(cells: int = 4, quadrant: int = 0):
 
     bbox_inner = (arc_cx - inner_r, arc_cy - inner_r, arc_cx + inner_r, arc_cy + inner_r)
     draw.pieslice(bbox_inner, start_angle, end_angle, fill=(0, 0, 0, 0))
+    return img
 
+
+def make_corner_fillet(cells: int = 4, quadrant: int = 0):
+    """
+    AABB-corner grass bite plus grey pavement and the inner curb white.
+    No turn yellows and no outer white — those collide when four corners meet.
+    """
+    if Image is None or ImageDraw is None:
+        raise RuntimeError("Pillow required for corner generation: pip install Pillow")
+
+    cells = max(2, min(12, cells))
+    if cells % 2 != 0:
+        cells = (cells // 2) * 2
+    size, bands = _corner_bands(cells)
+    arc_cx, arc_cy, start_angle, end_angle = _arc_center(quadrant, size)
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    outer_r = max(b[2] for b in bands)
+    inner_r = min(b[1] for b in bands)
+    whites = [(c, ri, ro) for c, ri, ro in bands if c == WHITE]
+    if whites:
+        _wc, w_in, w_out = whites[-1]
+    else:
+        w_in, w_out = inner_r, inner_r + 2
+
+    bbox_base = (arc_cx - outer_r, arc_cy - outer_r, arc_cx + outer_r, arc_cy + outer_r)
+    draw.pieslice(bbox_base, start_angle, end_angle, fill=(*ROAD_GREY, 255))
+    bbox_w = (arc_cx - w_out, arc_cy - w_out, arc_cx + w_out, arc_cy + w_out)
+    draw.pieslice(bbox_w, start_angle, end_angle, fill=(*WHITE, 255))
+    if w_in > 0:
+        bbox_g = (arc_cx - w_in, arc_cy - w_in, arc_cx + w_in, arc_cy + w_in)
+        draw.pieslice(bbox_g, start_angle, end_angle, fill=(*ROAD_GREY, 255))
+    bbox_inner = (arc_cx - inner_r, arc_cy - inner_r, arc_cx + inner_r, arc_cy + inner_r)
+    draw.pieslice(bbox_inner, start_angle, end_angle, fill=(0, 0, 0, 0))
     return img
 
 
@@ -107,7 +148,8 @@ def make_straight_through(cells: int = 4, axis: str = "ns", omit_white: str | No
 
     Yellow median: two 1px lines (same stroke as outer white); exactly 6 grey px between them (split-4 and split+3).
     axis 'ns' = through traffic N–S → horizontal ortho stripes (like road_n/road_s); 'ew' = through E–W → vertical (like road_e/road_w).
-    omit_white: 'lo' skips the low-ortho-edge white (top / left of the band); 'hi' skips the high-ortho-edge white.
+    omit_white: 'lo' skips the low-ortho-edge white (top / left of the band); 'hi' skips the high-ortho-edge white;
+    'both' skips both (through-lines only, for cross/tee composites).
     """
     if Image is None or ImageDraw is None:
         raise RuntimeError("Pillow required: pip install Pillow")
@@ -136,48 +178,124 @@ def make_straight_through(cells: int = 4, axis: str = "ns", omit_white: str | No
     def v_white_outer_1px(x: int) -> None:
         draw.rectangle((x, 0, x + 1, size), fill=(*WHITE, 255))
 
-    def v_yellow_1px(x: int) -> None:
-        draw.rectangle((x, 0, x + 1, size), fill=(*YELLOW, 255))
-
     def h_white_outer_1px(y: int) -> None:
         draw.rectangle((0, y, size, y + 1), fill=(*WHITE, 255))
 
-    def h_yellow_1px(y: int) -> None:
-        draw.rectangle((0, y, size, y + 1), fill=(*YELLOW, 255))
-
+    split = c1
     if axis == "ns":
         ya, yb = c0, c1 + t
-        split = c1
         white_outer_bottom = c1 + 28
-        if omit_white != "lo":
+        if omit_white not in ("lo", "both"):
             h_white_outer_1px(ya + 2)
-        if omit_white != "hi":
+        if omit_white not in ("hi", "both"):
             h_white_outer_1px(white_outer_bottom)
-        h_yellow_1px(split - 4)
-        h_yellow_1px(split + 3)
+        _stroke_through_yellows(draw, size, split, "ns")
     else:
-        if omit_white != "lo":
+        if omit_white not in ("lo", "both"):
             v_white_outer_1px(xa + 2)
-        if omit_white != "hi":
+        if omit_white not in ("hi", "both"):
             v_white_outer_1px(white_outer_right)
-        split = c1
-        v_yellow_1px(split - 4)
-        v_yellow_1px(split + 3)
+        _stroke_through_yellows(draw, size, split, "ew")
 
+    return img
+
+
+def _stroke_through_yellows(draw, size: int, split: int, axis: str) -> None:
+    """Dual 1px yellows at the dual-lane split (same coords as make_straight_through)."""
+    if axis == "ns":
+        draw.rectangle((0, split - 4, size, split - 3), fill=(*YELLOW, 255))
+        draw.rectangle((0, split + 3, size, split + 4), fill=(*YELLOW, 255))
+    else:
+        draw.rectangle((split - 4, 0, split - 3, size), fill=(*YELLOW, 255))
+        draw.rectangle((split + 3, 0, split + 4, size), fill=(*YELLOW, 255))
+
+
+def _restroke_axis_yellows(img, cells: int, axis: str) -> None:
+    if ImageDraw is None:
+        return
+    _size, _c0, c1, _band_hi = _band_rect(cells)
+    draw = ImageDraw.Draw(img)
+    _stroke_through_yellows(draw, img.size[0], c1, axis)
+
+
+def _stroke_cross_arm_whites(img, cells: int) -> None:
+    """Outer whites on each arm, stopping at the crossing so they do not form stop-bars."""
+    if ImageDraw is None:
+        return
+    _size, c0, c1, band_hi = _band_rect(cells)
+    size = img.size[0]
+    draw = ImageDraw.Draw(img)
+    ya = c0
+    white_outer_bottom = c1 + 28
+    xa = c0
+    white_outer_right = c1 + 28
+    for y in (ya + 2, white_outer_bottom):
+        draw.rectangle((0, y, c0, y + 1), fill=(*WHITE, 255))
+        draw.rectangle((band_hi, y, size, y + 1), fill=(*WHITE, 255))
+    for x in (xa + 2, white_outer_right):
+        draw.rectangle((x, 0, x + 1, c0), fill=(*WHITE, 255))
+        draw.rectangle((x, band_hi, x + 1, size), fill=(*WHITE, 255))
+
+
+def _band_rect(cells: int) -> tuple[int, int, int, int]:
+    """size, c0, band_hi (exclusive-ish bottom/right of the dual-cell band)."""
+    cells = max(2, min(12, cells))
+    if cells % 2 != 0:
+        cells = (cells // 2) * 2
+    t = ORTHO_TILE_SIZE
+    c0 = (cells // 2 - 1) * t
+    c1 = (cells // 2) * t
+    return cells * t, c0, c1, c1 + t
+
+
+def _clear_open_half(img, cells: int, axis: str, stem: str) -> None:
+    """Punch the overlay half opposite the tee stem (the open face)."""
+    if ImageDraw is None:
+        return
+    size, c0, _c1, band_hi = _band_rect(cells)
+    draw = ImageDraw.Draw(img)
+    clear = (0, 0, 0, 0)
+    if axis == "ns":
+        if stem == "E":
+            draw.rectangle((0, band_hi, size, size), fill=clear)
+        elif stem == "W":
+            draw.rectangle((0, 0, size, c0), fill=clear)
+    else:
+        if stem == "N":
+            draw.rectangle((band_hi, 0, size, size), fill=clear)
+        elif stem == "S":
+            draw.rectangle((0, 0, c0, size), fill=clear)
+
+
+def make_cross(cells: int = 4):
+    """Four-way: filleted AABB corners, then straight dual yellows on both axes."""
+    if Image is None:
+        raise RuntimeError("Pillow required for cross generation: pip install Pillow")
+    cells = max(2, min(12, cells))
+    if cells % 2 != 0:
+        cells = (cells // 2) * 2
+    size = cells * ORTHO_TILE_SIZE
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    for q in range(4):
+        img = Image.alpha_composite(img, make_corner_fillet(cells, quadrant=q))
+    img = Image.alpha_composite(img, make_straight_through(cells, axis="ns", omit_white="both"))
+    img = Image.alpha_composite(img, make_straight_through(cells, axis="ew", omit_white="both"))
+    _restroke_axis_yellows(img, cells, "ns")
+    _restroke_axis_yellows(img, cells, "ew")
+    _stroke_cross_arm_whites(img, cells)
     return img
 
 
 def make_tee(cells: int = 4, axis: str = "ns", stem: str = "E"):
     """
-    Straight-through dual-lane band plus solid grey on the stem side.
+    Through dual-lane lines plus a stem stub and two AABB-corner fillets.
 
-    Stem grey fills from the through-band edge to the stem edge of the patch,
-    spanning the full other dimension. The opposite side stays transparent.
-    The through-road white stripe on the stem side is omitted.
-    Stem must be perpendicular to axis (ns→E/W, ew→N/S); otherwise this is
-    identical to make_straight_through.
+    Turn-arc yellows are not used; they would cut the through-road with white bars.
     """
-    # Swapped vs first paint: lo leftover is E (ns) / N (ew); hi is W (ns) / S (ew).
+    if Image is None:
+        raise RuntimeError("Pillow required for tee generation: pip install Pillow")
+    from render.intersection_topology import tee_corner_quadrants
+
     omit_white: str | None = None
     if axis == "ns":
         if stem == "E":
@@ -190,28 +308,17 @@ def make_tee(cells: int = 4, axis: str = "ns", stem: str = "E"):
         elif stem == "S":
             omit_white = "hi"
 
-    img = make_straight_through(cells, axis=axis, omit_white=omit_white)
-    if ImageDraw is None:
-        return img
-
-    cells = max(2, min(12, cells))
-    if cells % 2 != 0:
-        cells = (cells // 2) * 2
-    size = cells * ORTHO_TILE_SIZE
-    t = ORTHO_TILE_SIZE
-    c0 = (cells // 2 - 1) * t
-    c1 = (cells // 2) * t
-    band_hi = c1 + t
-    draw = ImageDraw.Draw(img)
-
-    if axis == "ns":
-        if stem == "E":
-            draw.rectangle((0, 0, size, c0), fill=(*ROAD_GREY, 255))
-        elif stem == "W":
-            draw.rectangle((0, band_hi, size, size), fill=(*ROAD_GREY, 255))
-    else:
-        if stem == "N":
-            draw.rectangle((0, 0, c0, size), fill=(*ROAD_GREY, 255))
-        elif stem == "S":
-            draw.rectangle((band_hi, 0, size, size), fill=(*ROAD_GREY, 255))
+    perp = "ew" if axis == "ns" else "ns"
+    cells_n = max(2, min(12, cells))
+    if cells_n % 2 != 0:
+        cells_n = (cells_n // 2) * 2
+    size = cells_n * ORTHO_TILE_SIZE
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    for q in tee_corner_quadrants(stem):  # type: ignore[arg-type]
+        img = Image.alpha_composite(img, make_corner_fillet(cells, quadrant=q))
+    img = Image.alpha_composite(img, make_straight_through(cells, axis=axis, omit_white=omit_white))
+    stub = make_straight_through(cells, axis=perp, omit_white="both")
+    _clear_open_half(stub, cells, axis, stem)
+    img = Image.alpha_composite(img, stub)
+    _restroke_axis_yellows(img, cells, axis)
     return img

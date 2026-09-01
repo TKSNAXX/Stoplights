@@ -44,7 +44,7 @@
   },
   "intersections": {
     "main": {
-      "type": "x",
+      "type": "cross",
       "center_x": 36,
       "center_y": 48,
       "size_cells": 4,

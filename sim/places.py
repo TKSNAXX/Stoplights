@@ -76,12 +76,15 @@ LANE_TYPE_NORMAL = "normal"
 LANE_TYPE_PASSING = "passing"
 LANE_TYPES = (LANE_TYPE_NORMAL, LANE_TYPE_PASSING)
 
-INTERSECTION_TYPE_X = "x"
+INTERSECTION_TYPE_NONE = "none"
+INTERSECTION_TYPE_CROSS = "cross"
+INTERSECTION_TYPE_X = "x"  # load alias for cross
 INTERSECTION_TYPE_CORNER = "corner"
 INTERSECTION_TYPE_STRAIGHT = "straight"
 INTERSECTION_TYPE_TEE = "tee"
 INTERSECTION_TYPES = (
-    INTERSECTION_TYPE_X,
+    INTERSECTION_TYPE_NONE,
+    INTERSECTION_TYPE_CROSS,
     INTERSECTION_TYPE_CORNER,
     INTERSECTION_TYPE_STRAIGHT,
     INTERSECTION_TYPE_TEE,
@@ -91,6 +94,15 @@ INTERSECTION_SIZE_MIN = 2
 INTERSECTION_SIZE_MAX = 12
 INTERSECTION_SIZE_DEFAULT = 4
 INTERSECTION_SIZE_VALUES = (2, 4, 6, 8, 10, 12)
+
+
+def clamp_intersection_type(raw) -> str:
+    """Canonical overlay type. Legacy 'x' is cross."""
+    if raw == INTERSECTION_TYPE_X:
+        return INTERSECTION_TYPE_CROSS
+    if raw in INTERSECTION_TYPES:
+        return str(raw)
+    return INTERSECTION_TYPE_CROSS
 
 # Module-level route hints from the active scenario: (origin, dest, via_node).
 _route_hints: list[tuple[str, str, str]] = []
@@ -109,7 +121,7 @@ def get_route_hints() -> list[tuple[str, str, str]]:
 @dataclasses.dataclass
 class IntersectionConfig:
     """Per-intersection type, center, and size."""
-    intersection_type: str = INTERSECTION_TYPE_X
+    intersection_type: str = INTERSECTION_TYPE_CROSS
     size_cells: int = INTERSECTION_SIZE_DEFAULT
     center_x: int = 36
     center_y: int = 48
