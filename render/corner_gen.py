@@ -32,11 +32,12 @@ _CORNER_BANDS_BASE = [
 _CORNER_ALIGN_OFFSET_BASE = -2
 
 # (arc_cx is 0 or size-1, arc_cy is 0 or size-1) via flags; then start/end angle (PIL degrees).
+# Clockwise from ortho bottom-left. After ortho→iso: BL=NW, BR=SW, TR=SE, TL=NE.
 _CORNER_ARC_PRESETS: list[tuple[int, int, int, int]] = [
-    (0, 1, 270, 360),  # cx=0, cy=size-1 — W+N arms (quadrant 0)
-    (1, 1, 180, 270),  # SE corner of image
-    (1, 0, 90, 180),
-    (0, 0, 0, 90),
+    (0, 1, 270, 360),  # q0 image BL → W+N
+    (1, 1, 180, 270),  # q1 image BR → S+W
+    (1, 0, 90, 180),   # q2 image TR → E+S
+    (0, 0, 0, 90),     # q3 image TL → N+E
 ]
 
 
@@ -74,7 +75,7 @@ def _corner_bands(cells: int) -> tuple[int, list[tuple[tuple[int, int, int], int
 def make_corner(cells: int = 4, quadrant: int = 0):
     """
     Generate corner ortho image for given cell count. Size = cells * 32.
-    quadrant 0..3 selects arc corner / sweep (W+N, N+E, E+S, S+W connectivity).
+    quadrant 0..3 selects arc corner / sweep (W+N, S+W, E+S, N+E connectivity).
     """
     if Image is None or ImageDraw is None:
         raise RuntimeError("Pillow required for corner generation: pip install Pillow")
@@ -115,6 +116,25 @@ def _fillet_white_radii(cells: int) -> tuple[int, int, int, int]:
     else:
         w_in, w_out = inner_r, inner_r + 2
     return size, inner_r, w_in, w_out
+
+
+def _fill_stem_shoulder(img, cells: int, axis: str, stem: str) -> None:
+    """Opaque grey on the branch side of the through-band (not the open face)."""
+    if ImageDraw is None:
+        return
+    size, c0, _c1, band_hi = _band_rect(cells)
+    draw = ImageDraw.Draw(img)
+    fill = (*ROAD_GREY, 255)
+    if axis == "ns":
+        if stem == "E":
+            draw.rectangle((0, 0, size, c0), fill=fill)
+        elif stem == "W":
+            draw.rectangle((0, band_hi, size, size), fill=fill)
+    else:
+        if stem == "N":
+            draw.rectangle((0, 0, c0, size), fill=fill)
+        elif stem == "S":
+            draw.rectangle((band_hi, 0, size, size), fill=fill)
 
 
 def _stroke_fillet_lip(img, cells: int, quadrant: int) -> None:
@@ -299,16 +319,14 @@ def _clear_open_half(img, cells: int, axis: str, stem: str) -> None:
 
 
 def make_cross(cells: int = 4):
-    """Four-way: filleted AABB corners only. No through-band yellows or arm whites."""
-    if Image is None:
+    """Four-way: grey plaza with filleted AABB corners. No through-band yellows."""
+    if Image is None or ImageDraw is None:
         raise RuntimeError("Pillow required for cross generation: pip install Pillow")
     cells = max(2, min(12, cells))
     if cells % 2 != 0:
         cells = (cells // 2) * 2
     size = cells * ORTHO_TILE_SIZE
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    for q in range(4):
-        img = Image.alpha_composite(img, make_corner_fillet(cells, quadrant=q))
+    img = Image.new("RGBA", (size, size), (*ROAD_GREY, 255))
     for q in range(4):
         _stroke_fillet_lip(img, cells, q)
     return img
@@ -338,9 +356,8 @@ def make_tee(cells: int = 4, axis: str = "ns", stem: str = "E"):
             omit_white = "hi"
 
     img = make_straight_through(cells, axis=axis, omit_white=omit_white)
+    _fill_stem_shoulder(img, cells, axis, stem)
     quads = tee_corner_quadrants(stem)  # type: ignore[arg-type]
-    for q in quads:
-        img = Image.alpha_composite(img, make_corner_fillet(cells, quadrant=q))
     _restroke_axis_yellows(img, cells, axis)
     _restroke_open_side_white(img, cells, axis, omit_white)
     for q in quads:

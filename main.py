@@ -14,6 +14,7 @@ from render.sprites import CarSpritePool, load_car_textures
 from render.intersection_topology import (
     classify_intersection_sides,
     corner_quadrant_for_sides,
+    overlay_type_for_sides,
     straight_axis_for_intersection,
     tee_layout_for_sides,
 )
@@ -554,7 +555,6 @@ class StoplightsWindow(arcade.Window):
         if size < 2:
             size = 2
         self.game.intersections[dlg._key] = places.IntersectionConfig(
-            intersection_type=dlg.current_type(),
             center_x=center[0],
             center_y=center[1],
             size_cells=size,
@@ -769,11 +769,9 @@ class StoplightsWindow(arcade.Window):
 
         for key, cells in intersection_cells_map.items():
             cfg = self.game.intersections.get(key)
-            itype = places.clamp_intersection_type(
-                cfg.intersection_type if cfg else places.INTERSECTION_TYPE_CROSS
-            )
             size_cells = cfg.size_cells if cfg else 4
             active, _, _ = classify_intersection_sides(key, cells)
+            itype = overlay_type_for_sides(active)
             centered_tex: arcade.Texture | None = None
             if itype == places.INTERSECTION_TYPE_NONE:
                 pass

@@ -178,11 +178,7 @@ def _normalize_place(raw: dict, place_id: str = "") -> dict:
 
 
 def _normalize_intersection(raw: dict) -> dict:
-    itype = places.clamp_intersection_type(
-        raw.get("type") or raw.get("intersection_type") or places.INTERSECTION_TYPE_CROSS
-    )
     return {
-        "type": itype,
         "center_x": int(raw.get("center_x", 36)),
         "center_y": int(raw.get("center_y", 48)),
         "size_cells": clamp_intersection_size(int(raw.get("size_cells", places.INTERSECTION_SIZE_DEFAULT))),
@@ -241,7 +237,6 @@ def _migrate_schema_3(data: dict) -> dict:
             continue
         intersections_out[str(key)] = _normalize_intersection(
             {
-                "type": raw.get("intersection_type", places.INTERSECTION_TYPE_CROSS),
                 "center_x": raw.get("center_x", 36),
                 "center_y": raw.get("center_y", 48),
                 "size_cells": raw.get("size_cells", places.INTERSECTION_SIZE_DEFAULT),
@@ -331,7 +326,6 @@ def scenario_to_game_dicts(scenario: dict) -> tuple[
     intersections_by_id: dict[str, places.IntersectionConfig] = {}
     for key, raw in scenario.get("intersections", {}).items():
         intersections_by_id[key] = places.IntersectionConfig(
-            intersection_type=places.clamp_intersection_type(raw.get("type", places.INTERSECTION_TYPE_CROSS)),
             size_cells=clamp_intersection_size(int(raw.get("size_cells", 4))),
             center_x=int(raw["center_x"]),
             center_y=int(raw["center_y"]),
@@ -410,7 +404,6 @@ def game_to_scenario(game: "GameState", window=None) -> dict:
     intersections_out: dict[str, dict] = {}
     for key, cfg in game.intersections.items():
         intersections_out[key] = {
-            "type": cfg.intersection_type,
             "center_x": cfg.center_x,
             "center_y": cfg.center_y,
             "size_cells": cfg.size_cells,

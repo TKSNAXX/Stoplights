@@ -21,7 +21,7 @@
 - **2026-08-27 (infra rim):** Places, lanes, and intersections are **infrastructure**. Open vars dialogs get an iso-bevel selection rim (SW highlight, NE shadow).
 - **2026-08-27 (grass close):** Clicking a grass cell dismisses open dialogs. Settings **Grass close** (default on). Draw tools still use map clicks for placement.
 - **2026-08-27 (world colour grade):** Settings Colors (hue/sat) grade the world; UI ungraded; identity skips the pass.
-- **2026-09-01 (tee/cross paint):** `cross` is four fillets only (no thru yellows). `tee` is through-band plus stem-side bent whites; open face punched clear (no opposite stub). Fillet quadrants match omit_white (through-band curb), not AABB-east corners. Cross/tee restroke fillet lips last so sibling greys do not hide them.
+- **2026-09-01 (auto overlay):** Intersection type dropdown removed. Overlay kind is inferred at draw from connected sides. Authored `type` is ignored and not saved.
 
 ---
 
@@ -53,7 +53,7 @@ Stoplights is an isometric traffic simulation (Python + Arcade). Cars spawn at p
 ### Display (`render/`)
 - **`selection.py`** — Arcade-free iso AABB silhouette and iso-bevel rim bands (multiply shadow, screen highlight).
 - **`color_grade.py`** — Window FBO + HSV shader. Settings hue/sat grade the world pass; identity (0° / 100%) skips it. UI draws after the blit.
-- **`corner_gen.py`** — Ortho overlays: `none` is per-cell grey; `cross` is four `make_corner_fillet` only; `tee` is through-band plus stem-side fillets with the open face punched clear.
+- **`corner_gen.py`** — Ortho overlays: kind inferred from connected sides; `none` is per-cell grey; `cross` is four `make_corner_fillet` only; `tee` is through-band plus stem-side fillets with the open face punched clear.
 
 ### Key Conventions (updated)
 

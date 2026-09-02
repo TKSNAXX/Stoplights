@@ -109,8 +109,8 @@ _straight_texture_cache: dict[tuple[int, str, int], arcade.Texture] = {}
 _tee_texture_cache: dict[tuple[int, str, str, int], arcade.Texture] = {}
 _cross_texture_cache: dict[tuple[int, int], arcade.Texture] = {}
 _STRAIGHT_TEX_REV = 11
-_TEE_TEX_REV = 6
-_CROSS_TEX_REV = 4
+_TEE_TEX_REV = 7
+_CROSS_TEX_REV = 5
 
 
 def generate_corner_texture(cells: int, quadrant: int = 0) -> arcade.Texture | None:

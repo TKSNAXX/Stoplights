@@ -1,6 +1,6 @@
 # Stoplights — State of the Project
 
-**As of:** 2026-09-01 (tee/cross overlay paint)  
+**As of:** 2026-09-01 (auto intersection overlay)  
 **Status:** Playable prototype / in-game editor-lite. Not a shippable game.  
 **Stack:** Python 3 + Arcade (`arcade>=2.6.0`). Entry point: `python main.py` from `Stoplights/`.
 
@@ -51,16 +51,16 @@ Headless check: `python -m tests.test_universal_map`.
 - **World rebuild from config.** `world.rebuild_world(place_rects, intersections, lanes)` — one path for every junction. Authored cell coordinates are live world coordinates (`get_bounds()`); no pad-shift. Runtime stores match schema 4: `GameState.places`, `.intersections`, `.lanes`. Overlapping intersections are allowed.
 - **Routing graph.** BFS next-hops over place/intersection nodes; optional `route_hints`.
 - **Car motion.** Lane segments + turn arcs; visibility fans; spatial buckets; impasse; police.
-- **Ortho → iso tiles**, dialogs, toolbar editor, discrete zoom/pan. Intersection overlay types: `none` (full-grey square), `cross`, `corner`, `straight`, `tee`. `cross` is four corner fillets (no thru lines); `tee` continues through-road yellows/whites and bends the branch-side white. Occupancy stays a square AABB. Legacy type `x` loads as `cross`.
+- **Ortho → iso tiles**, dialogs, toolbar editor, discrete zoom/pan. Intersection overlay kind is inferred from connected sides (`none` / `straight` / `corner` / `tee` / `cross`). Occupancy stays a square AABB. Authored `type` is ignored and not saved.
 - **Persistence.** Schema 4 `config.json`. Cars not saved. Debounced save + save-on-close.
 - **Editable place names.** Place dialog `TextBox` commits via `rename_place` (keys, hints, live cars). Intersection rename is out of scope.
 - **Mouse-drawn lanes.** Toolbar iso-road button enters a two-click cardinal tool (ghost preview; Add Lane dialog is a live readout). One lane per activation. Cancel via Esc (key or upper-left Esc chip), the lane button, or a click off the map island.
 - **Mouse-drawn places.** Toolbar green iso `place_zone` button: two opposite corners finish a rect; a colinear second corner waits for a third (1×1 if C2 is the same cell; 1×N strip if C3 sits on the locked edge). New Place dialog is a readout. Backspace / upper-right `<-` undoes the last placement click for place, lane, and intersection tools.
-- **Mouse-drawn intersections.** Toolbar iso `road_cross` button: a 2×2 ghost follows the cursor as centre; first click locks it, second click sets even size (2..12) to the smallest stamp whose occupancy contains the hover cell (`bounds_from_center`). New Intersection dialog is a readout (type / centre / size). One junction per activation. Backend stays `center_x/y` + even `size_cells`.
+- **Mouse-drawn intersections.** Toolbar iso `road_cross`. Two-click centre-size: 2×2 ghost while aiming, second click is smallest even size whose `bounds_from_center` AABB contains hover (clamp 12). New Intersection dialog is a readout (centre / size). Overlay paint is inferred from lanes. One junction per activation. Backend stays `center_x/y` + even `size_cells`.
 - **Infrastructure selection rim.** Opening a place / lane / intersection vars dialog rims that occupancy with an iso bevel: SW inner highlight, NE outer shadow, fading over a few screen pixels. Shadow multiplies the tiles; highlight screens — the pavement colour stays, only the edge contrast changes.
 - **Grass close.** Clicking an empty grass cell dismisses open dialogs (Settings toggle; on by default). Not used while a draw tool is placing.
 - **World colour grade.** Settings **Colors** (Hue 0–360°, Sat 0–200%) grade the map — tiles, cars, draw ghosts, selection rims, visibility fans — in one post-process pass. Dialogs, toolbar, Esc/`<-` chips, place/cardinal labels, and the perf overlay stay ungraded. Hue 0° and sat 100% skip the extra pass.
-- **Filleted tee/cross overlays.** Type `cross` (legacy `x`) is four AABB-corner grass bites with bent whites only — no through-band yellows. `tee` is a through-band (yellows and open-side white continue; stem-side white bends into the branch) plus two fillet bites; the face opposite the branch stays transparent. `none` is the old full-grey square. Occupancy unchanged.
+- **Filleted tee/cross overlays.** Overlay kind is inferred from connected sides. `cross` is four AABB-corner grass bites with bent whites only. `tee` is a through-band plus two fillet bites; the face opposite the branch stays transparent. `none` is the empty-stamp grey square. Occupancy unchanged.
 - **Perf overlay.** Always on; `V` toggles visibility fans.
 
 ### Present in data / UI but not wired

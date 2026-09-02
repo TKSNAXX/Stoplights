@@ -164,13 +164,32 @@ def classify_intersection_sides(
     return active, frozenset(sides_in), frozenset(sides_out)
 
 
-# Quadrant presets for make_corner; bypass (W+N arms) uses quadrant 0.
+# Image-space quadrant order is clockwise from the ortho bottom-left (iso W / world NW),
+# not world-clockwise around the AABB. N+E and S+W are therefore 3 and 1, not 1 and 3.
 _PAIR_TO_QUADRANT: dict[frozenset[Cardinal], int] = {
     frozenset({"W", "N"}): 0,
-    frozenset({"N", "E"}): 1,
+    frozenset({"S", "W"}): 1,
     frozenset({"E", "S"}): 2,
-    frozenset({"S", "W"}): 3,
+    frozenset({"N", "E"}): 3,
 }
+
+
+def overlay_type_for_sides(active: frozenset[Cardinal]) -> str:
+    """Overlay kind from connected cardinals. Draw-only; occupancy is unchanged."""
+    from sim import places
+
+    n = len(active)
+    if n == 0:
+        return places.INTERSECTION_TYPE_NONE
+    if n == 1:
+        return places.INTERSECTION_TYPE_STRAIGHT
+    if n == 2:
+        if active in (frozenset({"N", "S"}), frozenset({"E", "W"})):
+            return places.INTERSECTION_TYPE_STRAIGHT
+        return places.INTERSECTION_TYPE_CORNER
+    if n == 3:
+        return places.INTERSECTION_TYPE_TEE
+    return places.INTERSECTION_TYPE_CROSS
 
 
 def corner_quadrant_for_sides(active: frozenset[Cardinal]) -> int:
@@ -184,10 +203,10 @@ def corner_quadrant_for_sides(active: frozenset[Cardinal]) -> int:
 
 
 def straight_axis_for_sides(active: frozenset[Cardinal]) -> StraightAxis:
-    """N+S -> ns, E+W -> ew; else default ns (ambiguous; prefer straight_axis_for_intersection)."""
-    if active == frozenset({"N", "S"}):
+    """N/S (one or both) -> ns, E/W -> ew; else default ns."""
+    if active and active <= frozenset({"N", "S"}):
         return "ns"
-    if active == frozenset({"E", "W"}):
+    if active and active <= frozenset({"E", "W"}):
         return "ew"
     return "ns"
 
@@ -248,9 +267,9 @@ def straight_axis_for_intersection(
     Edge-based crossing counts can skew E/W on symmetric maps; direction counts match road run.
     Tie -> ns.
     """
-    if active == frozenset({"N", "S"}):
+    if active and active <= frozenset({"N", "S"}):
         return "ns"
-    if active == frozenset({"E", "W"}):
+    if active and active <= frozenset({"E", "W"}):
         return "ew"
     score_ns = 0
     score_ew = 0

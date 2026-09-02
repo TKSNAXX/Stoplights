@@ -95,7 +95,7 @@ def test_migrate_schema_3_snippet() -> None:
     assert out["places"]["Housing"]["protected"] is True
     assert out["places"]["Extra"]["protected"] is False
     assert out["intersections"]["main"]["protected"] is True
-    assert out["intersections"]["main"]["type"] == "cross"
+    assert "type" not in out["intersections"]["main"]
     assert out["intersections"]["intersection_3"]["protected"] is False
     assert out["lanes"]["0"]["protected"] is True
     assert out["lanes"]["12"]["protected"] is False
@@ -691,6 +691,30 @@ def test_camera_roundtrip() -> None:
     assert abs(back_y - gy) < 1e-6
 
 
+def test_overlay_type_for_sides() -> None:
+    from render.intersection_topology import overlay_type_for_sides
+
+    assert overlay_type_for_sides(frozenset()) == "none"
+    assert overlay_type_for_sides(frozenset({"N"})) == "straight"
+    assert overlay_type_for_sides(frozenset({"E"})) == "straight"
+    assert overlay_type_for_sides(frozenset({"N", "S"})) == "straight"
+    assert overlay_type_for_sides(frozenset({"E", "W"})) == "straight"
+    assert overlay_type_for_sides(frozenset({"N", "E"})) == "corner"
+    assert overlay_type_for_sides(frozenset({"N", "S", "E"})) == "tee"
+    assert overlay_type_for_sides(frozenset({"N", "S", "E", "W"})) == "cross"
+
+    from sim.scenario import scenario_to_game_dicts
+
+    _places, ixs, _lanes, _police, _hints, _in_bal, _out_bal = scenario_to_game_dicts(
+        {
+            "places": {},
+            "intersections": {"hub": {"center_x": 10, "center_y": 10, "size_cells": 4, "protected": False}},
+            "lanes": {},
+        }
+    )
+    assert ixs["hub"].size_cells == 4
+
+
 def test_tee_layout_for_sides() -> None:
     from render.intersection_topology import tee_layout_for_sides
 
@@ -709,6 +733,39 @@ def test_tee_corner_quadrants() -> None:
     assert tee_corner_quadrants("W") == (0, 1)
     assert tee_corner_quadrants("N") == (0, 3)
     assert tee_corner_quadrants("S") == (1, 2)
+
+
+def test_corner_quadrant_for_sides() -> None:
+    from render.corner_gen import make_corner
+    from render.intersection_topology import corner_quadrant_for_sides
+
+    assert corner_quadrant_for_sides(frozenset({"W", "N"})) == 0
+    assert corner_quadrant_for_sides(frozenset({"S", "W"})) == 1
+    assert corner_quadrant_for_sides(frozenset({"E", "S"})) == 2
+    assert corner_quadrant_for_sides(frozenset({"N", "E"})) == 3
+
+    # Connected-edge midpoints stay pavement; the other two faces stay clear.
+    # Image left/bottom/right/top ↔ world W/N/E/S after the iso shear.
+    expected = {
+        0: ("left", "bottom"),
+        1: ("right", "bottom"),
+        2: ("right", "top"),
+        3: ("left", "top"),
+    }
+    for q, sides in expected.items():
+        img = make_corner(4, quadrant=q)
+        w, h = img.size
+        mid = {
+            "left": img.getpixel((0, h // 2)),
+            "right": img.getpixel((w - 1, h // 2)),
+            "top": img.getpixel((w // 2, 0)),
+            "bottom": img.getpixel((w // 2, h - 1)),
+        }
+        for name, px in mid.items():
+            if name in sides:
+                assert px[3] == 255, f"q{q} {name} should be opaque"
+            else:
+                assert px[3] == 0, f"q{q} {name} should be clear"
 
 
 def test_filleted_cross_tee_transparency() -> None:
@@ -767,6 +824,18 @@ def test_filleted_cross_tee_transparency() -> None:
     assert _cross_white_near(w - 24, 24)
     assert _cross_white_near(24, h - 24)
     assert _cross_white_near(w - 24, h - 24)
+
+    for n in (6, 8, 12):
+        big = make_cross(n)
+        bw, bh = big.size
+        assert big.getpixel((bw // 2, bh // 2))[:3] == ROAD_GREY
+        assert big.getpixel((0, 0))[3] == 0
+        tee_n = make_tee(n, axis="ns", stem="E")
+        tw_n, th_n = tee_n.size
+        assert tee_n.getpixel((tw_n // 2, th_n // 2))[3] == 255
+        assert tee_n.getpixel((tw_n // 2, 8))[:3] == ROAD_GREY
+        band_hi = (n // 2 + 1) * 32
+        assert tee_n.getpixel((tw_n // 2, band_hi + 4))[3] == 0
 
 
 def test_snap_cardinal_end() -> None:
@@ -1103,8 +1172,10 @@ def main() -> None:
         test_authored_coords_match_world,
         test_place_spawn_survives_rebuild,
         test_camera_roundtrip,
+        test_overlay_type_for_sides,
         test_tee_layout_for_sides,
         test_tee_corner_quadrants,
+        test_corner_quadrant_for_sides,
         test_filleted_cross_tee_transparency,
         test_rename_place,
         test_snap_cardinal_end,
