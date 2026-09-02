@@ -1,6 +1,6 @@
 # Stoplights — State of the Project
 
-**As of:** 2026-08-31 (filleted tee/cross overlays)  
+**As of:** 2026-09-01 (tee/cross overlay paint)  
 **Status:** Playable prototype / in-game editor-lite. Not a shippable game.  
 **Stack:** Python 3 + Arcade (`arcade>=2.6.0`). Entry point: `python main.py` from `Stoplights/`.
 
@@ -51,7 +51,7 @@ Headless check: `python -m tests.test_universal_map`.
 - **World rebuild from config.** `world.rebuild_world(place_rects, intersections, lanes)` — one path for every junction. Authored cell coordinates are live world coordinates (`get_bounds()`); no pad-shift. Runtime stores match schema 4: `GameState.places`, `.intersections`, `.lanes`. Overlapping intersections are allowed.
 - **Routing graph.** BFS next-hops over place/intersection nodes; optional `route_hints`.
 - **Car motion.** Lane segments + turn arcs; visibility fans; spatial buckets; impasse; police.
-- **Ortho → iso tiles**, dialogs, toolbar editor, discrete zoom/pan. Intersection overlay types: `none` (full-grey square), `cross`, `corner`, `straight`, `tee`. `cross` and `tee` use corner fillets (grass at AABB corners; continuing band lines). Occupancy stays a square AABB. Legacy type `x` loads as `cross`.
+- **Ortho → iso tiles**, dialogs, toolbar editor, discrete zoom/pan. Intersection overlay types: `none` (full-grey square), `cross`, `corner`, `straight`, `tee`. `cross` is four corner fillets (no thru lines); `tee` continues through-road yellows/whites and bends the branch-side white. Occupancy stays a square AABB. Legacy type `x` loads as `cross`.
 - **Persistence.** Schema 4 `config.json`. Cars not saved. Debounced save + save-on-close.
 - **Editable place names.** Place dialog `TextBox` commits via `rename_place` (keys, hints, live cars). Intersection rename is out of scope.
 - **Mouse-drawn lanes.** Toolbar iso-road button enters a two-click cardinal tool (ghost preview; Add Lane dialog is a live readout). One lane per activation. Cancel via Esc (key or upper-left Esc chip), the lane button, or a click off the map island.
@@ -60,7 +60,7 @@ Headless check: `python -m tests.test_universal_map`.
 - **Infrastructure selection rim.** Opening a place / lane / intersection vars dialog rims that occupancy with an iso bevel: SW inner highlight, NE outer shadow, fading over a few screen pixels. Shadow multiplies the tiles; highlight screens — the pavement colour stays, only the edge contrast changes.
 - **Grass close.** Clicking an empty grass cell dismisses open dialogs (Settings toggle; on by default). Not used while a draw tool is placing.
 - **World colour grade.** Settings **Colors** (Hue 0–360°, Sat 0–200%) grade the map — tiles, cars, draw ghosts, selection rims, visibility fans — in one post-process pass. Dialogs, toolbar, Esc/`<-` chips, place/cardinal labels, and the perf overlay stay ungraded. Hue 0° and sat 100% skip the extra pass.
-- **Filleted tee/cross overlays.** Type `cross` (legacy `x`) is four AABB-corner grass bites plus straight dual yellows on both axes — not four full turn-corners (those stacked into white bars). `tee` is through-band, stem stub, and two fillet bites. `none` is the old full-grey square. Occupancy unchanged.
+- **Filleted tee/cross overlays.** Type `cross` (legacy `x`) is four AABB-corner grass bites with bent whites only — no through-band yellows. `tee` is a through-band (yellows and open-side white continue; stem-side white bends into the branch) plus two fillet bites; the face opposite the branch stays transparent. `none` is the old full-grey square. Occupancy unchanged.
 - **Perf overlay.** Always on; `V` toggles visibility fans.
 
 ### Present in data / UI but not wired

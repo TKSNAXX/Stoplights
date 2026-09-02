@@ -197,14 +197,20 @@ _ALL_CARDINALS: frozenset[Cardinal] = frozenset({"N", "S", "E", "W"})
 
 
 def tee_corner_quadrants(stem: Cardinal) -> tuple[int, int]:
-    """Two make_corner quadrants that include the tee stem."""
+    """
+    Two fillet quadrants on the through-band stem side.
+
+    Matches make_tee omit_white: E/N skip the lo curb (top / left), W/S skip hi
+    (bottom / right). World-east AABB corners are not the same pair — using those
+    painted one branch corner and the open-face punch erased the other.
+    """
     if stem == "E":
-        return (1, 2)
+        return (2, 3)  # top (ns omit lo)
     if stem == "W":
-        return (0, 3)
+        return (0, 1)  # bottom
     if stem == "N":
-        return (0, 1)
-    return (2, 3)
+        return (0, 3)  # left (ew omit lo)
+    return (1, 2)  # S: right
 
 
 def tee_layout_for_sides(

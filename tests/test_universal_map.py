@@ -705,14 +705,14 @@ def test_tee_layout_for_sides() -> None:
 def test_tee_corner_quadrants() -> None:
     from render.intersection_topology import tee_corner_quadrants
 
-    assert tee_corner_quadrants("E") == (1, 2)
-    assert tee_corner_quadrants("W") == (0, 3)
-    assert tee_corner_quadrants("N") == (0, 1)
-    assert tee_corner_quadrants("S") == (2, 3)
+    assert tee_corner_quadrants("E") == (2, 3)
+    assert tee_corner_quadrants("W") == (0, 1)
+    assert tee_corner_quadrants("N") == (0, 3)
+    assert tee_corner_quadrants("S") == (1, 2)
 
 
 def test_filleted_cross_tee_transparency() -> None:
-    from render.corner_gen import WHITE, YELLOW, make_cross, make_tee
+    from render.corner_gen import ROAD_GREY, WHITE, YELLOW, make_cross, make_tee
 
     cross = make_cross(4)
     w, h = cross.size
@@ -723,17 +723,14 @@ def test_filleted_cross_tee_transparency() -> None:
     cx, cy = w // 2, h // 2
     centre = cross.getpixel((cx, cy))
     assert centre[3] == 255
-    assert centre[:3] != WHITE
-    # Dual yellows continue through (ns band at split-4).
-    y_mid = cross.getpixel((cx, 60))
-    assert y_mid[:3] == YELLOW
+    assert centre[:3] == ROAD_GREY
+    assert cross.getpixel((cx, 60))[:3] != YELLOW
     for dx in range(-8, 9):
         for dy in range(-8, 9):
             assert cross.getpixel((cx + dx, cy + dy))[:3] != WHITE
 
     tee = make_tee(4, axis="ns", stem="E")
     tw, th = tee.size
-    # Open west AABB corners stay clear; east AABB corners are fillet holes, not a grey slab.
     assert tee.getpixel((0, 0))[3] == 0
     assert tee.getpixel((0, th - 1))[3] == 0
     assert tee.getpixel((tw - 1, 0))[3] == 0
@@ -741,9 +738,35 @@ def test_filleted_cross_tee_transparency() -> None:
     tee_c = tee.getpixel((tw // 2, th // 2))
     assert tee_c[3] == 255
     assert tee_c[:3] != WHITE
-    # Stem yellows meet the through (ew stub, top half).
-    assert tee.getpixel((60, 16))[:3] == YELLOW
+    # Through yellows continue; branch yellows do not enter the box.
     assert tee.getpixel((tw // 2, 60))[:3] == YELLOW
+    assert tee.getpixel((60, 16))[:3] != YELLOW
+    # Open shoulder (opposite the stem) stays transparent on 4-cell+ stamps.
+    assert tee.getpixel((tw // 2, 104))[3] == 0
+    # Both stem-side corners have a fillet lip (not only one).
+    def _has_white_near(x0: int, y0: int, r: int = 24) -> bool:
+        for y in range(max(0, y0 - r), min(th, y0 + r + 1)):
+            for x in range(max(0, x0 - r), min(tw, x0 + r + 1)):
+                p = tee.getpixel((x, y))
+                if p[:3] == WHITE and p[3]:
+                    return True
+        return False
+
+    assert _has_white_near(16, 16)
+    assert _has_white_near(tw - 16, 16)
+
+    def _cross_white_near(x0: int, y0: int, r: int = 28) -> bool:
+        for y in range(max(0, y0 - r), min(h, y0 + r + 1)):
+            for x in range(max(0, x0 - r), min(w, x0 + r + 1)):
+                p = cross.getpixel((x, y))
+                if p[:3] == WHITE and p[3]:
+                    return True
+        return False
+
+    assert _cross_white_near(24, 24)
+    assert _cross_white_near(w - 24, 24)
+    assert _cross_white_near(24, h - 24)
+    assert _cross_white_near(w - 24, h - 24)
 
 
 def test_snap_cardinal_end() -> None:

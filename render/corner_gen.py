@@ -105,6 +105,34 @@ def make_corner(cells: int = 4, quadrant: int = 0):
     return img
 
 
+def _fillet_white_radii(cells: int) -> tuple[int, int, int, int]:
+    """size, inner_r, inner-white r_in, inner-white r_out."""
+    size, bands = _corner_bands(cells)
+    inner_r = min(b[1] for b in bands)
+    whites = [(c, ri, ro) for c, ri, ro in bands if c == WHITE]
+    if whites:
+        _wc, w_in, w_out = whites[-1]
+    else:
+        w_in, w_out = inner_r, inner_r + 2
+    return size, inner_r, w_in, w_out
+
+
+def _stroke_fillet_lip(img, cells: int, quadrant: int) -> None:
+    """Inner curb white + grass-bite punch, drawn last so sibling greys cannot hide it."""
+    if ImageDraw is None:
+        return
+    size, inner_r, w_in, w_out = _fillet_white_radii(cells)
+    arc_cx, arc_cy, start_angle, end_angle = _arc_center(quadrant, size)
+    draw = ImageDraw.Draw(img)
+    bbox_w = (arc_cx - w_out, arc_cy - w_out, arc_cx + w_out, arc_cy + w_out)
+    draw.pieslice(bbox_w, start_angle, end_angle, fill=(*WHITE, 255))
+    if w_in > 0:
+        bbox_g = (arc_cx - w_in, arc_cy - w_in, arc_cx + w_in, arc_cy + w_in)
+        draw.pieslice(bbox_g, start_angle, end_angle, fill=(*ROAD_GREY, 255))
+    bbox_inner = (arc_cx - inner_r, arc_cy - inner_r, arc_cx + inner_r, arc_cy + inner_r)
+    draw.pieslice(bbox_inner, start_angle, end_angle, fill=(0, 0, 0, 0))
+
+
 def make_corner_fillet(cells: int = 4, quadrant: int = 0):
     """
     AABB-corner grass bite plus grey pavement and the inner curb white.
@@ -218,23 +246,26 @@ def _restroke_axis_yellows(img, cells: int, axis: str) -> None:
     _stroke_through_yellows(draw, img.size[0], c1, axis)
 
 
-def _stroke_cross_arm_whites(img, cells: int) -> None:
-    """Outer whites on each arm, stopping at the crossing so they do not form stop-bars."""
+def _restroke_open_side_white(img, cells: int, axis: str, omit_white: str | None) -> None:
+    """Redraw the through-band white that is not the stem join, after fillets."""
     if ImageDraw is None:
         return
-    _size, c0, c1, band_hi = _band_rect(cells)
-    size = img.size[0]
+    size, c0, c1, _band_hi = _band_rect(cells)
     draw = ImageDraw.Draw(img)
-    ya = c0
-    white_outer_bottom = c1 + 28
-    xa = c0
-    white_outer_right = c1 + 28
-    for y in (ya + 2, white_outer_bottom):
-        draw.rectangle((0, y, c0, y + 1), fill=(*WHITE, 255))
-        draw.rectangle((band_hi, y, size, y + 1), fill=(*WHITE, 255))
-    for x in (xa + 2, white_outer_right):
-        draw.rectangle((x, 0, x + 1, c0), fill=(*WHITE, 255))
-        draw.rectangle((x, band_hi, x + 1, size), fill=(*WHITE, 255))
+    if axis == "ns":
+        ya = c0
+        white_outer_bottom = c1 + 28
+        if omit_white != "lo":
+            draw.rectangle((0, ya + 2, size, ya + 3), fill=(*WHITE, 255))
+        if omit_white != "hi":
+            draw.rectangle((0, white_outer_bottom, size, white_outer_bottom + 1), fill=(*WHITE, 255))
+    else:
+        xa = c0
+        white_outer_right = c1 + 28
+        if omit_white != "lo":
+            draw.rectangle((xa + 2, 0, xa + 3, size), fill=(*WHITE, 255))
+        if omit_white != "hi":
+            draw.rectangle((white_outer_right, 0, white_outer_right + 1, size), fill=(*WHITE, 255))
 
 
 def _band_rect(cells: int) -> tuple[int, int, int, int]:
@@ -268,7 +299,7 @@ def _clear_open_half(img, cells: int, axis: str, stem: str) -> None:
 
 
 def make_cross(cells: int = 4):
-    """Four-way: filleted AABB corners, then straight dual yellows on both axes."""
+    """Four-way: filleted AABB corners only. No through-band yellows or arm whites."""
     if Image is None:
         raise RuntimeError("Pillow required for cross generation: pip install Pillow")
     cells = max(2, min(12, cells))
@@ -278,19 +309,17 @@ def make_cross(cells: int = 4):
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     for q in range(4):
         img = Image.alpha_composite(img, make_corner_fillet(cells, quadrant=q))
-    img = Image.alpha_composite(img, make_straight_through(cells, axis="ns", omit_white="both"))
-    img = Image.alpha_composite(img, make_straight_through(cells, axis="ew", omit_white="both"))
-    _restroke_axis_yellows(img, cells, "ns")
-    _restroke_axis_yellows(img, cells, "ew")
-    _stroke_cross_arm_whites(img, cells)
+    for q in range(4):
+        _stroke_fillet_lip(img, cells, q)
     return img
 
 
 def make_tee(cells: int = 4, axis: str = "ns", stem: str = "E"):
     """
-    Through dual-lane lines plus a stem stub and two AABB-corner fillets.
+    Through dual-lane lines plus two stem-side corner fillets.
 
-    Turn-arc yellows are not used; they would cut the through-road with white bars.
+    Stem-side white of the through-band is omitted so the fillet can bend it into
+    the branch. The open face (opposite the stem) stays transparent — no stub.
     """
     if Image is None:
         raise RuntimeError("Pillow required for tee generation: pip install Pillow")
@@ -308,17 +337,13 @@ def make_tee(cells: int = 4, axis: str = "ns", stem: str = "E"):
         elif stem == "S":
             omit_white = "hi"
 
-    perp = "ew" if axis == "ns" else "ns"
-    cells_n = max(2, min(12, cells))
-    if cells_n % 2 != 0:
-        cells_n = (cells_n // 2) * 2
-    size = cells_n * ORTHO_TILE_SIZE
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    for q in tee_corner_quadrants(stem):  # type: ignore[arg-type]
+    img = make_straight_through(cells, axis=axis, omit_white=omit_white)
+    quads = tee_corner_quadrants(stem)  # type: ignore[arg-type]
+    for q in quads:
         img = Image.alpha_composite(img, make_corner_fillet(cells, quadrant=q))
-    img = Image.alpha_composite(img, make_straight_through(cells, axis=axis, omit_white=omit_white))
-    stub = make_straight_through(cells, axis=perp, omit_white="both")
-    _clear_open_half(stub, cells, axis, stem)
-    img = Image.alpha_composite(img, stub)
     _restroke_axis_yellows(img, cells, axis)
+    _restroke_open_side_white(img, cells, axis, omit_white)
+    for q in quads:
+        _stroke_fillet_lip(img, cells, q)
+    _clear_open_half(img, cells, axis, stem)
     return img
