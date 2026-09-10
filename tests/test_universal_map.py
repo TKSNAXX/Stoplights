@@ -1240,6 +1240,187 @@ def test_occupancy_jam_and_lane_full() -> None:
     assert intersection_jam_score(Occupancy.from_cars(tail), "main") == intersection_jam_score(tail, "main") == 1
 
 
+def test_route_hinted_housing_park_via_bypass() -> None:
+    from sim import routes
+
+    GameState()
+    route = routes.plan_route("Housing", "Park")
+    assert route is not None
+    nodes = routes.format_route_nodes(route)
+    assert nodes == "Housing > bypass > Park"
+    assert "main" not in {s.ref for s in route if s.kind == "intersection"}
+
+
+def test_route_housing_office_via_main() -> None:
+    from sim import routes
+
+    GameState()
+    route = routes.plan_route("Housing", "Office")
+    assert route is not None
+    kinds = [s.kind for s in route]
+    refs = [s.ref for s in route]
+    assert "place" in kinds and "intersection" in kinds
+    assert refs[0] == "Housing" and refs[-1] == "Office"
+    assert "main" in {s.ref for s in route if s.kind == "intersection"}
+    assert "bypass" not in {s.ref for s in route if s.kind == "intersection"}
+
+
+def _place_chain_world() -> None:
+    places_by_id = {
+        "Start": places.Place(center_x=2, center_y=10, width=3, length=3),
+        "Hub": places.Place(center_x=14, center_y=10, width=3, length=3),
+        "End": places.Place(center_x=26, center_y=10, width=3, length=3),
+    }
+    lanes = {
+        1: places.LaneConfig(start_tile=(4, 10), end_tile=(12, 10)),
+        2: places.LaneConfig(start_tile=(16, 10), end_tile=(24, 10)),
+    }
+    places.set_route_hints([])
+    world.rebuild_world(place_rects_from_places(places_by_id), {}, lanes)
+
+
+def test_route_intermediate_place_hop_or_despawn() -> None:
+    from sim import routes
+    from sim.movement import advance_car
+    from sim.occupancy import Occupancy
+
+    _place_chain_world()
+    assert world.lane_traffic_in(1) == "Start" and world.lane_traffic_out(1) == "Hub"
+    assert world.lane_traffic_in(2) == "Hub" and world.lane_traffic_out(2) == "End"
+
+    route = routes.plan_route("Start", "End")
+    assert route is not None
+    assert routes.format_route_nodes(route) == "Start > Hub > End"
+    inbound = routes.first_lane(route)
+    idx = routes.first_lane_step_index(route)
+    hop = routes.next_lane_after_place(route, idx)
+    assert hop is not None
+    next_lane, next_idx = hop
+    cells = world.get_lane_cells(inbound)
+    assert cells
+
+    free = Car(
+        origin="Start",
+        destination="End",
+        color=(220, 60, 60),
+        base_speed_multiplier=1.0,
+        lane_index=inbound,
+        position_in_lane=len(cells) - 1,
+        route=route,
+        route_index=idx,
+    )
+    to_remove: list[Car] = []
+    advance_car(free, 0.0, 10.0, to_remove, Occupancy())
+    assert free not in to_remove
+    assert free.lane_index == next_lane
+    assert free.position_in_lane == 0
+    assert free.route_index == next_idx
+    assert free.motion_mode == "lane"
+
+    packed_car = Car(
+        origin="Start",
+        destination="End",
+        color=(220, 60, 60),
+        base_speed_multiplier=1.0,
+        lane_index=inbound,
+        position_in_lane=len(cells) - 1,
+        route=route,
+        route_index=idx,
+    )
+    blocker = Car(
+        origin="Hub",
+        destination="End",
+        color=(60, 140, 220),
+        base_speed_multiplier=1.0,
+        lane_index=next_lane,
+        position_in_lane=0,
+    )
+    to_remove = []
+    advance_car(packed_car, 0.0, 10.0, to_remove, Occupancy.from_cars([blocker]))
+    assert packed_car in to_remove
+    assert packed_car.lane_index == inbound
+    assert packed_car.motion_mode != "place"
+    GameState()
+
+
+def test_route_destination_despawn() -> None:
+    from sim import routes
+    from sim.movement import advance_car
+
+    GameState()
+    route = routes.plan_route("Housing", "Park")
+    assert route is not None
+    last_lane = None
+    last_idx = 0
+    for i, step in enumerate(route):
+        if step.kind == "lane":
+            last_lane = int(step.ref)
+            last_idx = i
+    assert last_lane is not None
+    cells = world.get_lane_cells(last_lane)
+    car = Car(
+        origin="Housing",
+        destination="Park",
+        color=(220, 60, 60),
+        base_speed_multiplier=1.0,
+        lane_index=last_lane,
+        position_in_lane=len(cells) - 1,
+        route=route,
+        route_index=last_idx,
+    )
+    to_remove: list[Car] = []
+    advance_car(car, 0.0, 10.0, to_remove)
+    assert car in to_remove
+
+
+def test_route_unreachable() -> None:
+    from sim import routes
+
+    GameState()
+    assert routes.plan_route("Housing", "Atlantis") is None
+    assert routes.plan_route("Housing", "Housing") is None
+
+
+def test_route_spawn_full_first_lane_no_retry() -> None:
+    from sim import routes
+    from sim.cars import spawn_car
+
+    GameState()
+    real = routes.plan_route
+    calls = {"n": 0}
+
+    def wrapped(*args, **kwargs):
+        calls["n"] += 1
+        return real(*args, **kwargs)
+
+    routes.plan_route = wrapped  # type: ignore[method-assign]
+    try:
+        planned = real("Housing", "Park")
+        assert planned is not None
+        first = routes.first_lane(planned)
+        assert first is not None
+        packed = [_make_test_car(lane_index=first, position=0)]
+        calls["n"] = 0
+        assert spawn_car("Housing", destination="Park", occupancy=packed) is None
+        assert calls["n"] == 1
+    finally:
+        routes.plan_route = real  # type: ignore[method-assign]
+
+
+def test_route_rename_retargets_place_steps() -> None:
+    from sim.cars import spawn_car
+
+    g = GameState()
+    car = spawn_car("Housing", destination="Park")
+    assert car is not None
+    g.cars.append(car)
+    assert g.rename_place("Housing", "Homes") == "Homes"
+    assert car.origin == "Homes"
+    assert any(s.kind == "place" and s.ref == "Homes" for s in car.route)
+    assert all(s.ref != "Housing" for s in car.route if s.kind == "place")
+    assert car in g.cars
+
+
 def main() -> None:
     tests = [
         test_migrate_schema_3_snippet,
@@ -1278,6 +1459,13 @@ def main() -> None:
         test_rebuild_topology_tables,
         test_path_cache_matches_live,
         test_occupancy_jam_and_lane_full,
+        test_route_hinted_housing_park_via_bypass,
+        test_route_housing_office_via_main,
+        test_route_intermediate_place_hop_or_despawn,
+        test_route_destination_despawn,
+        test_route_unreachable,
+        test_route_spawn_full_first_lane_no_retry,
+        test_route_rename_retargets_place_steps,
     ]
     failed = 0
     for fn in tests:

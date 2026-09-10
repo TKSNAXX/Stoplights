@@ -3,7 +3,7 @@ Car movement segment logic.
 """
 from __future__ import annotations
 
-from sim import cars, places, world
+from sim import cars, places, routes, world
 from sim.paths import (
     direction_index_8_from_tangent,
     lane_segment_position,
@@ -12,6 +12,7 @@ from sim.paths import (
     path_position,
     path_tangent,
 )
+from sim.places import lane_is_full
 from sim.world import intersection_cell_for_transition
 
 
@@ -68,14 +69,18 @@ def start_lane_segment(car: cars.Car, start_time: float, speed: float, start_pos
     return True
 
 
+def _planned_out_lane(car: cars.Car) -> tuple[int, int] | None:
+    if not car.route:
+        return None
+    return routes.out_lane_after(car.route, car.route_index)
+
+
 def start_path_segment(car: cars.Car, start_time: float, speed: float) -> bool:
-    """Start path through intersection: find out-lane from this intersection to destination."""
-    from_intersection = world.lane_traffic_out(car.lane_index)
-    out_lane_idx = places.choose_next_lane_from_node(
-        from_intersection, car.destination, inbound_lane_index=car.lane_index
-    )
-    if out_lane_idx is None:
+    """Start path through intersection using the stored itinerary (no greedy hop)."""
+    planned = _planned_out_lane(car)
+    if planned is None:
         return False
+    out_lane_idx, _out_step = planned
     car.intersection_cell = intersection_cell_for_transition(car.lane_index, out_lane_idx)
     car.pending_out_lane_index = out_lane_idx
     car.motion_mode = "path"
@@ -89,23 +94,79 @@ def start_path_segment(car: cars.Car, start_time: float, speed: float) -> bool:
     return True
 
 
-def start_segment_for_current_state(car: cars.Car, start_time: float, speed: float) -> bool:
-    lane = car.get_lane()
-    if not lane:
-        return False
-    if car.position_in_lane + 1 < len(lane):
-        return start_lane_segment(car, start_time, speed, car.position_in_lane)
-    if car.lane_index in places.in_lane_indices():
-        return start_path_segment(car, start_time, speed)
+def start_segment_for_current_state(
+    car: cars.Car,
+    start_time: float,
+    speed: float,
+    occupancy=None,
+) -> bool:
+    for _ in range(8):
+        lane = car.get_lane()
+        if not lane:
+            return False
+        if car.position_in_lane + 1 < len(lane):
+            return start_lane_segment(car, start_time, speed, car.position_in_lane)
+        if car.lane_index in places.in_lane_indices():
+            return start_path_segment(car, start_time, speed)
+        if not _hop_through_place(car, occupancy):
+            return False
     return False
 
 
-def advance_car(car: cars.Car, current_time: float, speed: float, to_remove: list[cars.Car]) -> None:
+def _clear_segment(car: cars.Car) -> None:
+    car.segment_start_time = None
+    car.segment_duration = None
+    car.segment_start_pos = None
+    car.segment_end_pos = None
+    car.segment_t_offset = 0.0
+    car.segment_scale_reference = 1.0
+
+
+def _place_on_lane(
+    car: cars.Car,
+    lane_idx: int,
+    route_index: int,
+    occupancy,
+) -> bool:
+    """Place car at cell 0 of lane_idx. False if that lane is full (caller despawns)."""
+    if occupancy is not None and lane_is_full(lane_idx, occupancy):
+        return False
+    car.lane_index = lane_idx
+    car.position_in_lane = 0
+    car.intersection_cell = None
+    car.pending_out_lane_index = None
+    car.motion_mode = "lane"
+    car.route_index = route_index
+    _clear_segment(car)
+    if occupancy is not None:
+        occupancy.add(car)
+    return True
+
+
+def _hop_through_place(car: cars.Car, occupancy) -> bool:
+    """Instant hop onto the next itinerary lane. False → despawn (arrived, missing, or packed)."""
+    arrived = world.lane_traffic_out(car.lane_index)
+    if arrived == car.destination:
+        return False
+    hop = routes.next_lane_after_place(car.route, car.route_index) if car.route else None
+    if hop is None:
+        return False
+    next_lane, new_idx = hop
+    return _place_on_lane(car, next_lane, new_idx, occupancy)
+
+
+def advance_car(
+    car: cars.Car,
+    current_time: float,
+    speed: float,
+    to_remove: list[cars.Car],
+    occupancy=None,
+) -> None:
     speed = speed * getattr(car, "base_speed_multiplier", 1.0)
     # Loop so one tick can consume multiple completed segments (keeps handoffs continuous).
     for _ in range(8):
         if car.segment_start_time is None or car.segment_duration is None:
-            if not start_segment_for_current_state(car, current_time, speed):
+            if not start_segment_for_current_state(car, current_time, speed, occupancy):
                 to_remove.append(car)
                 return
         duration = max(1e-9, car.segment_duration)
@@ -137,12 +198,7 @@ def advance_car(car: cars.Car, current_time: float, speed: float, to_remove: lis
         if car.motion_mode == "lane":
             if car.segment_end_pos is not None:
                 car.position_in_lane = car.segment_end_pos
-            car.segment_start_time = None
-            car.segment_duration = None
-            car.segment_start_pos = None
-            car.segment_end_pos = None
-            car.segment_t_offset = 0.0
-            car.segment_scale_reference = 1.0
+            _clear_segment(car)
 
             lane = car.get_lane()
             if not lane:
@@ -158,37 +214,22 @@ def advance_car(car: cars.Car, current_time: float, speed: float, to_remove: lis
                     to_remove.append(car)
                     return
                 continue
-            to_remove.append(car)
-            return
+            if not _hop_through_place(car, occupancy):
+                to_remove.append(car)
+                return
+            continue
 
         # Path complete -> transition to outbound lane.
         out_lane_idx = car.pending_out_lane_index
         if out_lane_idx is None:
             to_remove.append(car)
             return
-        car.lane_index = out_lane_idx
-        car.position_in_lane = 0
-        car.intersection_cell = None
-        car.pending_out_lane_index = None
-        car.motion_mode = "lane"
-        car.segment_start_time = None
-        car.segment_duration = None
-        car.segment_start_pos = None
-        car.segment_end_pos = None
-        car.segment_t_offset = 0.0
-        car.segment_scale_reference = 1.0
-
-        lane = car.get_lane()
-        if not lane:
+        planned = _planned_out_lane(car)
+        new_idx = planned[1] if planned is not None else car.route_index
+        if not _place_on_lane(car, out_lane_idx, new_idx, occupancy):
             to_remove.append(car)
             return
-        if car.position_in_lane + 1 < len(lane):
-            if not start_lane_segment(car, segment_end_time, speed, car.position_in_lane):
-                to_remove.append(car)
-                return
-            continue
-        to_remove.append(car)
-        return
+        continue
 
     # Safety fallback if too many segment transitions in one tick.
     set_pose_for_current_segment(car, 1.0)

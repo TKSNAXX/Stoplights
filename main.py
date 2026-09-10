@@ -1266,7 +1266,7 @@ class StoplightsWindow(arcade.Window):
                 return
             car = self._car_at_screen(x, y)
             if car is not None:
-                dlg = CarDeetsDialog(x - 100, y - 45, car, self.game)
+                dlg = CarDeetsDialog(x - 120, y - 55, car, self.game)
                 dlg.set_on_close(lambda d: self._dialog_manager.close(d))
                 self._dialog_manager.open(dlg)
                 return

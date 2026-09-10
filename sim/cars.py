@@ -7,9 +7,9 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
-from sim import places
-from sim.places import choose_spawn_lane
-from sim import world
+from sim import places, world
+from sim.places import lane_is_full
+from sim import routes
 
 # Palette of RGB tuples for random car colors (distinct, visible on dark background).
 _CAR_COLOR_PALETTE: tuple[tuple[int, int, int], ...] = (
@@ -60,6 +60,10 @@ class Car:
     police_priority_active: bool = False  # cyan mode: ignore all cars, move at 0.3x
     police_hold_until_exit: bool = False  # stay cyan until exiting intersection
 
+    # Itinerary (spawn-time); route_index is the current lane step
+    route: tuple[routes.RouteStep, ...] = ()
+    route_index: int = 0
+
     def current_cell(self) -> tuple[int, int] | None:
         """Current grid position, or None if invalid."""
         if self.intersection_cell is not None:
@@ -73,6 +77,22 @@ class Car:
         return world.get_lane_cells(self.lane_index)
 
 
+def _choose_destination(
+    origin: str,
+    attract_weights: dict[str, float] | None,
+) -> str | None:
+    others = [p for p in world.get_place_rects().keys() if p != origin]
+    if not others:
+        return None
+    reachable = [p for p in others if places.destination_reachable_from_node(origin, p)]
+    if not reachable:
+        return None
+    if attract_weights:
+        weights = [attract_weights.get(p, 1.0) for p in reachable]
+        return random.choices(reachable, weights=weights, k=1)[0]
+    return random.choice(reachable)
+
+
 def spawn_car(
     origin: str,
     destination: str | None = None,
@@ -81,47 +101,37 @@ def spawn_car(
     out_lane_balance_coeff: float = 0.0,
     occupancy: list | None = None,
 ) -> Car | None:
-    """Create a car at the start of a lane leaving origin. destination defaults to weighted random other place.
+    """Create a car with a planned itinerary. Destination from attract among reachable places.
 
-    Returns None when every candidate outbound lane is full (caller should not consume the spawn timer).
+    Returns None when the dest is unreachable, planning fails, or the first lane is full
+    (caller should not consume the spawn timer). No second plan on a full mouth.
     """
-    lane_index: int | None = None
     if destination is None or destination == origin:
-        lane_index = choose_spawn_lane(
-            origin,
-            None,
-            lane_usage_counts=lane_usage_counts,
-            out_lane_balance_coeff=out_lane_balance_coeff,
-            occupancy=occupancy,
-        )
-        if lane_index is None:
+        destination = _choose_destination(origin, attract_weights)
+        if destination is None:
             return None
-        others = [p for p in world.get_place_rects().keys() if p != origin]
-        if not others:
-            destination = origin
-        else:
-            reachable = others
-            if lane_index is not None:
-                lane_out = world.lane_traffic_out(lane_index)
-                if lane_out:
-                    lane_reachable = [p for p in others if places.destination_reachable_from_node(lane_out, p)]
-                    if lane_reachable:
-                        reachable = lane_reachable
-            if attract_weights:
-                weights = [attract_weights.get(p, 1.0) for p in reachable]
-                destination = random.choices(reachable, weights=weights, k=1)[0]
-            else:
-                destination = random.choice(reachable)
+    route = routes.plan_route(
+        origin,
+        destination,
+        lane_usage_counts=lane_usage_counts,
+        out_lane_balance_coeff=out_lane_balance_coeff,
+    )
+    if route is None:
+        return None
+    lane_index = routes.first_lane(route)
     if lane_index is None:
-        lane_index = choose_spawn_lane(
-            origin,
-            destination,
-            lane_usage_counts=lane_usage_counts,
-            out_lane_balance_coeff=out_lane_balance_coeff,
-            occupancy=occupancy,
-        )
-    if lane_index is None:
+        return None
+    if occupancy is not None and lane_is_full(lane_index, occupancy):
         return None
     color = random.choice(_CAR_COLOR_PALETTE)
     base_speed_multiplier = random.uniform(0.6, 1.2)
-    return Car(origin=origin, destination=destination, lane_index=lane_index, position_in_lane=0, color=color, base_speed_multiplier=base_speed_multiplier)
+    return Car(
+        origin=origin,
+        destination=destination,
+        lane_index=lane_index,
+        position_in_lane=0,
+        color=color,
+        base_speed_multiplier=base_speed_multiplier,
+        route=route,
+        route_index=routes.first_lane_step_index(route),
+    )

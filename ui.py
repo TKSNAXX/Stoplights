@@ -9,7 +9,7 @@ from typing import Callable, Protocol, runtime_checkable
 import arcade
 import math
 from draw_compat import rect_filled, rect_outline
-from sim import world
+from sim import routes, world
 from sim.constants import TILE_H, TILE_W
 from sim.scenario import clamp_color_hue, clamp_color_sat
 
@@ -1940,11 +1940,12 @@ class CarDeetsDialog(Dialog):
     """Read-only dialog showing car speed, origin, destination."""
 
     def __init__(self, x: float, y: float, car, game) -> None:
-        super().__init__(x, y, 200, 90, "Car details")
+        super().__init__(x, y, 240, 110, "Car details")
         self._car = car
         self._game = game
         self._origin_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._dest_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
+        self._route_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
         self._speed_label = arcade.Text("", 0, 0, color=(220, 220, 220), font_size=10, anchor_x="left", anchor_y="center")
 
     def _layout_widgets(self) -> None:
@@ -1957,21 +1958,27 @@ class CarDeetsDialog(Dialog):
         self._origin_label.y = content_top - 12
         self._dest_label.x = left
         self._dest_label.y = content_top - 28
+        self._route_label.x = left
+        self._route_label.y = content_top - 44
         self._speed_label.x = left
-        self._speed_label.y = content_top - 44
+        self._speed_label.y = content_top - 60
 
         if self._car in self._game.cars:
             self._origin_label.value = f"Origin: {self._car.origin}"
             self._dest_label.value = f"Destination: {self._car.destination}"
+            itinerary = routes.format_route_nodes(getattr(self._car, "route", ()))
+            self._route_label.value = f"Route: {itinerary}" if itinerary else "Route: —"
             self._speed_label.value = f"Speed: {self._car.base_speed_multiplier:.2f}x"
         else:
             self._origin_label.value = "Car departed"
             self._dest_label.value = ""
+            self._route_label.value = ""
             self._speed_label.value = ""
 
         super().draw()
         self._origin_label.draw()
         self._dest_label.draw()
+        self._route_label.draw()
         self._speed_label.draw()
 
 

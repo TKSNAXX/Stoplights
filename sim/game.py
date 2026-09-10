@@ -7,10 +7,9 @@ import math
 import random
 import time
 
-from sim import cars, cop, places
+from sim import cars, cop, places, routes, scenario, world
 from sim.constants import POLICE_PRIORITY_SCALE, VIS_ZONE_LENGTH_CELLS, VIS_ZONE_WIDTH_CELLS
 from sim.map_data import next_lane_index, place_rects_from_places
-from sim import scenario, world
 from sim.impasse import apply_impasse
 from sim.movement import advance_car
 from sim.occupancy import Occupancy
@@ -117,7 +116,37 @@ class GameState:
         places.set_route_hints(self.route_hints)
         world.rebuild_world(place_rects, self.intersections, self.lanes)
         self._prune_police()
+        self._refresh_car_routes()
         self._refresh_spawn_places_from_world()
+
+    def _refresh_car_routes(self) -> None:
+        occ = Occupancy.from_cars(self.cars)
+        kept: list[cars.Car] = []
+        for car in self.cars:
+            if not car.destination:
+                kept.append(car)
+                continue
+            if routes.route_is_live(car.route):
+                kept.append(car)
+                continue
+            start = routes.current_node(car)
+            new = routes.plan_route(start, car.destination)
+            if new is None:
+                continue
+            idx = routes.lane_step_index(new, car.lane_index)
+            if idx is None and car.pending_out_lane_index is not None:
+                idx = routes.lane_step_index(new, car.pending_out_lane_index)
+            if idx is None:
+                continue
+            occupy_step = new[idx]
+            occupy_lane = occupy_step.ref if occupy_step.kind == "lane" else None
+            if occupy_lane is not None and occupy_lane != car.lane_index:
+                if places.lane_is_full(occupy_lane, occ):
+                    continue
+            car.route = new
+            car.route_index = idx
+            kept.append(car)
+        self.cars = kept
 
     def _refresh_spawn_places_from_world(self) -> None:
         ordered_candidates: list[str] = []
@@ -186,6 +215,7 @@ class GameState:
                 car.origin = new
             if car.destination == old:
                 car.destination = new
+            car.route = routes.retarget_place_steps(car.route, old, new)
         places.set_route_hints(self.route_hints)
         self.rebuild_world_from_config()
         return new
@@ -424,7 +454,7 @@ class GameState:
         for car in self.cars:
             if car in to_remove:
                 continue
-            advance_car(car, current_time, speed, to_remove)
+            advance_car(car, current_time, speed, to_remove, occupancy)
 
         for car in to_remove:
             if car in self.cars:
