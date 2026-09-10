@@ -31,3 +31,6 @@ IMPASSE_DURATION = 2.0
 IMPASSE_SPEED_SCALE = 0.3
 POLICE_SPEED = 5.0
 POLICE_PRIORITY_SCALE = 0.3
+# Last N inbound cells count toward jam / dismiss / holding cyan.
+# Inbound lanes shorter than this also pull in the attached intersection box (one hop).
+INBOUND_TAIL_CELLS = 8

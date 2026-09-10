@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import dataclasses
 import random
-from collections import deque
 
 from sim import world
+from sim.occupancy import occupancy_from
 
 # Optional documentation aliases for the default scenario place names.
 # Not used for control flow.
@@ -144,21 +144,21 @@ def out_lane_for_place(place: str, from_intersection: str | None = None) -> int 
         lane = choose_next_lane_from_node(from_intersection, place)
         if lane is not None:
             return lane
-    for i in world.lane_ids():
-        if world.is_intersection(world.lane_traffic_in(i)) and world.lane_traffic_out(i) == place:
+    for i in world.incoming_lanes(place):
+        if world.is_intersection(world.lane_traffic_in(i)):
             if from_intersection is None or world.lane_traffic_in(i) == from_intersection:
                 return i
     return None
 
 
-def in_lane_indices() -> set[int]:
+def in_lane_indices() -> frozenset[int]:
     """Lanes that approach an intersection."""
-    return {i for i in world.lane_ids() if world.is_intersection(world.lane_traffic_out(i))}
+    return world.in_lane_ids()
 
 
-def out_lane_indices() -> set[int]:
+def out_lane_indices() -> frozenset[int]:
     """Lanes that leave an intersection."""
-    return {i for i in world.lane_ids() if world.is_intersection(world.lane_traffic_in(i))}
+    return world.out_lane_ids()
 
 
 def is_uturn_transition(in_lane_index: int, out_lane_index: int) -> bool:
@@ -208,7 +208,7 @@ def _hint_via(origin: str, destination: str) -> str | None:
 
 def spawn_lanes_for_place(place: str, destination: str | None = None) -> list[int]:
     """Lane indices where a car spawning at this place should start (position 0)."""
-    outgoing = [i for i in world.lane_ids() if world.lane_traffic_in(i) == place]
+    outgoing = list(world.outgoing_lanes(place))
     if destination is None or not outgoing:
         return outgoing
 
@@ -216,8 +216,7 @@ def spawn_lanes_for_place(place: str, destination: str | None = None) -> list[in
     if direct:
         return direct
 
-    graph = _lane_graph()
-    next_hops = _best_next_hops(place, destination, graph)
+    next_hops = world.best_next_hops(place, destination)
     via = _hint_via(place, destination)
     if via is not None and via in next_hops:
         hinted = [i for i in outgoing if world.lane_traffic_out(i) == via]
@@ -230,21 +229,15 @@ def spawn_lanes_for_place(place: str, destination: str | None = None) -> list[in
     return outgoing
 
 
-def lane_is_full(lane_idx: int, occupancy: list) -> bool:
+def lane_is_full(lane_idx: int, occupancy) -> bool:
     """True if cell 0 is taken or the number of on-lane cars is at least the cell count."""
     cells = world.get_lane_cells(lane_idx)
     if not cells:
         return True
-    n = 0
-    cell0 = False
-    for car in occupancy:
-        if getattr(car, "motion_mode", "lane") != "lane":
-            continue
-        if getattr(car, "lane_index", None) != lane_idx:
-            continue
-        n += 1
-        if getattr(car, "position_in_lane", -1) == 0:
-            cell0 = True
+    occ = occupancy_from(occupancy)
+    on_lane = occ.cars_on_lane(lane_idx)
+    n = len(on_lane)
+    cell0 = any(getattr(car, "position_in_lane", -1) == 0 for car in on_lane)
     return cell0 or n >= len(cells)
 
 
@@ -271,10 +264,7 @@ def choose_spawn_lane(
 
 
 def destination_reachable_from_node(start_node: str, destination: str) -> bool:
-    if start_node == destination:
-        return True
-    graph = _lane_graph()
-    return _bfs_distance(start_node, destination, graph) is not None
+    return world.destination_reachable(start_node, destination)
 
 
 def _candidates_without_uturn(inbound_lane_index: int | None, candidates: list[int]) -> list[int]:
@@ -289,7 +279,7 @@ def choose_next_lane_from_node(
     destination: str,
     inbound_lane_index: int | None = None,
 ) -> int | None:
-    outgoing = [i for i in world.lane_ids() if world.lane_traffic_in(i) == from_node]
+    outgoing = list(world.outgoing_lanes(from_node))
     if not outgoing:
         return None
 
@@ -298,8 +288,7 @@ def choose_next_lane_from_node(
     if direct_pick:
         return random.choice(direct_pick)
 
-    graph = _lane_graph()
-    next_hops = _best_next_hops(from_node, destination, graph)
+    next_hops = world.best_next_hops(from_node, destination)
     via = _hint_via(from_node, destination)
     if via is not None and via in next_hops:
         hinted = [i for i in outgoing if world.lane_traffic_out(i) == via]
@@ -314,53 +303,3 @@ def choose_next_lane_from_node(
 
     fallback = _candidates_without_uturn(inbound_lane_index, outgoing)
     return random.choice(fallback) if fallback else None
-
-
-def _lane_graph() -> dict[str, set[str]]:
-    graph: dict[str, set[str]] = {}
-    for i in world.lane_ids():
-        src = world.lane_traffic_in(i)
-        dst = world.lane_traffic_out(i)
-        if not src or not dst:
-            continue
-        graph.setdefault(src, set()).add(dst)
-    return graph
-
-
-def _best_next_hops(start: str, destination: str, graph: dict[str, set[str]]) -> set[str]:
-    neighbors = graph.get(start, set())
-    if not neighbors:
-        return set()
-    if destination in neighbors:
-        return {destination}
-
-    best_hops: set[str] = set()
-    best_dist: int | None = None
-    for hop in neighbors:
-        dist = _bfs_distance(hop, destination, graph)
-        if dist is None:
-            continue
-        total = dist + 1
-        if best_dist is None or total < best_dist:
-            best_dist = total
-            best_hops = {hop}
-        elif total == best_dist:
-            best_hops.add(hop)
-    return best_hops
-
-
-def _bfs_distance(start: str, destination: str, graph: dict[str, set[str]]) -> int | None:
-    if start == destination:
-        return 0
-    q: deque[tuple[str, int]] = deque([(start, 0)])
-    seen = {start}
-    while q:
-        node, dist = q.popleft()
-        for nxt in graph.get(node, ()):
-            if nxt == destination:
-                return dist + 1
-            if nxt in seen:
-                continue
-            seen.add(nxt)
-            q.append((nxt, dist + 1))
-    return None

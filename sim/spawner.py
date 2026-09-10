@@ -6,6 +6,7 @@ from __future__ import annotations
 import random
 
 from sim import cars
+from sim.occupancy import Occupancy
 
 SPAWN_JITTER = 0.3
 SPAWN_INTERVAL_MIN = 1.0
@@ -22,8 +23,10 @@ def update_spawns(
     lane_spawn_counts: dict[tuple[str, int], int] | None = None,
     origin_spawn_balance_coeff: float = 0.0,
     out_lane_balance_coeff: float = 0.0,
+    occupancy: Occupancy | None = None,
 ) -> None:
     """Advance spawn timers and append spawned cars using eligibility + probabilistic balancing."""
+    occ = occupancy if occupancy is not None else Occupancy.from_cars(out_cars)
     pending: dict[str, int] = {}
     intervals: dict[str, float] = {}
 
@@ -68,12 +71,13 @@ def update_spawns(
             attract_weights=attract_weights,
             lane_usage_counts=lane_spawn_counts,
             out_lane_balance_coeff=out_lane_balance_coeff,
-            occupancy=out_cars,
+            occupancy=occ,
         )
         if car is None:
             spawn_timers[place] += interval
             continue
         out_cars.append(car)
+        occ.add(car)
         if origin_spawn_counts is not None:
             origin_spawn_counts[place] = origin_spawn_counts.get(place, 0) + 1
         if lane_spawn_counts is not None:

@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sim.constants import POLICE_SPEED
+from sim.constants import INBOUND_TAIL_CELLS, POLICE_SPEED
 from sim.movement import pose_for_lane_position
+from sim.occupancy import occupancy_from
 from sim.paths import direction_index_8_from_tangent, path_length, path_position, path_tangent
 from sim.places import choose_next_lane_from_node
 from sim import world
@@ -19,10 +20,6 @@ DISMISS_LINGER = 5.0
 JAM_TRIGGER = 10
 JAM_TRIGGER_SECOND = 20
 COPS_PER_INTERSECTION = 2
-# Last N inbound cells count toward jam / dismiss / holding cyan.
-# Two cells cannot reach 10/20 on a min-size (2×2) two- or three-leg node.
-# Inbound lanes shorter than this also pull in the attached intersection box (one hop).
-INBOUND_TAIL_CELLS = 8
 
 LIGHT_CYCLE = [(255, 255, 255), (60, 140, 220), (255, 255, 255), (220, 80, 80)]
 LIGHT_PHASE_DURATION = 0.25 / 3
@@ -94,64 +91,114 @@ def _inbound_tail(car, intersection_id: str) -> bool:
     return car.position_in_lane >= max(0, len(lane) - INBOUND_TAIL_CELLS)
 
 
-def _short_inbound_attached_intersections(intersection_id: str) -> frozenset[str]:
-    """
-    Other intersections at the far end of inbound lanes shorter than INBOUND_TAIL_CELLS.
-    One hop only: their boxes count, not their inbound lanes.
-    """
-    attached: set[str] = set()
-    for i in world.lane_ids():
-        if world.lane_traffic_out(i) != intersection_id:
-            continue
-        lane = world.get_lane_cells(i)
-        if not lane or len(lane) >= INBOUND_TAIL_CELLS:
-            continue
-        src = world.lane_traffic_in(i)
-        if src and src != intersection_id and world.is_intersection(src):
-            attached.add(src)
-    return frozenset(attached)
-
-
-def _inbound_red_tail(car, intersection_id: str) -> bool:
-    return _inbound_tail(car, intersection_id) and getattr(car, "visibility_state", "green") == "red"
-
-
 def in_node_jam(car, intersection_id: str) -> bool:
     """Path cars in the box, inbound tails, or path cars in short-hop attached boxes."""
     if _path_car_in_box(car, intersection_id) or _inbound_tail(car, intersection_id):
         return True
     return any(
         _path_car_in_box(car, other)
-        for other in _short_inbound_attached_intersections(intersection_id)
+        for other in world.attached_intersections(intersection_id)
     )
 
 
-def intersection_jam_score(cars_list, intersection_id: str) -> int:
+def iter_node_jam_cars(occupancy, intersection_id: str):
+    """Unique civilian cars in this node's jam set (box, inbound tails, attached boxes)."""
+    occ = occupancy_from(occupancy)
+    seen: set[int] = set()
+    for car in occ.cars_in_intersection(intersection_id):
+        ident = id(car)
+        if ident in seen:
+            continue
+        seen.add(ident)
+        yield car
+    for other in world.attached_intersections(intersection_id):
+        for car in occ.cars_in_intersection(other):
+            ident = id(car)
+            if ident in seen:
+                continue
+            seen.add(ident)
+            yield car
+    for lane_idx in world.incoming_lanes(intersection_id):
+        lane = world.get_lane_cells(lane_idx)
+        if not lane:
+            continue
+        thresh = max(0, len(lane) - INBOUND_TAIL_CELLS)
+        for car in occ.cars_on_lane(lane_idx):
+            if car.position_in_lane < thresh:
+                continue
+            ident = id(car)
+            if ident in seen:
+                continue
+            seen.add(ident)
+            yield car
+
+
+def intersection_jam_score(occupancy, intersection_id: str) -> int:
     """Occupancy for spawn: this box + red inbound tails + path cars in short-hop attached boxes."""
-    attached = _short_inbound_attached_intersections(intersection_id)
+    occ = occupancy_from(occupancy)
     score = 0
-    for car in cars_list:
-        if _path_car_in_box(car, intersection_id):
+    counted: set[int] = set()
+    for car in occ.cars_in_intersection(intersection_id):
+        ident = id(car)
+        if ident in counted:
+            continue
+        counted.add(ident)
+        score += 1
+    for other in world.attached_intersections(intersection_id):
+        for car in occ.cars_in_intersection(other):
+            ident = id(car)
+            if ident in counted:
+                continue
+            counted.add(ident)
             score += 1
-        elif _inbound_red_tail(car, intersection_id):
-            score += 1
-        elif any(_path_car_in_box(car, other) for other in attached):
-            score += 1
+    for lane_idx in world.incoming_lanes(intersection_id):
+        lane = world.get_lane_cells(lane_idx)
+        if not lane:
+            continue
+        thresh = max(0, len(lane) - INBOUND_TAIL_CELLS)
+        for car in occ.cars_on_lane(lane_idx):
+            ident = id(car)
+            if ident in counted:
+                continue
+            if car.position_in_lane >= thresh and getattr(car, "visibility_state", "green") == "red":
+                counted.add(ident)
+                score += 1
     return score
 
 
-def intersection_dismiss_score(cars_list, intersection_id: str) -> int:
+def intersection_dismiss_score(occupancy, intersection_id: str) -> int:
     """Remaining jam: red-in-box + red inbound tails + red path cars in short-hop attached boxes."""
-    attached = _short_inbound_attached_intersections(intersection_id)
+    occ = occupancy_from(occupancy)
     score = 0
-    for car in cars_list:
-        if _path_car_in_box(car, intersection_id):
-            if getattr(car, "visibility_state", "green") == "red":
-                score += 1
-        elif _inbound_red_tail(car, intersection_id):
+    counted: set[int] = set()
+    for car in occ.cars_in_intersection(intersection_id):
+        if getattr(car, "visibility_state", "green") != "red":
+            continue
+        ident = id(car)
+        if ident in counted:
+            continue
+        counted.add(ident)
+        score += 1
+    for other in world.attached_intersections(intersection_id):
+        for car in occ.cars_in_intersection(other):
+            if getattr(car, "visibility_state", "green") != "red":
+                continue
+            ident = id(car)
+            if ident in counted:
+                continue
+            counted.add(ident)
             score += 1
-        elif any(_path_car_in_box(car, other) for other in attached):
-            if getattr(car, "visibility_state", "green") == "red":
+    for lane_idx in world.incoming_lanes(intersection_id):
+        lane = world.get_lane_cells(lane_idx)
+        if not lane:
+            continue
+        thresh = max(0, len(lane) - INBOUND_TAIL_CELLS)
+        for car in occ.cars_on_lane(lane_idx):
+            ident = id(car)
+            if ident in counted:
+                continue
+            if car.position_in_lane >= thresh and getattr(car, "visibility_state", "green") == "red":
+                counted.add(ident)
                 score += 1
     return score
 
@@ -162,9 +209,12 @@ def pick_deploy_lane(intersection_id: str, used_lanes: set[int] | None = None) -
     ix, iy = _intersection_center(intersection_id)
     placed: list[tuple[float, int]] = []
     inbound_fallback: list[int] = []
-    for i in world.lane_ids():
-        if i in used:
+    touching = list(world.incoming_lanes(intersection_id)) + list(world.outgoing_lanes(intersection_id))
+    seen_lanes: set[int] = set()
+    for i in touching:
+        if i in used or i in seen_lanes:
             continue
+        seen_lanes.add(i)
         place_id = place_on_lane_for_intersection(i, intersection_id)
         if place_id:
             pc = _place_center(place_id)

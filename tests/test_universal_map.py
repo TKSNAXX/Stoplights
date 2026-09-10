@@ -1156,6 +1156,90 @@ def test_building_catalog_natural_scale() -> None:
     assert by_id["house"].world_cells_e == 3
 
 
+def test_rebuild_topology_tables() -> None:
+    """Incoming/outgoing, oncoming pairs, and attached short-inbounds are rebuild caches."""
+    g = GameState()
+    assert world.outgoing_lanes("Housing")
+    assert all(world.lane_traffic_in(i) == "Housing" for i in world.outgoing_lanes("Housing"))
+    assert all(world.lane_traffic_out(i) == "main" for i in world.incoming_lanes("main") if world.lane_traffic_out(i))
+    assert world.in_lane_ids() == places.in_lane_indices()
+    assert 0 in world.in_lane_ids()
+    assert world.oncoming_lane(0) == 3
+    assert world.oncoming_lane(3) == 0
+    assert world.oncoming_lane(1) == 2
+    assert world.oncoming_lane(2) == 1
+    assert world.oncoming_lane(4) == 5
+    assert world.oncoming_lane(5) == 4
+    assert world.oncoming_lane(6) == 7
+    assert world.oncoming_lane(7) == 6
+    hops = world.best_next_hops("Housing", "Park")
+    assert "bypass" in hops
+
+    intersections = {
+        "A": places.IntersectionConfig(size_cells=2, center_x=20, center_y=20),
+        "B": places.IntersectionConfig(size_cells=2, center_x=20, center_y=26),
+        "C": places.IntersectionConfig(size_cells=2, center_x=20, center_y=32),
+        "D": places.IntersectionConfig(size_cells=2, center_x=20, center_y=2),
+    }
+    places_by_id = {"Yard": places.Place(8, 26, 3, 3)}
+    lanes = {
+        1: places.LaneConfig(start_tile=(20, 25), end_tile=(20, 20)),
+        2: places.LaneConfig(start_tile=(20, 31), end_tile=(20, 26)),
+        3: places.LaneConfig(start_tile=(20, 2), end_tile=(20, 19)),
+        4: places.LaneConfig(start_tile=(9, 26), end_tile=(19, 26)),
+    }
+    world.rebuild_world(place_rects_from_places(places_by_id), intersections, lanes)
+    assert world.attached_intersections("A") == frozenset({"B"})
+    assert "C" not in world.attached_intersections("A")
+    assert world.attached_intersections("B") == frozenset({"C"})
+    g.rebuild_world_from_config()
+
+
+def test_path_cache_matches_live() -> None:
+    from sim.paths import compute_path_position, path_length, path_position
+
+    GameState()
+    # 0 → 1 is straight through main; 0 → 5 is a turn toward Park.
+    for in_lane, out_lane in ((0, 1), (0, 5)):
+        for t in (0.0, 1.0):
+            cached = path_position(in_lane, out_lane, t)
+            live = compute_path_position(in_lane, out_lane, t)
+            assert abs(cached[0] - live[0]) < 1e-9
+            assert abs(cached[1] - live[1]) < 1e-9
+        live_len = 0.0
+        prev = compute_path_position(in_lane, out_lane, 0.0)
+        for i in range(1, 33):
+            p = compute_path_position(in_lane, out_lane, i / 32.0)
+            live_len += ((p[0] - prev[0]) ** 2 + (p[1] - prev[1]) ** 2) ** 0.5
+            prev = p
+        assert abs(path_length(in_lane, out_lane) - live_len) < 1e-9
+
+
+def test_occupancy_jam_and_lane_full() -> None:
+    from sim.occupancy import Occupancy
+    from sim.places import lane_is_full, spawn_lanes_for_place
+
+    g = GameState()
+    origin = g.spawn_places[0]
+    lane = spawn_lanes_for_place(origin)[0]
+    at_zero = [_make_test_car(lane_index=lane, position=0)]
+    occ = Occupancy.from_cars(at_zero)
+    assert lane_is_full(lane, occ)
+    assert lane_is_full(lane, at_zero)
+
+    main_cells = world.get_intersection_cells_by_key("main")
+    path_cars = [_make_test_car(mode="path", cell=main_cells[0], vis="red")]
+    occ_path = Occupancy.from_cars(path_cars)
+    assert intersection_jam_score(occ_path, "main") == 1
+    assert intersection_jam_score(path_cars, "main") == 1
+    assert intersection_jam_score(occ_path, "bypass") == 0
+
+    inbound = next(i for i in world.incoming_lanes("main"))
+    lane_cells = world.get_lane_cells(inbound)
+    tail = [_make_test_car(lane_index=inbound, position=len(lane_cells) - 1, vis="red")]
+    assert intersection_jam_score(Occupancy.from_cars(tail), "main") == intersection_jam_score(tail, "main") == 1
+
+
 def main() -> None:
     tests = [
         test_migrate_schema_3_snippet,
@@ -1191,6 +1275,9 @@ def main() -> None:
         test_building_seed_shuffle,
         test_building_layout_shuffle,
         test_building_catalog_natural_scale,
+        test_rebuild_topology_tables,
+        test_path_cache_matches_live,
+        test_occupancy_jam_and_lane_full,
     ]
     failed = 0
     for fn in tests:

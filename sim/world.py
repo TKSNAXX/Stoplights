@@ -2,12 +2,15 @@
 World grid and lane geometry.
 
 Uniform intersections and stable lane ids. No main/bypass/extra special cases.
+Topology tables are filled only in rebuild_world.
 """
 from __future__ import annotations
 
+from collections import deque
 from typing import TYPE_CHECKING
 
 from sim import map_data
+from sim.constants import INBOUND_TAIL_CELLS
 
 if TYPE_CHECKING:
     from sim.places import IntersectionConfig, LaneConfig
@@ -34,7 +37,7 @@ class _WorldState:
     """Mutable world geometry. Updated by rebuild_world."""
 
     def __init__(self) -> None:
-        self.lanes: dict[int, list[tuple[int, int]]] = {}
+        self.lanes: dict[int, tuple[tuple[int, int], ...]] = {}
         self.lane_meta: dict[int, tuple[str, str, str]] = {}
         self.x_lo: int = 0
         self.y_lo: int = 0
@@ -42,13 +45,23 @@ class _WorldState:
         self.y_hi: int = 1
         self.place_rects: dict[str, dict] = {}
         self.intersections: dict[str, _IntersectionState] = {}
+        self.outgoing: dict[str, tuple[int, ...]] = {}
+        self.incoming: dict[str, tuple[int, ...]] = {}
+        self.in_lane_ids: frozenset[int] = frozenset()
+        self.out_lane_ids: frozenset[int] = frozenset()
+        self.lane_graph: dict[str, set[str]] = {}
+        self.attached: dict[str, frozenset[str]] = {}
+        self.cell_to_intersections: dict[tuple[int, int], tuple[str, ...]] = {}
+        self.oncoming: dict[int, int | None] = {}
+        self.sisters: dict[int, int | None] = {}
+        self.best_next_hops: dict[tuple[str, str], frozenset[str]] = {}
 
 
 _state = _WorldState()
 
 
 def _compute_bounds(
-    lanes: dict[int, list[tuple[int, int]]],
+    lanes: dict[int, list[tuple[int, int]] | tuple[tuple[int, int], ...]],
     place_rects: dict[str, dict],
     intersection_dicts: dict[str, dict],
 ) -> tuple[int, int, int, int]:
@@ -86,7 +99,7 @@ def rebuild_world(
 ) -> None:
     """
     Rebuild lanes and intersection geometry from places, intersections, and lanes.
-    All intersections share one code path.
+    All intersections share one code path. Topology tables are filled here only.
     """
     intersection_bounds: dict[str, tuple[int, int, int, int]] = {}
     intersection_dicts: dict[str, dict] = {}
@@ -105,7 +118,7 @@ def rebuild_world(
 
     x_lo, y_lo, x_hi, y_hi = _compute_bounds(lane_cells, place_rects, intersection_dicts)
 
-    _state.lanes = {idx: [tuple(c) for c in cells] for idx, cells in lane_cells.items()}
+    _state.lanes = {idx: tuple(tuple(c) for c in cells) for idx, cells in lane_cells.items()}
     _state.lane_meta = dict(lane_meta)
     _state.place_rects = dict(place_rects)
     _state.x_lo, _state.y_lo, _state.x_hi, _state.y_hi = x_lo, y_lo, x_hi, y_hi
@@ -116,13 +129,176 @@ def rebuild_world(
         slots = [tuple(c) for c in d.get("slots", [])]
         _state.intersections[key] = _IntersectionState(key, cells, slots, bounds)
 
+    _refresh_topology()
+    from sim.paths import rebuild_path_cache
+
+    rebuild_path_cache()
+
+
+def _axis(direction: str) -> str:
+    d = (direction or "").upper()
+    if d in ("N", "S"):
+        return "NS"
+    if d in ("E", "W"):
+        return "EW"
+    return d
+
+
+def _min_chebyshev(
+    cells_a: tuple[tuple[int, int], ...],
+    cells_b: tuple[tuple[int, int], ...],
+) -> int:
+    best = 10**9
+    for ax, ay in cells_a:
+        for bx, by in cells_b:
+            d = max(abs(ax - bx), abs(ay - by))
+            if d < best:
+                best = d
+                if best == 0:
+                    return 0
+    return best if best != 10**9 else 10**9
+
+
+def _bfs_distance(start: str, destination: str, graph: dict[str, set[str]]) -> int | None:
+    if start == destination:
+        return 0
+    q: deque[tuple[str, int]] = deque([(start, 0)])
+    seen = {start}
+    while q:
+        node, dist = q.popleft()
+        for nxt in graph.get(node, ()):
+            if nxt == destination:
+                return dist + 1
+            if nxt in seen:
+                continue
+            seen.add(nxt)
+            q.append((nxt, dist + 1))
+    return None
+
+
+def _compute_best_next_hops(start: str, destination: str, graph: dict[str, set[str]]) -> frozenset[str]:
+    neighbors = graph.get(start, set())
+    if not neighbors:
+        return frozenset()
+    if destination in neighbors:
+        return frozenset({destination})
+
+    best_hops: set[str] = set()
+    best_dist: int | None = None
+    for hop in neighbors:
+        dist = _bfs_distance(hop, destination, graph)
+        if dist is None:
+            continue
+        total = dist + 1
+        if best_dist is None or total < best_dist:
+            best_dist = total
+            best_hops = {hop}
+        elif total == best_dist:
+            best_hops.add(hop)
+    return frozenset(best_hops)
+
+
+def _refresh_topology() -> None:
+    outgoing: dict[str, list[int]] = {}
+    incoming: dict[str, list[int]] = {}
+    graph: dict[str, set[str]] = {}
+    in_lanes: set[int] = set()
+    out_lanes: set[int] = set()
+
+    for i in sorted(_state.lanes.keys()):
+        meta = _state.lane_meta.get(i)
+        if not meta:
+            continue
+        _dir, src, dst = meta
+        if src:
+            outgoing.setdefault(src, []).append(i)
+        if dst:
+            incoming.setdefault(dst, []).append(i)
+        if src and dst:
+            graph.setdefault(src, set()).add(dst)
+        if dst and dst in _state.intersections:
+            in_lanes.add(i)
+        if src and src in _state.intersections:
+            out_lanes.add(i)
+
+    _state.outgoing = {k: tuple(v) for k, v in outgoing.items()}
+    _state.incoming = {k: tuple(v) for k, v in incoming.items()}
+    _state.lane_graph = graph
+    _state.in_lane_ids = frozenset(in_lanes)
+    _state.out_lane_ids = frozenset(out_lanes)
+
+    attached: dict[str, set[str]] = {}
+    for node in _state.intersections:
+        attached[node] = set()
+        for i in incoming.get(node, ()):
+            lane = _state.lanes.get(i, ())
+            if not lane or len(lane) >= INBOUND_TAIL_CELLS:
+                continue
+            src = lane_traffic_in(i)
+            if src and src != node and src in _state.intersections:
+                attached[node].add(src)
+    _state.attached = {k: frozenset(v) for k, v in attached.items()}
+
+    cell_map: dict[tuple[int, int], list[str]] = {}
+    for key, inter in _state.intersections.items():
+        for c in inter.cells:
+            cell_map.setdefault(c, []).append(key)
+    _state.cell_to_intersections = {c: tuple(keys) for c, keys in cell_map.items()}
+
+    ids = sorted(_state.lanes.keys())
+    oncoming: dict[int, int | None] = {i: None for i in ids}
+    sisters: dict[int, int | None] = {i: None for i in ids}
+    for a_idx, a in enumerate(ids):
+        tin_a = lane_traffic_in(a)
+        tout_a = lane_traffic_out(a)
+        dir_a = lane_direction(a)
+        cells_a = _state.lanes.get(a, ())
+        if not tin_a or not tout_a or not cells_a:
+            continue
+        axis_a = _axis(dir_a)
+        for b in ids[a_idx + 1 :]:
+            tin_b = lane_traffic_in(b)
+            tout_b = lane_traffic_out(b)
+            cells_b = _state.lanes.get(b, ())
+            if not tin_b or not tout_b or not cells_b:
+                continue
+            if _min_chebyshev(cells_a, cells_b) != 1:
+                continue
+            axis_b = _axis(lane_direction(b))
+            if tin_a == tout_b and tout_a == tin_b and axis_a == axis_b:
+                if oncoming[a] is None and oncoming[b] is None:
+                    oncoming[a] = b
+                    oncoming[b] = a
+            if tin_a == tin_b and tout_a == tout_b and dir_a == lane_direction(b):
+                if sisters[a] is None and sisters[b] is None:
+                    sisters[a] = b
+                    sisters[b] = a
+    _state.oncoming = oncoming
+    _state.sisters = sisters
+
+    nodes: set[str] = set(_state.place_rects)
+    nodes.update(_state.intersections)
+    for src, dsts in graph.items():
+        nodes.add(src)
+        nodes.update(dsts)
+    hops: dict[tuple[str, str], frozenset[str]] = {}
+    for start in nodes:
+        for dest in nodes:
+            if start == dest:
+                continue
+            hops[(start, dest)] = _compute_best_next_hops(start, dest, graph)
+    _state.best_next_hops = hops
+
 
 def get_intersection_at_cell(cell: tuple[int, int]) -> str | None:
     """Return intersection id if cell belongs to one, else None."""
-    for key, inter in _state.intersections.items():
-        if cell in inter.cells_set:
-            return key
-    return None
+    keys = _state.cell_to_intersections.get(cell)
+    return keys[0] if keys else None
+
+
+def intersections_at_cell(cell: tuple[int, int]) -> tuple[str, ...]:
+    """All intersection ids occupying this cell (overlaps allowed, rebuild order)."""
+    return _state.cell_to_intersections.get(cell, ())
 
 
 def cell_in_intersection(cell: tuple[int, int], key: str) -> bool:
@@ -190,8 +366,7 @@ def lane_direction(lane_index: int) -> str:
 
 
 def get_lane_cells(lane_index: int) -> tuple[tuple[int, int], ...]:
-    lane = _state.lanes.get(lane_index)
-    return tuple(lane) if lane else ()
+    return _state.lanes.get(lane_index, ())
 
 
 def get_place_rects() -> dict[str, dict]:
@@ -200,6 +375,46 @@ def get_place_rects() -> dict[str, dict]:
 
 def is_intersection(key: str) -> bool:
     return key in _state.intersections
+
+
+def outgoing_lanes(node: str) -> tuple[int, ...]:
+    return _state.outgoing.get(node, ())
+
+
+def incoming_lanes(node: str) -> tuple[int, ...]:
+    return _state.incoming.get(node, ())
+
+
+def in_lane_ids() -> frozenset[int]:
+    return _state.in_lane_ids
+
+
+def out_lane_ids() -> frozenset[int]:
+    return _state.out_lane_ids
+
+
+def attached_intersections(node: str) -> frozenset[str]:
+    return _state.attached.get(node, frozenset())
+
+
+def oncoming_lane(lane_index: int) -> int | None:
+    return _state.oncoming.get(lane_index)
+
+
+def sister_lane(lane_index: int) -> int | None:
+    return _state.sisters.get(lane_index)
+
+
+def best_next_hops(start: str, destination: str) -> frozenset[str]:
+    if start == destination:
+        return frozenset()
+    return _state.best_next_hops.get((start, destination), frozenset())
+
+
+def destination_reachable(start_node: str, destination: str) -> bool:
+    if start_node == destination:
+        return True
+    return bool(_state.best_next_hops.get((start_node, destination)))
 
 
 def intersection_cell_for_transition(in_lane_index: int, out_lane_index: int) -> tuple[int, int]:
@@ -214,7 +429,6 @@ def intersection_cell_for_transition(in_lane_index: int, out_lane_index: int) ->
     approach = in_lane[-1]
     key = get_intersection_at_cell(approach)
     if key is None:
-        # Approach may stop just outside; check traffic_out.
         out_node = lane_traffic_out(in_lane_index)
         if is_intersection(out_node):
             key = out_node

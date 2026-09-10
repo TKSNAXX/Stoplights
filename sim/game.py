@@ -13,6 +13,7 @@ from sim.map_data import next_lane_index, place_rects_from_places
 from sim import scenario, world
 from sim.impasse import apply_impasse
 from sim.movement import advance_car
+from sim.occupancy import Occupancy
 from sim.spawner import update_spawns
 from sim.visibility import build_poses, nearby_indices, rebuild_spatial_buckets_inplace, visibility_zone_band
 
@@ -135,7 +136,7 @@ class GameState:
         spawnable = tuple(
             p
             for p in ordered_candidates
-            if any(world.lane_traffic_in(i) == p for i in world.lane_ids())
+            if world.outgoing_lanes(p)
         )
         self.spawn_places = spawnable
         self.spawn_enabled = {p: self.spawn_enabled.get(p, True) for p in self.spawn_places}
@@ -194,6 +195,7 @@ class GameState:
         poses: list[tuple[float, float, int] | None],
         nearby_for,
         half_width: float,
+        occupancy: Occupancy | None = None,
     ) -> int:
         visibility_checks = 0
         for car in self.cars:
@@ -201,14 +203,13 @@ class GameState:
             if car.motion_mode != "path":
                 car.police_hold_until_exit = False
 
+        occ = occupancy if occupancy is not None else Occupancy.from_cars(self.cars)
         for police in self.police_list:
             if police.state not in ("deploying", "holding", "diverting", "returning"):
                 continue
             px, py, pdi = police.get_pose()
             if police.at_mouth():
-                for car in self.cars:
-                    if not cop.in_node_jam(car, police.target_intersection):
-                        continue
+                for car in cop.iter_node_jam_cars(occ, police.target_intersection):
                     if car.motion_mode == "path":
                         car.police_hold_until_exit = True
                     else:
@@ -267,7 +268,7 @@ class GameState:
 
     def _collect_impasse_candidates(self) -> set[int]:
         candidates: set[int] = set()
-        inbound = places.in_lane_indices()
+        inbound = world.in_lane_ids()
         for i, car in enumerate(self.cars):
             lane = car.get_lane()
             if car.motion_mode == "path":
@@ -302,12 +303,13 @@ class GameState:
                 best = node
         return best
 
-    def _update_police(self, dt: float) -> None:
+    def _update_police(self, dt: float, occupancy: Occupancy | None = None) -> None:
         """Spawn on occupancy 10/20; linger then divert or home; drop despawned."""
+        occ = occupancy if occupancy is not None else Occupancy.from_cars(self.cars)
         keys = world.get_intersection_keys()
-        occupancy = {key: cop.intersection_jam_score(self.cars, key) for key in keys}
-        remaining = {key: cop.intersection_dismiss_score(self.cars, key) for key in keys}
-        for node, score in occupancy.items():
+        jam = {key: cop.intersection_jam_score(occ, key) for key in keys}
+        remaining = {key: cop.intersection_dismiss_score(occ, key) for key in keys}
+        for node, score in jam.items():
             active = [
                 p
                 for p in self.police_list
@@ -378,6 +380,7 @@ class GameState:
         self._accumulated_time += dt
         self._tick_count += 1
 
+        occupancy = Occupancy.from_cars(self.cars)
         update_spawns(
             dt,
             self.spawn_places,
@@ -389,6 +392,7 @@ class GameState:
             lane_spawn_counts=self.lane_spawn_counts,
             origin_spawn_balance_coeff=self.origin_spawn_balance_coeff,
             out_lane_balance_coeff=self.out_lane_balance_coeff,
+            occupancy=occupancy,
         )
 
         speed = 1.0 / max(1e-6, base_duration)
@@ -398,10 +402,10 @@ class GameState:
         spatial_buckets = rebuild_spatial_buckets_inplace(self._spatial_buckets, poses)
         nearby_for = lambda gx, gy: nearby_indices(gx, gy, spatial_buckets, SPATIAL_QUERY_RADIUS_CELLS)
 
-        self._update_police(dt)
+        self._update_police(dt, occupancy)
 
         visibility_start = time.perf_counter()
-        visibility_checks = self._apply_police_influence(poses, nearby_for, half_width)
+        visibility_checks = self._apply_police_influence(poses, nearby_for, half_width, occupancy)
         visibility_checks += self._apply_visibility(poses, nearby_for, half_width)
 
         pair_start = time.perf_counter()
