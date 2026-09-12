@@ -1,7 +1,10 @@
 """
 Civilian trip itineraries: place / lane / intersection steps, planned at spawn.
 
-Walks rebuild-cached best_next_hops and scenario route_hints. Police stay greedy.
+Walks rebuild-cached best_next_hops and scenario route_hints. A place with more
+than one reachable first neighbour slacks the origin hop automatically (best
+neighbours two straws, others one). Named via hints still force that hop.
+Police stay greedy.
 """
 from __future__ import annotations
 
@@ -15,6 +18,8 @@ KIND_LANE = "lane"
 KIND_INTERSECTION = "intersection"
 
 MAX_ROUTE_HOPS = 32
+BEST_NEIGHBOR_WEIGHT = 2.0
+SLACK_NEIGHBOR_WEIGHT = 1.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,14 +107,84 @@ def route_is_live(route: tuple[RouteStep, ...]) -> bool:
     return True
 
 
-def _pick_next_node(from_node: str, destination: str) -> str | None:
+def _outgoing_neighbours(from_node: str) -> list[str]:
+    seen: list[str] = []
+    for i in world.outgoing_lanes(from_node):
+        n = world.lane_traffic_out(i)
+        if n and n not in seen:
+            seen.append(n)
+    return seen
+
+
+def _neighbour_reaches(neighbour: str, destination: str) -> bool:
+    return neighbour == destination or world.destination_reachable(neighbour, destination)
+
+
+def _reachable_first_hops(from_node: str, destination: str) -> list[str]:
+    return [n for n in _outgoing_neighbours(from_node) if _neighbour_reaches(n, destination)]
+
+
+def _hops_with_non_uturn(
+    from_node: str,
+    hops: frozenset[str] | set[str],
+    inbound: int | None,
+) -> list[str]:
+    """Prefer next nodes that have an outbound that is not a U-turn. Fall back to hops."""
+    if inbound is None or not hops:
+        return list(hops)
+    usable: list[str] = []
+    for n in hops:
+        outgoing = [i for i in world.outgoing_lanes(from_node) if world.lane_traffic_out(i) == n]
+        if any(not places.is_uturn_transition(inbound, i) for i in outgoing):
+            usable.append(n)
+    return usable if usable else list(hops)
+
+
+def _pick_best_hop(from_node: str, destination: str, inbound: int | None = None) -> str | None:
     hops = world.best_next_hops(from_node, destination)
     if not hops:
         return None
     via = places._hint_via(from_node, destination)
-    if via is not None and via in hops:
+    if via is not None and via != places.HINT_WILDCARD and via in hops:
         return via
-    return random.choice(tuple(hops))
+    pool = _hops_with_non_uturn(from_node, hops, inbound)
+    return random.choice(pool)
+
+
+def _weighted_slack_hop(from_node: str, destination: str) -> str | None:
+    hops = world.best_next_hops(from_node, destination)
+    candidates = _reachable_first_hops(from_node, destination)
+    if not candidates:
+        return None
+    weights = [
+        BEST_NEIGHBOR_WEIGHT if n in hops else SLACK_NEIGHBOR_WEIGHT for n in candidates
+    ]
+    return random.choices(candidates, weights=weights, k=1)[0]
+
+
+def _pick_next_node(
+    from_node: str,
+    destination: str,
+    *,
+    allow_slack: bool = False,
+    inbound: int | None = None,
+) -> str | None:
+    via = places._hint_via(from_node, destination)
+    named = via is not None and via != places.HINT_WILDCARD
+    if allow_slack:
+        if (
+            named
+            and via in _outgoing_neighbours(from_node)
+            and _neighbour_reaches(via, destination)
+        ):
+            return via
+        if not world.is_intersection(from_node):
+            candidates = _reachable_first_hops(from_node, destination)
+            if len(candidates) > 1:
+                picked = _weighted_slack_hop(from_node, destination)
+                if picked is not None:
+                    return picked
+    return _pick_best_hop(from_node, destination, inbound)
 
 
 def _pick_lane(
@@ -153,7 +228,9 @@ def plan_route(
     for _ in range(MAX_ROUTE_HOPS):
         if current == destination:
             return tuple(steps)
-        nxt = _pick_next_node(current, destination)
+        nxt = _pick_next_node(
+            current, destination, allow_slack=inbound is None, inbound=inbound
+        )
         if nxt is None:
             return None
         lane = _pick_lane(

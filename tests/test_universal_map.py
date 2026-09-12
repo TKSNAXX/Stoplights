@@ -1244,6 +1244,10 @@ def test_route_hinted_housing_park_via_bypass() -> None:
     from sim import routes
 
     GameState()
+    places.set_route_hints([
+        ("Housing", "Park", "bypass"),
+        ("Park", "Housing", "bypass"),
+    ])
     route = routes.plan_route("Housing", "Park")
     assert route is not None
     nodes = routes.format_route_nodes(route)
@@ -1255,14 +1259,18 @@ def test_route_housing_office_via_main() -> None:
     from sim import routes
 
     GameState()
+    places.set_route_hints([
+        ("Housing", "Park", "bypass"),
+        ("Park", "Housing", "bypass"),
+    ])
+    assert "main" in world.best_next_hops("Housing", "Office")
+    assert "bypass" not in world.best_next_hops("Housing", "Office")
     route = routes.plan_route("Housing", "Office")
     assert route is not None
     kinds = [s.kind for s in route]
     refs = [s.ref for s in route]
     assert "place" in kinds and "intersection" in kinds
     assert refs[0] == "Housing" and refs[-1] == "Office"
-    assert "main" in {s.ref for s in route if s.kind == "intersection"}
-    assert "bypass" not in {s.ref for s in route if s.kind == "intersection"}
 
 
 def _place_chain_world() -> None:
@@ -1421,6 +1429,66 @@ def test_route_rename_retargets_place_steps() -> None:
     assert car in g.cars
 
 
+def test_hint_via_exact_beats_dest_star() -> None:
+    GameState()
+    places.set_route_hints([
+        ("Housing", "*", "*"),
+        ("Housing", "Office", "bypass"),
+        ("Housing", "Park", "bypass"),
+    ])
+    assert places._hint_via("Housing", "Office") == "bypass"
+    assert places._hint_via("Housing", "Shopping") == "*"
+    places.set_route_hints([
+        ("Housing", "Park", "bypass"),
+        ("Housing", "*", "*"),
+    ])
+    assert places._hint_via("Housing", "Park") == "bypass"
+    assert places._hint_via("Housing", "Office") == "*"
+
+
+def test_route_office_forced_via_bypass() -> None:
+    from sim import routes
+
+    GameState()
+    places.set_route_hints([("Housing", "Office", "bypass")])
+    route = routes.plan_route("Housing", "Office")
+    assert route is not None
+    assert routes.format_route_nodes(route) == "Housing > bypass > Park > main > Office"
+    assert {s.ref for s in route if s.kind == "intersection"} == {"bypass", "main"}
+
+
+def test_route_multi_mouth_slack_then_shortest() -> None:
+    from sim import routes
+
+    GameState()
+    places.set_route_hints([])
+    saw_main = False
+    saw_bypass = False
+    for _ in range(200):
+        route = routes.plan_route("Housing", "Office")
+        assert route is not None
+        nodes = routes.format_route_nodes(route)
+        if nodes == "Housing > main > Office":
+            saw_main = True
+            assert "bypass" not in {s.ref for s in route if s.kind == "intersection"}
+        elif nodes == "Housing > bypass > Park > main > Office":
+            saw_bypass = True
+        else:
+            raise AssertionError(f"unexpected slack walk {nodes}")
+        if saw_main and saw_bypass:
+            break
+    assert saw_main and saw_bypass
+
+
+def test_choose_next_lane_stays_greedy() -> None:
+    GameState()
+    places.set_route_hints([])
+    for _ in range(20):
+        lane = places.choose_next_lane_from_node("Housing", "Office")
+        assert lane is not None
+        assert world.lane_traffic_out(lane) == "main"
+
+
 def main() -> None:
     tests = [
         test_migrate_schema_3_snippet,
@@ -1466,6 +1534,10 @@ def main() -> None:
         test_route_unreachable,
         test_route_spawn_full_first_lane_no_retry,
         test_route_rename_retargets_place_steps,
+        test_hint_via_exact_beats_dest_star,
+        test_route_office_forced_via_bypass,
+        test_route_multi_mouth_slack_then_shortest,
+        test_choose_next_lane_stays_greedy,
     ]
     failed = 0
     for fn in tests:

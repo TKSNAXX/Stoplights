@@ -105,6 +105,9 @@ def clamp_intersection_type(raw) -> str:
     return INTERSECTION_TYPE_CROSS
 
 # Module-level route hints from the active scenario: (origin, dest, via_node).
+# dest or via may be HINT_WILDCARD ("*"): dest matches any destination; via means
+# any first-hop neighbour that still reaches dest (civilian planner only).
+HINT_WILDCARD = "*"
 _route_hints: list[tuple[str, str, str]] = []
 
 
@@ -200,10 +203,16 @@ def place_bounds(place: str) -> list[tuple[int, int]]:
 
 
 def _hint_via(origin: str, destination: str) -> str | None:
+    """Exact (from, dest) wins; else first (from, *). First row of each class wins."""
+    star_via: str | None = None
     for a, b, via in _route_hints:
-        if a == origin and b == destination:
+        if a != origin:
+            continue
+        if b == destination:
             return via
-    return None
+        if b == HINT_WILDCARD and star_via is None:
+            star_via = via
+    return star_via
 
 
 def spawn_lanes_for_place(place: str, destination: str | None = None) -> list[int]:

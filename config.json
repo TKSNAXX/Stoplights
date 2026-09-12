@@ -138,10 +138,10 @@
       "center_y": 19,
       "width": 3,
       "length": 16,
-      "spawn_interval": 2.0,
+      "spawn_interval": 1.0,
       "attract_weight": 1.0,
       "protected": false,
-      "building_kind": "commercial",
+      "building_kind": "none",
       "building_seed": 962194713
     }
   },
