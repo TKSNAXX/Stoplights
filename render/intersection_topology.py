@@ -8,13 +8,14 @@ Edge labels name which side of the intersection axis-aligned bounds is pierced:
 """
 from __future__ import annotations
 
-from typing import Literal
-
 from sim import world
+from sim.junction import (
+    Cardinal,
+    StraightAxis,
+    overlay_type_for_sides,
+    tee_layout_for_sides,
+)
 from sim.map_data import _offset_for_direction
-
-Cardinal = Literal["N", "S", "E", "W"]
-StraightAxis = Literal["ns", "ew"]
 
 
 def _bounds_from_cells(cells: list[tuple[int, int]]) -> tuple[int, int, int, int]:
@@ -174,24 +175,6 @@ _PAIR_TO_QUADRANT: dict[frozenset[Cardinal], int] = {
 }
 
 
-def overlay_type_for_sides(active: frozenset[Cardinal]) -> str:
-    """Overlay kind from connected cardinals. Draw-only; occupancy is unchanged."""
-    from sim import places
-
-    n = len(active)
-    if n == 0:
-        return places.INTERSECTION_TYPE_NONE
-    if n == 1:
-        return places.INTERSECTION_TYPE_STRAIGHT
-    if n == 2:
-        if active in (frozenset({"N", "S"}), frozenset({"E", "W"})):
-            return places.INTERSECTION_TYPE_STRAIGHT
-        return places.INTERSECTION_TYPE_CORNER
-    if n == 3:
-        return places.INTERSECTION_TYPE_TEE
-    return places.INTERSECTION_TYPE_CROSS
-
-
 def corner_quadrant_for_sides(active: frozenset[Cardinal]) -> int:
     """Map two perpendicular active sides to corner quadrant 0..3; else 0."""
     if len(active) != 2:
@@ -211,10 +194,6 @@ def straight_axis_for_sides(active: frozenset[Cardinal]) -> StraightAxis:
     return "ns"
 
 
-_OPPOSITE_CARDINAL: dict[Cardinal, Cardinal] = {"N": "S", "S": "N", "E": "W", "W": "E"}
-_ALL_CARDINALS: frozenset[Cardinal] = frozenset({"N", "S", "E", "W"})
-
-
 def tee_corner_quadrants(stem: Cardinal) -> tuple[int, int]:
     """
     Two fillet quadrants on the through-band stem side.
@@ -230,30 +209,6 @@ def tee_corner_quadrants(stem: Cardinal) -> tuple[int, int]:
     if stem == "N":
         return (0, 3)  # left (ew omit lo)
     return (1, 2)  # S: right
-
-
-def tee_layout_for_sides(
-    active: frozenset[Cardinal],
-    through_fallback: StraightAxis = "ns",
-) -> tuple[StraightAxis, Cardinal]:
-    """
-    Through axis and stem cardinal for a tee overlay.
-
-    Three active sides: missing face is open (transparent); stem is opposite the
-    gap; through is the remaining pair.
-    Otherwise: use through_fallback; stem is a perpendicular active side, else S.
-    """
-    if len(active) == 3:
-        missing = next(iter(_ALL_CARDINALS - active))
-        stem = _OPPOSITE_CARDINAL[missing]
-        axis: StraightAxis = "ew" if stem in ("N", "S") else "ns"
-        return axis, stem
-    axis = through_fallback if through_fallback in ("ns", "ew") else "ns"
-    perp: frozenset[Cardinal] = frozenset({"E", "W"}) if axis == "ns" else frozenset({"N", "S"})
-    for side in ("N", "S", "E", "W"):
-        if side in active and side in perp:
-            return axis, side
-    return axis, "S"
 
 
 def straight_axis_for_intersection(

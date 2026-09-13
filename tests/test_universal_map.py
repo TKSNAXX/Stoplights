@@ -1489,6 +1489,254 @@ def test_choose_next_lane_stays_greedy() -> None:
         assert world.lane_traffic_out(lane) == "main"
 
 
+def _pose_lane_car(car: Car, dir_index_8: int = 0) -> None:
+    cell = car.current_cell()
+    assert cell is not None
+    car.pose_gx = float(cell[0])
+    car.pose_gy = float(cell[1])
+    car.pose_dir_index_8 = dir_index_8
+    car.speed_scale = 1.0
+    car.visibility_state = "green"
+
+
+def test_roll_observe_skills() -> None:
+    from sim.awareness import OBSERVE_SKILLS, roll_observe_skills
+
+    seen_k: set[int] = set()
+    for _ in range(80):
+        k, skills = roll_observe_skills()
+        assert k in (0, 1, 2, 3)
+        assert len(skills) == k
+        assert len(set(skills)) == k
+        assert set(skills) <= set(OBSERVE_SKILLS)
+        seen_k.add(k)
+    assert 0 in seen_k and 3 in seen_k
+
+
+def test_observe_fan_red_still_wins() -> None:
+    from sim.awareness import OBSERVE_SKILLS, apply_observe_skills
+    from sim.occupancy import Occupancy
+    from sim.visibility import build_poses, nearby_indices, rebuild_spatial_buckets_inplace
+
+    GameState()
+    follower = _make_test_car(lane_index=0, position=0)
+    leader = _make_test_car(lane_index=0, position=1)
+    follower.awareness = 3
+    follower.observe_skills = OBSERVE_SKILLS
+    leader.awareness = 3
+    leader.observe_skills = OBSERVE_SKILLS
+    _pose_lane_car(follower)
+    _pose_lane_car(leader)
+    cars_list = [follower, leader]
+    poses = build_poses(cars_list)
+    buckets: dict = {}
+    rebuild_spatial_buckets_inplace(buckets, poses)
+    nearby = lambda gx, gy: nearby_indices(gx, gy, buckets, 2)
+    g = GameState()
+    g.cars = cars_list
+    g._apply_visibility(poses, nearby, 0.5)
+    apply_observe_skills(cars_list, Occupancy.from_cars(cars_list), poses, nearby, 0.5)
+    assert follower.visibility_state == "red"
+    assert follower.speed_scale == 0.0
+
+
+def test_observe_behind_speeds_up() -> None:
+    from sim.awareness import apply_observe_skills
+    from sim.occupancy import Occupancy
+    from sim.visibility import build_poses, nearby_indices, rebuild_spatial_buckets_inplace
+
+    GameState()
+    follower = _make_test_car(lane_index=0, position=0)
+    leader = _make_test_car(lane_index=0, position=1)
+    leader.observe_skills = ("behind",)
+    leader.awareness = 1
+    _pose_lane_car(follower)
+    _pose_lane_car(leader)
+    cars_list = [follower, leader]
+    poses = build_poses(cars_list)
+    buckets: dict = {}
+    rebuild_spatial_buckets_inplace(buckets, poses)
+    nearby = lambda gx, gy: nearby_indices(gx, gy, buckets, 2)
+    apply_observe_skills(cars_list, Occupancy.from_cars(cars_list), poses, nearby, 0.5)
+    assert leader.speed_scale > 1.0
+    assert leader.speed_scale <= 1.2
+
+
+def test_observe_ahead_slows() -> None:
+    from sim.awareness import apply_observe_skills
+    from sim.occupancy import Occupancy
+    from sim.visibility import build_poses, nearby_indices, rebuild_spatial_buckets_inplace
+
+    GameState()
+    cells = world.get_lane_cells(0)
+    assert len(cells) > 6
+    subject = _make_test_car(lane_index=0, position=0)
+    blocker = _make_test_car(lane_index=0, position=5)
+    subject.observe_skills = ("ahead",)
+    subject.awareness = 1
+    _pose_lane_car(subject)
+    _pose_lane_car(blocker)
+    cars_list = [subject, blocker]
+    poses = build_poses(cars_list)
+    buckets: dict = {}
+    rebuild_spatial_buckets_inplace(buckets, poses)
+    nearby = lambda gx, gy: nearby_indices(gx, gy, buckets, 2)
+    apply_observe_skills(cars_list, Occupancy.from_cars(cars_list), poses, nearby, 0.5)
+    assert subject.speed_scale == 0.7
+
+    plain = _make_test_car(lane_index=0, position=0)
+    _pose_lane_car(plain)
+    cars2 = [plain, blocker]
+    poses2 = build_poses(cars2)
+    apply_observe_skills(cars2, Occupancy.from_cars(cars2), poses2, nearby, 0.5)
+    assert plain.speed_scale == 1.0
+
+
+def test_observe_side_slows_for_passer() -> None:
+    from sim.awareness import apply_observe_skills
+    from sim.occupancy import Occupancy
+    from sim.visibility import build_poses, nearby_indices, rebuild_spatial_buckets_inplace
+
+    places_by_id = {
+        "Start": places.Place(center_x=2, center_y=10, width=3, length=3),
+        "End": places.Place(center_x=14, center_y=10, width=3, length=3),
+    }
+    lanes = {
+        1: places.LaneConfig(start_tile=(4, 10), end_tile=(12, 10)),
+        2: places.LaneConfig(start_tile=(4, 11), end_tile=(12, 11)),
+    }
+    places.set_route_hints([])
+    world.rebuild_world(place_rects_from_places(places_by_id), {}, lanes)
+    assert world.sister_lane(1) == 2
+    subject = _make_test_car(lane_index=1, position=5)
+    passer = _make_test_car(lane_index=2, position=4)
+    subject.observe_skills = ("side",)
+    subject.awareness = 1
+    _pose_lane_car(subject, dir_index_8=2)
+    _pose_lane_car(passer, dir_index_8=2)
+    cars_list = [subject, passer]
+    poses = build_poses(cars_list)
+    buckets: dict = {}
+    rebuild_spatial_buckets_inplace(buckets, poses)
+    nearby = lambda gx, gy: nearby_indices(gx, gy, buckets, 2)
+    apply_observe_skills(cars_list, Occupancy.from_cars(cars_list), poses, nearby, 0.5)
+    assert abs(subject.speed_scale - 0.85) < 1e-9
+
+    lonely = _make_test_car(lane_index=1, position=5)
+    lonely.observe_skills = ("side",)
+    lonely.awareness = 1
+    _pose_lane_car(lonely, dir_index_8=2)
+    cars3 = [lonely]
+    poses3 = build_poses(cars3)
+    apply_observe_skills(cars3, Occupancy.from_cars(cars3), poses3, nearby, 0.5)
+    assert lonely.speed_scale == 1.0
+    GameState()
+
+
+def test_situation_maneuver_labels() -> None:
+    from sim.situation import classify_intersection_maneuver, classify_place
+
+    tee_sides = frozenset({"N", "S", "E"})
+    assert classify_intersection_maneuver("corner", frozenset({"N", "E"}), "N", "E") == "corner right"
+    assert classify_intersection_maneuver("corner", frozenset({"N", "W"}), "N", "W") == "corner left"
+    assert classify_intersection_maneuver("cross", frozenset({"N", "S", "E", "W"}), "N", "S") == "cross straight"
+    assert classify_intersection_maneuver("cross", frozenset({"N", "S", "E", "W"}), "N", "E") == "cross right"
+    assert classify_intersection_maneuver("cross", frozenset({"N", "S", "E", "W"}), "N", "W") == "cross left"
+    assert classify_intersection_maneuver("tee", tee_sides, "N", "E") == "tee branch right"
+    assert classify_intersection_maneuver("tee", tee_sides, "N", "S") == "tee straight"
+    assert classify_intersection_maneuver("tee", tee_sides, "W", "N") == "tee straight right"
+    assert classify_intersection_maneuver("tee", tee_sides, "W", "S") == "tee straight left"
+    assert classify_intersection_maneuver("straight", frozenset({"N", "S"}), "N", "S") == "straight"
+    assert classify_place("Office", "Office") == "place destination"
+    assert classify_place("Park", "Office") == "place passthru"
+
+
+def test_situation_lane_counts_and_next_feature_cars() -> None:
+    from sim.occupancy import Occupancy
+    from sim.situation import refresh_situations
+
+    GameState()
+    inbound = next(i for i in world.lane_ids() if world.lane_traffic_out(i) == "main")
+    lane = world.get_lane_cells(inbound)
+    assert len(lane) >= 3
+    tail = _make_test_car(lane_index=inbound, position=0)
+    mid = _make_test_car(lane_index=inbound, position=1)
+    lead = _make_test_car(lane_index=inbound, position=2)
+    main_cells = world.get_intersection_cells_by_key("main")
+    box = _make_test_car(mode="path", cell=main_cells[0])
+    cars_list = [tail, mid, lead, box]
+    occ = Occupancy.from_cars(cars_list)
+    refresh_situations(cars_list, occ)
+    tin = world.lane_traffic_in(inbound)
+    assert mid.on_feature == f"lane {inbound} {tin}->main"
+    assert mid.cars_ahead == 1
+    assert mid.cars_behind == 1
+    assert mid.next_feature_cars is None
+    assert lead.cars_ahead == 0
+    assert lead.cars_behind == 2
+    assert lead.next_feature_cars == 1
+    assert tail.cars_ahead == 2
+    assert tail.cars_behind == 0
+    assert box.cars_ahead is None
+    assert box.cars_behind is None
+    assert box.next_feature_cars is None
+    assert box.on_feature.startswith("intersection ")
+    GameState()
+
+
+def test_situation_sister_counts() -> None:
+    from sim.occupancy import Occupancy
+    from sim.situation import refresh_situations
+
+    GameState()
+    pair = next(
+        ((i, world.sister_lane(i)) for i in world.lane_ids() if world.sister_lane(i) is not None),
+        None,
+    )
+    if pair is None:
+        lone = _make_test_car(lane_index=next(iter(world.lane_ids())), position=0)
+        occ = Occupancy.from_cars([lone])
+        refresh_situations([lone], occ)
+        assert lone.sister_ahead is None
+        assert lone.sister_behind is None
+        GameState()
+        return
+    a, b = pair
+    subject = _make_test_car(lane_index=a, position=2)
+    sister_front = _make_test_car(lane_index=b, position=5)
+    sister_back = _make_test_car(lane_index=b, position=0)
+    cars_list = [subject, sister_front, sister_back]
+    occ = Occupancy.from_cars(cars_list)
+    refresh_situations(cars_list, occ)
+    assert subject.sister_ahead == 1
+    assert subject.sister_behind == 1
+    GameState()
+
+
+def test_situation_place_and_on_lane_from_route() -> None:
+    from sim.occupancy import Occupancy
+    from sim.routes import KIND_LANE, KIND_PLACE, RouteStep
+    from sim.situation import refresh_situations
+
+    GameState()
+    lane_id = next(
+        i
+        for i in world.lane_ids()
+        if world.lane_traffic_out(i) and not world.is_intersection(world.lane_traffic_out(i))
+    )
+    dest = world.lane_traffic_out(lane_id)
+    car = _make_test_car(lane_index=lane_id, position=0)
+    car.destination = dest
+    car.route = (RouteStep(KIND_LANE, lane_id), RouteStep(KIND_PLACE, dest))
+    car.route_index = 0
+    refresh_situations([car], Occupancy.from_cars([car]))
+    assert car.next_feature == "place destination"
+    car.destination = dest + "_other"
+    refresh_situations([car], Occupancy.from_cars([car]))
+    assert car.next_feature == "place passthru"
+    GameState()
+
+
 def main() -> None:
     tests = [
         test_migrate_schema_3_snippet,
@@ -1538,6 +1786,15 @@ def main() -> None:
         test_route_office_forced_via_bypass,
         test_route_multi_mouth_slack_then_shortest,
         test_choose_next_lane_stays_greedy,
+        test_roll_observe_skills,
+        test_observe_fan_red_still_wins,
+        test_observe_behind_speeds_up,
+        test_observe_ahead_slows,
+        test_observe_side_slows_for_passer,
+        test_situation_maneuver_labels,
+        test_situation_lane_counts_and_next_feature_cars,
+        test_situation_sister_counts,
+        test_situation_place_and_on_lane_from_route,
     ]
     failed = 0
     for fn in tests:

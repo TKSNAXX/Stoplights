@@ -53,6 +53,10 @@ class Occupancy:
     def cars_in_intersection(self, key: str) -> list[Car]:
         return self.by_intersection.get(key, [])
 
+    def sort_lanes(self) -> None:
+        for bucket in self.by_lane.values():
+            bucket.sort(key=lambda c: getattr(c, "position_in_lane", 0))
+
     def iter_path_cars(self) -> Iterator[Car]:
         seen: set[int] = set()
         for bucket in self.by_intersection.values():

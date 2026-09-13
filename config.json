@@ -57,9 +57,9 @@
       "building_seed": 0
     },
     "Park": {
-      "center_x": 58,
+      "center_x": 55,
       "center_y": 42,
-      "width": 16,
+      "width": 10,
       "length": 13,
       "spawn_interval": 4.0,
       "attract_weight": 1.0,
@@ -259,6 +259,12 @@
       "center_y": 21,
       "size_cells": 2,
       "protected": false
+    },
+    "intersection_19": {
+      "center_x": 64,
+      "center_y": 74,
+      "size_cells": 6,
+      "protected": false
     }
   },
   "lanes": {
@@ -386,7 +392,7 @@
       ],
       "end_tile": [
         64,
-        35
+        70
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -395,7 +401,7 @@
     "10": {
       "start_tile": [
         63,
-        35
+        70
       ],
       "end_tile": [
         63,
@@ -1245,6 +1251,84 @@
       "end_tile": [
         35,
         22
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "78": {
+      "start_tile": [
+        55,
+        26
+      ],
+      "end_tile": [
+        55,
+        35
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "79": {
+      "start_tile": [
+        54,
+        35
+      ],
+      "end_tile": [
+        54,
+        26
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "80": {
+      "start_tile": [
+        62,
+        74
+      ],
+      "end_tile": [
+        44,
+        74
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "81": {
+      "start_tile": [
+        44,
+        73
+      ],
+      "end_tile": [
+        60,
+        73
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "82": {
+      "start_tile": [
+        65,
+        25
+      ],
+      "end_tile": [
+        65,
+        67
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "83": {
+      "start_tile": [
+        62,
+        67
+      ],
+      "end_tile": [
+        62,
+        25
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",

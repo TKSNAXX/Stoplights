@@ -8,11 +8,13 @@ import random
 import time
 
 from sim import cars, cop, places, routes, scenario, world
+from sim.awareness import apply_observe_skills
 from sim.constants import POLICE_PRIORITY_SCALE, VIS_ZONE_LENGTH_CELLS, VIS_ZONE_WIDTH_CELLS
 from sim.map_data import next_lane_index, place_rects_from_places
 from sim.impasse import apply_impasse
 from sim.movement import advance_car
 from sim.occupancy import Occupancy
+from sim.situation import refresh_situations
 from sim.spawner import update_spawns
 from sim.visibility import build_poses, nearby_indices, rebuild_spatial_buckets_inplace, visibility_zone_band
 
@@ -437,6 +439,7 @@ class GameState:
         visibility_start = time.perf_counter()
         visibility_checks = self._apply_police_influence(poses, nearby_for, half_width, occupancy)
         visibility_checks += self._apply_visibility(poses, nearby_for, half_width)
+        apply_observe_skills(self.cars, occupancy, poses, nearby_for, half_width)
 
         pair_start = time.perf_counter()
         pair_checks = apply_impasse(
@@ -459,6 +462,9 @@ class GameState:
         for car in to_remove:
             if car in self.cars:
                 self.cars.remove(car)
+
+        sit_occ = Occupancy.from_cars(self.cars)
+        refresh_situations(self.cars, sit_occ)
 
         tick_ms = (time.perf_counter() - tick_start) * 1000.0
         visibility_ms = (pair_start - visibility_start) * 1000.0

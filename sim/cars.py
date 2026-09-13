@@ -7,9 +7,8 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
-from sim import places, world
+from sim import places, routes, world
 from sim.places import lane_is_full
-from sim import routes
 
 # Palette of RGB tuples for random car colors (distinct, visible on dark background).
 _CAR_COLOR_PALETTE: tuple[tuple[int, int, int], ...] = (
@@ -63,6 +62,19 @@ class Car:
     # Itinerary (spawn-time); route_index is the current lane step
     route: tuple[routes.RouteStep, ...] = ()
     route_index: int = 0
+
+    # Observe skills (spawn-time); Brake/fan is always on
+    awareness: int = 0
+    observe_skills: tuple[str, ...] = ()
+
+    # Situation snapshot (filled each tick after movement; display-only)
+    on_feature: str = ""
+    next_feature: str = ""
+    cars_ahead: int | None = None
+    cars_behind: int | None = None
+    next_feature_cars: int | None = None
+    sister_ahead: int | None = None
+    sister_behind: int | None = None
 
     def current_cell(self) -> tuple[int, int] | None:
         """Current grid position, or None if invalid."""
@@ -125,6 +137,9 @@ def spawn_car(
         return None
     color = random.choice(_CAR_COLOR_PALETTE)
     base_speed_multiplier = random.uniform(0.6, 1.2)
+    from sim.awareness import roll_observe_skills
+
+    awareness, observe_skills = roll_observe_skills()
     return Car(
         origin=origin,
         destination=destination,
@@ -134,4 +149,6 @@ def spawn_car(
         base_speed_multiplier=base_speed_multiplier,
         route=route,
         route_index=routes.first_lane_step_index(route),
+        awareness=awareness,
+        observe_skills=observe_skills,
     )

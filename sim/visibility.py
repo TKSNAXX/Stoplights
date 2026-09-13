@@ -4,8 +4,10 @@ Visibility geometry and spatial query helpers.
 from __future__ import annotations
 
 import math
+from typing import TYPE_CHECKING
 
-from sim import cars
+if TYPE_CHECKING:
+    from sim.cars import Car
 
 
 def forward_right_vectors(dir_index_8: int) -> tuple[tuple[float, float], tuple[float, float]]:
@@ -43,7 +45,7 @@ def spatial_bucket_key(gx: float, gy: float) -> tuple[int, int]:
     return (int(math.floor(gx)), int(math.floor(gy)))
 
 
-def build_poses(cars_list: list[cars.Car]) -> list[tuple[float, float, int] | None]:
+def build_poses(cars_list: list[Car]) -> list[tuple[float, float, int] | None]:
     """Build pose list (gx, gy, dir_index_8) for fast per-tick reuse."""
     poses: list[tuple[float, float, int] | None] = []
     for car in cars_list:
