@@ -1,5 +1,6 @@
 """Stoplights UI package. Screen space: x right, y up."""
 from ui.camera import CameraController
+from ui.chrome.hint import FlashHint
 from ui.chrome.toolbar import Toolbar
 from ui.dialogs import (
     AddLaneDialog,
@@ -18,6 +19,7 @@ from ui.theme import (
     NUMBER_BOX_HEIGHT,
     TOOLBAR_BOTTOM_DRAW,
     TOOLBAR_BOTTOM_IDLE,
+    TOOLBAR_HINT_GAP,
     TOOLBAR_LEFT,
 )
 from ui.tools import (
@@ -25,6 +27,7 @@ from ui.tools import (
     CreateLaneTool,
     CreatePlaceTool,
     InspectTool,
+    SelectTool,
     ToolManager,
 )
 from ui.widgets import NumberBox, SkeuoKeyChip
@@ -39,7 +42,9 @@ __all__ = [
     "Dialog",
     "DialogManager",
     "HOTKEYS",
+    "FlashHint",
     "InspectTool",
+    "SelectTool",
     "IntersectionVarsDialog",
     "LaneVarsDialog",
     "NewIntersectionDialog",
@@ -51,6 +56,7 @@ __all__ = [
     "SkeuoKeyChip",
     "TOOLBAR_BOTTOM_DRAW",
     "TOOLBAR_BOTTOM_IDLE",
+    "TOOLBAR_HINT_GAP",
     "TOOLBAR_LEFT",
     "Toolbar",
     "ToolManager",

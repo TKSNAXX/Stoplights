@@ -8,7 +8,7 @@ from ui.tools.host import ToolHost
 
 
 class Tool:
-    """Exclusive interaction mode. Default inspect; create tools replace it."""
+    """Exclusive interaction mode. Default select; create tools replace it."""
 
     id: str = ""
 
@@ -38,6 +38,9 @@ class Tool:
         return None
 
     def draw_preview(self, center_x: float, center_y: float) -> None:
+        return None
+
+    def draw_floor(self, center_x: float, center_y: float) -> None:
         return None
 
 

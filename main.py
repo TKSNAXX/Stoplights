@@ -34,6 +34,7 @@ from render.buildings import (
     sprite_center_from_anchor,
 )
 from sim import places
+from sim.cars import nearest_car_in_radius
 from sim.constants import (
     CAR_DEFAULT,
     PLACE_LABEL_COLOR,
@@ -51,16 +52,18 @@ from ui import (
     CreateLaneTool,
     CreatePlaceTool,
     DialogManager,
-    InspectTool,
+    FlashHint,
     IntersectionVarsDialog,
     LaneVarsDialog,
     PlaceVarsDialog,
+    SelectTool,
     SettingsDialog,
     SkeuoKeyChip,
     Toolbar,
     ToolManager,
     TOOLBAR_BOTTOM_DRAW,
     TOOLBAR_BOTTOM_IDLE,
+    TOOLBAR_HINT_GAP,
     TOOLBAR_LEFT,
     hint_for,
     hotkey_for_key,
@@ -131,11 +134,12 @@ class StoplightsWindow(arcade.Window):
         self._toolbar = Toolbar(TOOLBAR_LEFT, self.height - TOOLBAR_BOTTOM_IDLE)
         self._esc_chip = SkeuoKeyChip(hint_for("escape", "Esc"), side="left")
         self._back_chip = SkeuoKeyChip(hint_for("placement_pop", "<-"), side="right")
+        self._select_hint = FlashHint()
         self._camera = CameraController()
         self._mouse_x = 0.0
         self._mouse_y = 0.0
         self._mouse_in_window = False
-        self._tool_manager = ToolManager(self, InspectTool(self))
+        self._tool_manager = ToolManager(self, SelectTool(self))
         self._tool_manager.register("new_lane", CreateLaneTool(self))
         self._tool_manager.register("new_place", CreatePlaceTool(self))
         self._tool_manager.register("new_intersection", CreateIntersectionTool(self))
@@ -285,6 +289,11 @@ class StoplightsWindow(arcade.Window):
     def car_at_screen(self, sx: float, sy: float):
         return self._car_at_screen(sx, sy)
 
+    def nearest_car_at_screen(self, sx: float, sy: float):
+        center_x, center_y = self._effective_center()
+        gx, gy = self._screen_to_grid(sx, sy, center_x, center_y)
+        return nearest_car_in_radius(self.game.cars, gx, gy)
+
     def lane_at_screen(self, sx: float, sy: float) -> int | None:
         return self._lane_at_screen(sx, sy)
 
@@ -399,16 +408,23 @@ class StoplightsWindow(arcade.Window):
         if not shadows and not highlights:
             return
         ctx = self.ctx
-        prev = ctx.blend_func
         try:
+            ctx.enable(ctx.BLEND)
             ctx.blend_func = (ctx.DST_COLOR, ctx.ZERO)
             for pts, color in shadows:
                 arcade.draw_polygon_filled(pts, color)
+            ctx.enable(ctx.BLEND)
             ctx.blend_func = (ctx.ONE, ctx.ONE_MINUS_SRC_COLOR)
             for pts, color in highlights:
                 arcade.draw_polygon_filled(pts, color)
         finally:
-            ctx.blend_func = prev
+            self._reset_world_blend()
+
+    def _reset_world_blend(self) -> None:
+        """Arcade polygon draws disable blending; sprites need it back."""
+        ctx = self.ctx
+        ctx.enable(ctx.BLEND)
+        ctx.blend_func = ctx.BLEND_DEFAULT
 
     def _update_zoom_scale(self) -> None:
         """Compute zoom scale from current zoom level and window size."""
@@ -634,6 +650,16 @@ class StoplightsWindow(arcade.Window):
         hk = hotkey_for_key(key)
         if hk is None:
             return
+        if hk.action in ("select_toggle_mode", "select_toggle_overlay"):
+            if fw is not None or self._draw_tool_active():
+                return
+            sel = self._tool_manager.select
+            if hk.action == "select_toggle_mode":
+                label = sel.toggle_mode()
+            else:
+                label = sel.toggle_overlay()
+            self._select_hint.show(label)
+            return
         if hk.action == "escape":
             if self._draw_tool_active():
                 self._exit_active_draw_tool()
@@ -673,6 +699,7 @@ class StoplightsWindow(arcade.Window):
 
     def on_mouse_leave(self, x: float, y: float) -> None:
         self._mouse_in_window = False
+        self._tool_manager.active.on_hover(x, y)
 
     def on_resize(self, width: int, height: int) -> None:
         super().on_resize(width, height)
@@ -700,6 +727,9 @@ class StoplightsWindow(arcade.Window):
             self._dialog_manager.contains_point(self._mouse_x, self._mouse_y),
             self._edge_pan_enabled,
         )
+        self._select_hint.update(delta_time)
+        if self._mouse_in_window:
+            self._tool_manager.active.on_hover(self._mouse_x, self._mouse_y)
         self._tick_accumulator += delta_time
         substeps = 0
         while self._tick_accumulator >= TICK_DT and substeps < MAX_SUBSTEPS_PER_FRAME:
@@ -763,63 +793,79 @@ class StoplightsWindow(arcade.Window):
         if self._placement_can_pop():
             self._back_chip.draw(self.width, self.height)
         self._toolbar.draw()
+        rect = self._toolbar.button_rect("select")
+        if rect is not None:
+            l, b, w, h = rect
+            self._select_hint.draw(l + w + TOOLBAR_HINT_GAP, b + h / 2)
         self._dialog_manager.draw_all()
 
     def _draw_world_pass(self, center_x: float, center_y: float) -> None:
-        """Tiles, draw ghosts, selection rims, cars, visibility fans. Graded as a unit."""
+        """Tiles, draw ghosts, cars/buildings, then selection rims. Graded as a unit."""
         if self._tile_sprite_list is not None:
             self._tile_sprite_list.draw(pixelated=True)
 
         self._tool_manager.active.draw_preview(center_x, center_y)
+        self._reset_world_blend()
+        self._tool_manager.active.draw_floor(center_x, center_y)
+        self._reset_world_blend()
+
+        hide_overlay = bool(
+            getattr(self._tool_manager.active, "hides_world_overlay", lambda: False)()
+        )
+        if not hide_overlay:
+            overlay: list[tuple[float, int, arcade.Sprite]] = []
+            for inst, spr, _defn in self._building_draw_items:
+                overlay.append((inst.depth, 1, spr))
+
+            if self._car_sprite_pool is not None:
+                active_police = [p for p in self.game.police_list if p.state in ("deploying", "holding", "diverting", "returning")]
+                car_data: list[tuple[float, object, int, float, float, tuple[int, int, int]]] = []
+                for car in self.game.cars:
+                    if car.pose_gx is None or car.pose_gy is None:
+                        curr = car.current_cell()
+                        if curr is None:
+                            continue
+                        gx, gy = float(curr[0]), float(curr[1])
+                    else:
+                        gx, gy = car.pose_gx, car.pose_gy
+                    sx, sy = self._to_screen(gx, gy, center_x, center_y)
+                    car_data.append((gx + gy, car, _car_direction_index(car), sx, sy, getattr(car, "color", CAR_DEFAULT)))
+                for police in active_police:
+                    gx, gy, di = police.get_pose()
+                    sx, sy = self._to_screen(gx, gy, center_x, center_y)
+                    car_data.append((gx + gy, police, di, sx, sy, police.get_light_color()))
+                car_data.sort(key=lambda t: t[0], reverse=True)
+                self._car_draw_order = [t[1] for t in car_data]
+                self._car_sprite_pool.begin_frame(len(car_data))
+                overlay_alpha = getattr(self._tool_manager.active, "overlay_car_alpha", None)
+                for idx, (depth, entity, di, sx, sy, color) in enumerate(car_data):
+                    alpha = overlay_alpha(entity) if callable(overlay_alpha) else 255
+                    self._car_sprite_pool.set_sprite(idx, di, sx, sy, color, alpha)
+                    overlay.append((depth, 0, self._car_sprite_pool.sprite_at(idx)))
+            overlay.sort(key=lambda t: (t[0], t[1]), reverse=True)
+            for _, _, spr in overlay:
+                arcade.draw_sprite(spr, pixelated=True)
+            self._reset_world_blend()
+
         self._draw_infra_selection_rims(center_x, center_y)
 
-        overlay: list[tuple[float, int, arcade.Sprite]] = []
-        for inst, spr, _defn in self._building_draw_items:
-            overlay.append((inst.depth, 1, spr))
-
-        if self._car_sprite_pool is not None:
-            active_police = [p for p in self.game.police_list if p.state in ("deploying", "holding", "diverting", "returning")]
-            car_data: list[tuple[float, object, int, float, float, tuple[int, int, int]]] = []
-            for car in self.game.cars:
-                if car.pose_gx is None or car.pose_gy is None:
-                    curr = car.current_cell()
-                    if curr is None:
-                        continue
-                    gx, gy = float(curr[0]), float(curr[1])
-                else:
-                    gx, gy = car.pose_gx, car.pose_gy
-                sx, sy = self._to_screen(gx, gy, center_x, center_y)
-                car_data.append((gx + gy, car, _car_direction_index(car), sx, sy, getattr(car, "color", CAR_DEFAULT)))
-            for police in active_police:
-                gx, gy, di = police.get_pose()
-                sx, sy = self._to_screen(gx, gy, center_x, center_y)
-                car_data.append((gx + gy, police, di, sx, sy, police.get_light_color()))
-            car_data.sort(key=lambda t: t[0], reverse=True)
-            self._car_draw_order = [t[1] for t in car_data]
-            self._car_sprite_pool.begin_frame(len(car_data))
-            for idx, (depth, _, di, sx, sy, color) in enumerate(car_data):
-                self._car_sprite_pool.set_sprite(idx, di, sx, sy, color)
-                overlay.append((depth, 0, self._car_sprite_pool.sprite_at(idx)))
-        overlay.sort(key=lambda t: (t[0], t[1]), reverse=True)
-        for _, _, spr in overlay:
-            arcade.draw_sprite(spr, pixelated=True)
-
-        if self._show_visibility_fans:
-            half = VIS_ZONE_WIDTH_CELLS / 2.0
-            for car in self.game.cars:
-                gx = car.pose_gx
-                gy = car.pose_gy
-                di = car.pose_dir_index_8
-                if gx is None or gy is None:
-                    curr = car.current_cell()
-                    if curr is None:
-                        continue
-                    gx, gy = float(curr[0]), float(curr[1])
-                verts = visibility_fan_vertices(gx, gy, di, VIS_ZONE_LENGTH_CELLS, half)
-                state = car.visibility_state
-                fan_color = VIS_ZONE_COLOR_RED if state == "red" else VIS_ZONE_COLOR_YELLOW if state == "yellow" else VIS_ZONE_COLOR_WHITE if state == "white" else VIS_ZONE_COLOR_CYAN if state == "cyan" else VIS_ZONE_COLOR
-                screen_pts = [self._to_screen(vx, vy, center_x, center_y) for vx, vy in verts]
-                arcade.draw_polygon_outline(screen_pts, fan_color, VIS_ZONE_LINE_WIDTH)
+        if hide_overlay or not self._show_visibility_fans:
+            return
+        half = VIS_ZONE_WIDTH_CELLS / 2.0
+        for car in self.game.cars:
+            gx = car.pose_gx
+            gy = car.pose_gy
+            di = car.pose_dir_index_8
+            if gx is None or gy is None:
+                curr = car.current_cell()
+                if curr is None:
+                    continue
+                gx, gy = float(curr[0]), float(curr[1])
+            verts = visibility_fan_vertices(gx, gy, di, VIS_ZONE_LENGTH_CELLS, half)
+            state = car.visibility_state
+            fan_color = VIS_ZONE_COLOR_RED if state == "red" else VIS_ZONE_COLOR_YELLOW if state == "yellow" else VIS_ZONE_COLOR_WHITE if state == "white" else VIS_ZONE_COLOR_CYAN if state == "cyan" else VIS_ZONE_COLOR
+            screen_pts = [self._to_screen(vx, vy, center_x, center_y) for vx, vy in verts]
+            arcade.draw_polygon_outline(screen_pts, fan_color, VIS_ZONE_LINE_WIDTH)
 
     def _on_color_grade_change(self, hue: int, sat: float) -> None:
         self._color_hue = clamp_color_hue(hue)

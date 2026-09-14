@@ -369,6 +369,33 @@ def get_lane_cells(lane_index: int) -> tuple[tuple[int, int], ...]:
     return _state.lanes.get(lane_index, ())
 
 
+def lane_start_end_cells(
+    lane_index: int,
+) -> tuple[tuple[int, int] | None, tuple[int, int] | None]:
+    """First (traffic-in) and last (traffic-out) cells of a lane."""
+    cells = get_lane_cells(lane_index)
+    if not cells:
+        return (None, None)
+    return (cells[0], cells[-1])
+
+
+def node_entrance_exit_cells(
+    node: str,
+) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
+    """Incoming-lane last cells (entrances) and outgoing-lane first cells (exits)."""
+    entrances: list[tuple[int, int]] = []
+    exits: list[tuple[int, int]] = []
+    for i in incoming_lanes(node):
+        cells = get_lane_cells(i)
+        if cells:
+            entrances.append(cells[-1])
+    for i in outgoing_lanes(node):
+        cells = get_lane_cells(i)
+        if cells:
+            exits.append(cells[0])
+    return (entrances, exits)
+
+
 def get_place_rects() -> dict[str, dict]:
     return dict(_state.place_rects)
 

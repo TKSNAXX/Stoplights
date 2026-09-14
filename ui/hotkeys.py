@@ -9,6 +9,7 @@ WHEN_ALWAYS = "always"
 WHEN_TOOL = "tool"
 WHEN_PLACEMENT = "placement"
 WHEN_CAMERA = "camera"
+WHEN_SELECT = "select"
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,10 @@ HOTKEYS: tuple[Hotkey, ...] = (
     Hotkey(arcade.key.ESCAPE, "escape", "Esc", WHEN_TOOL),
     Hotkey(arcade.key.BACKSPACE, "placement_pop", "<-", WHEN_PLACEMENT),
     Hotkey(arcade.key.V, "toggle_visibility_fans", "V", WHEN_ALWAYS),
+    Hotkey(arcade.key.LSHIFT, "select_toggle_mode", "Shift", WHEN_SELECT),
+    Hotkey(arcade.key.RSHIFT, "select_toggle_mode", "Shift", WHEN_SELECT),
+    Hotkey(arcade.key.LCTRL, "select_toggle_overlay", "Ctrl", WHEN_SELECT),
+    Hotkey(arcade.key.RCTRL, "select_toggle_overlay", "Ctrl", WHEN_SELECT),
     Hotkey(arcade.key.LEFT, "cam_left", "Left", WHEN_CAMERA),
     Hotkey(arcade.key.RIGHT, "cam_right", "Right", WHEN_CAMERA),
     Hotkey(arcade.key.UP, "cam_up", "Up", WHEN_CAMERA),

@@ -1737,6 +1737,99 @@ def test_situation_place_and_on_lane_from_route() -> None:
     GameState()
 
 
+def test_lane_and_node_mouth_cells() -> None:
+    GameState()
+    lane_ids = world.lane_ids()
+    assert lane_ids
+    for i in lane_ids:
+        cells = world.get_lane_cells(i)
+        start, end = world.lane_start_end_cells(i)
+        assert start == cells[0]
+        assert end == cells[-1]
+    for place in world.get_place_rects():
+        entrances, exits = world.node_entrance_exit_cells(place)
+        for i in world.incoming_lanes(place):
+            cells = world.get_lane_cells(i)
+            assert cells[-1] in entrances
+        for i in world.outgoing_lanes(place):
+            cells = world.get_lane_cells(i)
+            assert cells[0] in exits
+    for key in world.get_intersection_keys():
+        entrances, exits = world.node_entrance_exit_cells(key)
+        for i in world.incoming_lanes(key):
+            cells = world.get_lane_cells(i)
+            if cells:
+                assert cells[-1] in entrances
+        for i in world.outgoing_lanes(key):
+            cells = world.get_lane_cells(i)
+            if cells:
+                assert cells[0] in exits
+
+
+def test_nearest_car_in_radius() -> None:
+    from sim.cars import nearest_car_in_radius
+
+    a = _make_test_car(0, 0)
+    a.pose_gx, a.pose_gy = 10.0, 10.0
+    b = _make_test_car(0, 1)
+    b.pose_gx, b.pose_gy = 12.0, 10.0
+    assert nearest_car_in_radius([a, b], 10.1, 10.0) is a
+    assert nearest_car_in_radius([a, b], 11.7, 10.0) is b
+    assert nearest_car_in_radius([a, b], 10.0, 12.0) is None
+    assert nearest_car_in_radius([a, b], 10.0, 11.0) is a
+
+
+def test_observed_cars_membership() -> None:
+    from sim.awareness import observed_cars
+    from sim.occupancy import Occupancy
+    from sim.visibility import build_poses, nearby_indices, rebuild_spatial_buckets_inplace
+
+    GameState()
+    subject = _make_test_car(lane_index=0, position=0)
+    fan_car = _make_test_car(lane_index=0, position=1)
+    queue_car = _make_test_car(lane_index=0, position=5)
+    stray = _make_test_car(lane_index=0, position=2)
+    subject.pose_gx, subject.pose_gy, subject.pose_dir_index_8 = 5.0, 5.0, 0
+    fan_car.pose_gx, fan_car.pose_gy, fan_car.pose_dir_index_8 = 5.0, 6.0, 0
+    queue_car.pose_gx, queue_car.pose_gy, queue_car.pose_dir_index_8 = 20.0, 20.0, 0
+    stray.pose_gx, stray.pose_gy, stray.pose_dir_index_8 = 0.0, 0.0, 0
+    cars_list = [subject, fan_car, queue_car, stray]
+    poses = build_poses(cars_list)
+    buckets: dict = {}
+    rebuild_spatial_buckets_inplace(buckets, poses)
+    nearby = lambda gx, gy: nearby_indices(gx, gy, buckets, 2)
+    occ = Occupancy.from_cars(cars_list)
+
+    seen = observed_cars(subject, cars_list, occ, poses, nearby, 0.5)
+    assert any(c is fan_car for c in seen)
+    assert not any(c is queue_car for c in seen)
+    assert not any(c is stray for c in seen)
+
+    subject.observe_skills = ("ahead",)
+    subject.awareness = 1
+    seen = observed_cars(subject, cars_list, occ, poses, nearby, 0.5)
+    assert any(c is fan_car for c in seen)
+    assert any(c is queue_car for c in seen)
+
+    subject.visibility_state = "red"
+    subject.speed_scale = 0.0
+    seen = observed_cars(subject, cars_list, occ, poses, nearby, 0.5)
+    assert any(c is fan_car for c in seen)
+    assert not any(c is queue_car for c in seen)
+
+    subject.visibility_state = "green"
+    subject.speed_scale = 1.0
+    subject.observe_skills = ("behind",)
+    tail = _make_test_car(lane_index=0, position=0)
+    tail.pose_gx, tail.pose_gy, tail.pose_dir_index_8 = 5.0, 3.5, 0
+    cars2 = [subject, tail]
+    poses2 = build_poses(cars2)
+    rebuild_spatial_buckets_inplace(buckets, poses2)
+    occ2 = Occupancy.from_cars(cars2)
+    seen = observed_cars(subject, cars2, occ2, poses2, nearby, 0.5)
+    assert any(c is tail for c in seen)
+
+
 def main() -> None:
     tests = [
         test_migrate_schema_3_snippet,
@@ -1795,6 +1888,9 @@ def main() -> None:
         test_situation_lane_counts_and_next_feature_cars,
         test_situation_sister_counts,
         test_situation_place_and_on_lane_from_route,
+        test_lane_and_node_mouth_cells,
+        test_nearest_car_in_radius,
+        test_observed_cars_membership,
     ]
     failed = 0
     for fn in tests:

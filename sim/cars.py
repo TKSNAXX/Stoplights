@@ -89,6 +89,43 @@ class Car:
         return world.get_lane_cells(self.lane_index)
 
 
+CAR_SELECT_RADIUS_CELLS = 1.0
+
+
+def car_grid_pose(car: Car) -> tuple[float, float] | None:
+    """Continuous pose, or the current cell centre if pose is unset."""
+    gx = getattr(car, "pose_gx", None)
+    gy = getattr(car, "pose_gy", None)
+    if gx is not None and gy is not None:
+        return (float(gx), float(gy))
+    cell = car.current_cell()
+    if cell is None:
+        return None
+    return (float(cell[0]), float(cell[1]))
+
+
+def nearest_car_in_radius(
+    cars_list: list[Car],
+    gx: float,
+    gy: float,
+    radius: float = CAR_SELECT_RADIUS_CELLS,
+) -> Car | None:
+    """Nearest civilian car in grid-space Euclidean distance, or None if none within radius."""
+    best: Car | None = None
+    best_d2 = radius * radius
+    for car in cars_list:
+        pose = car_grid_pose(car)
+        if pose is None:
+            continue
+        dx = pose[0] - gx
+        dy = pose[1] - gy
+        d2 = dx * dx + dy * dy
+        if d2 <= best_d2:
+            best = car
+            best_d2 = d2
+    return best
+
+
 def _choose_destination(
     origin: str,
     attract_weights: dict[str, float] | None,

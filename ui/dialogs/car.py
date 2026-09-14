@@ -26,6 +26,10 @@ class CarDeetsDialog(Dialog):
         self._next_cars_label = arcade.Text("", 0, 0, color=LABEL_COLOR, font_size=10, anchor_x="left", anchor_y="center")
         self._sister_label = arcade.Text("", 0, 0, color=LABEL_COLOR, font_size=10, anchor_x="left", anchor_y="center")
 
+    @property
+    def car(self):
+        return self._car
+
     def _layout_widgets(self) -> None:
         pass
 

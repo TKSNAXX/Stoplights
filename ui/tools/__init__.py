@@ -5,12 +5,14 @@ from ui.tools.create_place import CreatePlaceTool
 from ui.tools.host import ToolHost
 from ui.tools.inspect import InspectTool
 from ui.tools.manager import ToolManager
+from ui.tools.select import SelectTool
 
 __all__ = [
     "CreateIntersectionTool",
     "CreateLaneTool",
     "CreatePlaceTool",
     "InspectTool",
+    "SelectTool",
     "Tool",
     "ToolHost",
     "ToolManager",

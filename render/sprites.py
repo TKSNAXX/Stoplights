@@ -53,13 +53,14 @@ class CarSpritePool:
         center_x: float,
         center_y: float,
         color: tuple[int, int, int],
+        alpha: int = 255,
     ) -> None:
         spr = self._pool[index]
         spr.texture = self._textures_by_dir[direction_index % len(self._textures_by_dir)]
         spr.center_x = center_x
         spr.center_y = center_y
         spr.color = color
-        spr.alpha = 255
+        spr.alpha = alpha
 
     def sprite_at(self, index: int) -> arcade.Sprite:
         return self._pool[index]

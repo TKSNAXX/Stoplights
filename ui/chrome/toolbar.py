@@ -8,6 +8,12 @@ import arcade
 from draw_compat import rect_filled, rect_outline
 from ui.theme import (
     LABEL_COLOR,
+    SELECT_MODE_CARS,
+    SELECT_MODE_MAP,
+    SELECT_POINTER_CARS_FILL,
+    SELECT_POINTER_CARS_STROKE,
+    SELECT_POINTER_MAP_FILL,
+    SELECT_POINTER_MAP_STROKE,
     TOOLBAR_BG,
     TOOLBAR_BORDER,
     TOOLBAR_BUTTON_SIZE,
@@ -25,6 +31,7 @@ class ToolbarItem:
 
 
 DEFAULT_TOOLBAR_ITEMS: tuple[ToolbarItem, ...] = (
+    ToolbarItem("select", "select"),
     ToolbarItem("new_intersection", "create", "+"),
     ToolbarItem("new_place", "create", "P"),
     ToolbarItem("new_lane", "create", "L"),
@@ -52,6 +59,7 @@ class Toolbar:
         self._button_size = TOOLBAR_BUTTON_SIZE
         self._gap = TOOLBAR_GAP
         self.active_action: str | None = None
+        self.select_mode: str = SELECT_MODE_MAP
         self._icons: dict[str, tuple[arcade.Sprite, arcade.SpriteList]] = {}
         self._fallbacks: dict[str, arcade.Text] = {}
         for item in items:
@@ -129,6 +137,12 @@ class Toolbar:
                 return action
         return None
 
+    def button_rect(self, action: str) -> tuple[float, float, float, float] | None:
+        for l, b, w, h, name in self._button_rects():
+            if name == action:
+                return (l, b, w, h)
+        return None
+
     def draw(self) -> None:
         rect_filled(self.left, self.bottom, self.width, self.height, TOOLBAR_BG)
         rect_outline(self.left, self.bottom, self.width, self.height, TOOLBAR_BORDER, 1)
@@ -139,6 +153,9 @@ class Toolbar:
             rect_outline(l, b, w, h, border, 1)
             cx = l + w / 2
             cy = b + h / 2
+            if action == "select":
+                self._draw_pointer(cx, cy)
+                continue
             icon = self._icons.get(action)
             if icon is not None:
                 spr, lst = icon
@@ -149,3 +166,34 @@ class Toolbar:
                 fb = self._fallbacks[action]
                 fb.x, fb.y = cx, cy
                 fb.draw()
+
+    def _draw_pointer(self, cx: float, cy: float) -> None:
+        if self.select_mode == SELECT_MODE_CARS:
+            fill = SELECT_POINTER_CARS_FILL
+            stroke = SELECT_POINTER_CARS_STROKE
+        else:
+            fill = SELECT_POINTER_MAP_FILL
+            stroke = SELECT_POINTER_MAP_STROKE
+        pts = _pointer_polygon(cx, cy)
+        arcade.draw_polygon_filled(pts, fill)
+        arcade.draw_polygon_outline(pts, stroke, 2)
+
+
+def _pointer_polygon(cx: float, cy: float) -> list[tuple[float, float]]:
+    """Classic mouse arrow, tip toward the upper-left, centred on (cx, cy)."""
+    local = (
+        (0.0, 10.0),
+        (0.4, -6.5),
+        (3.6, -2.8),
+        (6.8, -9.0),
+        (9.2, -7.4),
+        (5.6, -1.6),
+        (10.2, 1.8),
+        (8.0, 3.8),
+        (3.0, 0.6),
+    )
+    xs = [p[0] for p in local]
+    ys = [p[1] for p in local]
+    ox = (min(xs) + max(xs)) / 2.0
+    oy = (min(ys) + max(ys)) / 2.0
+    return [(cx + x - ox, cy + y - oy) for x, y in local]

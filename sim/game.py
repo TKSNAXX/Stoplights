@@ -84,6 +84,19 @@ class GameState:
     def get_perf_stats(self) -> dict[str, float | int]:
         return dict(self._perf_stats)
 
+    def observed_cars_for(self, car) -> list:
+        """Cars this civilian is driving off this tick. Display-only."""
+        from sim.awareness import observed_cars
+
+        poses = build_poses(self.cars)
+        occupancy = Occupancy.from_cars(self.cars)
+        if not self._spatial_buckets:
+            rebuild_spatial_buckets_inplace(self._spatial_buckets, poses)
+        nearby_for = lambda gx, gy: nearby_indices(
+            gx, gy, self._spatial_buckets, SPATIAL_QUERY_RADIUS_CELLS
+        )
+        return observed_cars(car, self.cars, occupancy, poses, nearby_for)
+
     def ensure_default_state(self) -> None:
         """Prune timers/counts for missing place ids; ensure spawn timers exist."""
         for key in list(self.spawn_timers):

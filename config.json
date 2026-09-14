@@ -141,7 +141,7 @@
       "spawn_interval": 1.0,
       "attract_weight": 1.0,
       "protected": false,
-      "building_kind": "none",
+      "building_kind": "commercial",
       "building_seed": 962194713
     }
   },
@@ -505,11 +505,11 @@
     "18": {
       "start_tile": [
         36,
-        28
+        29
       ],
       "end_tile": [
         36,
-        44
+        43
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
