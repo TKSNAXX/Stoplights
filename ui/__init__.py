@@ -23,6 +23,7 @@ from ui.theme import (
     TOOLBAR_LEFT,
 )
 from ui.tools import (
+    CameraTool,
     CreateIntersectionTool,
     CreateLaneTool,
     CreatePlaceTool,
@@ -35,6 +36,7 @@ from ui.widgets import NumberBox, SkeuoKeyChip
 __all__ = [
     "AddLaneDialog",
     "CameraController",
+    "CameraTool",
     "CarDeetsDialog",
     "CreateIntersectionTool",
     "CreateLaneTool",

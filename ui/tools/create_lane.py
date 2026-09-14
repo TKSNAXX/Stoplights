@@ -1,6 +1,7 @@
 """Two-click cardinal lane create tool."""
 from __future__ import annotations
 
+from render.camera import road_tile_key
 from sim import places
 from sim.map_data import build_lane_cells, snap_cardinal_end, _direction_from_tiles
 from ui.dialogs.lane import AddLaneDialog
@@ -136,12 +137,5 @@ class CreateLaneTool(Tool):
         if not cells:
             return
         direction = _direction_from_tiles(start, end)
-        if direction == "S":
-            key = "road_s"
-        elif direction == "E":
-            key = "road_e"
-        elif direction == "W":
-            key = "road_w"
-        else:
-            key = "road_n"
+        key = road_tile_key(direction or "N", self.host.view_yaw_q)
         draw_ghost_cells(self.host, key, cells, center_x, center_y)

@@ -691,6 +691,79 @@ def test_camera_roundtrip() -> None:
     assert abs(back_y - gy) < 1e-6
 
 
+def test_camera_yaw_roundtrip() -> None:
+    from render.camera import grid_to_screen, screen_to_grid
+
+    gx, gy = 36.0, 48.0
+    bounds = (0, 0, 80, 90)
+    for q in range(4):
+        sx, sy = grid_to_screen(gx, gy, 400.0, 300.0, *bounds, zoom_scale=1.0, view_yaw_q=q)
+        back_x, back_y = screen_to_grid(sx, sy, 400.0, 300.0, *bounds, zoom_scale=1.0, view_yaw_q=q)
+        assert abs(back_x - gx) < 1e-6
+        assert abs(back_y - gy) < 1e-6
+
+
+def test_camera_yaw_north_looks_like_east() -> None:
+    from render.camera import grid_to_screen
+
+    bounds = (0, 0, 80, 90)
+    cx = (0 + 80 - 1) / 2.0
+    cy = (0 + 90 - 1) / 2.0
+    sx_e, sy_e = grid_to_screen(cx + 1, cy, 400.0, 300.0, *bounds, zoom_scale=1.0, view_yaw_q=0)
+    sx_n, sy_n = grid_to_screen(cx, cy + 1, 400.0, 300.0, *bounds, zoom_scale=1.0, view_yaw_q=1)
+    assert abs(sx_e - sx_n) < 1e-6
+    assert abs(sy_e - sy_n) < 1e-6
+
+
+def test_iso_depth_reverses_at_180() -> None:
+    from render.camera import iso_depth
+
+    bounds = (0, 0, 80, 90)
+    d0a = iso_depth(10.0, 10.0, *bounds, 0)
+    d0b = iso_depth(12.0, 14.0, *bounds, 0)
+    d2a = iso_depth(10.0, 10.0, *bounds, 2)
+    d2b = iso_depth(12.0, 14.0, *bounds, 2)
+    assert d0a != d0b
+    assert (d0a < d0b) == (d2a > d2b)
+
+
+def test_yaw_cardinal_and_dir_remap() -> None:
+    from render.camera import (
+        cardinal_label_anchors,
+        display_dir_index,
+        road_tile_key,
+        rotate_cardinal,
+        rotate_sides,
+        rotate_straight_axis,
+    )
+
+    assert rotate_cardinal("N", 1) == "E"
+    assert rotate_cardinal("N", 2) == "S"
+    assert rotate_cardinal("N", 3) == "W"
+    assert rotate_cardinal("N", 4) == "N"
+    assert rotate_sides(frozenset({"N", "E"}), 1) == frozenset({"E", "S"})
+    assert rotate_straight_axis("ns", 1) == "ew"
+    assert rotate_straight_axis("ew", 1) == "ns"
+    assert rotate_straight_axis("ns", 2) == "ns"
+    assert road_tile_key("N", 1) == "road_e"
+    assert road_tile_key("N", 1, passing=True) == "road_e_pass"
+    assert display_dir_index(0, 1) == 2
+    assert display_dir_index(0, 2) == 4
+    assert display_dir_index(7, 1) == 1
+    assert cardinal_label_anchors("N", 0) == ("center", "bottom")
+    assert cardinal_label_anchors("N", 1) == ("right", "center")
+
+
+def test_view_south_cell_corners() -> None:
+    from render.camera import view_south_cell
+
+    bounds = (0, 0, 80, 90)
+    assert view_south_cell(5, 5, 3, 4, *bounds, 0) == (5, 5)
+    assert view_south_cell(5, 5, 3, 4, *bounds, 1) == (7, 5)
+    assert view_south_cell(5, 5, 3, 4, *bounds, 2) == (7, 8)
+    assert view_south_cell(5, 5, 3, 4, *bounds, 3) == (5, 8)
+
+
 def test_overlay_type_for_sides() -> None:
     from render.intersection_topology import overlay_type_for_sides
 
@@ -1846,6 +1919,11 @@ def main() -> None:
         test_authored_coords_match_world,
         test_place_spawn_survives_rebuild,
         test_camera_roundtrip,
+        test_camera_yaw_roundtrip,
+        test_camera_yaw_north_looks_like_east,
+        test_iso_depth_reverses_at_180,
+        test_yaw_cardinal_and_dir_remap,
+        test_view_south_cell_corners,
         test_overlay_type_for_sides,
         test_tee_layout_for_sides,
         test_tee_corner_quadrants,

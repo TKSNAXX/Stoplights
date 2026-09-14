@@ -6,7 +6,17 @@ from pathlib import Path
 
 import arcade
 
-from render.camera import grid_to_screen, screen_to_grid
+from render.camera import (
+    cardinal_label_anchors,
+    display_dir_index,
+    grid_to_screen,
+    iso_depth,
+    road_tile_key,
+    rotate_sides,
+    rotate_straight_axis,
+    screen_to_grid,
+    view_south_cell,
+)
 from render.color_grade import WorldColorGrade, is_identity_grade
 from render.debug import visibility_fan_vertices
 from render.selection import iso_aabb_silhouette, occupancy_aabb, rim_quads
@@ -48,6 +58,7 @@ from sim import persistence, world
 from sim.scenario import clamp_color_hue, clamp_color_sat
 from ui import (
     CameraController,
+    CameraTool,
     CreateIntersectionTool,
     CreateLaneTool,
     CreatePlaceTool,
@@ -68,6 +79,7 @@ from ui import (
     hint_for,
     hotkey_for_key,
 )
+from ui.chrome.camera_icons import draw_pan_arrows
 
 TICKS_PER_SECOND = 60
 TICK_DT = 1.0 / TICKS_PER_SECOND
@@ -108,7 +120,7 @@ class StoplightsWindow(arcade.Window):
         self._sim_time = 0.0
         self._move_duration = MOVE_DURATION_BASE
 
-        self._cached_center: tuple[float, float, float] | None = None
+        self._cached_center: tuple[float, float, float, int] | None = None
         self._place_texts: dict[str, arcade.Text] = {}
         self._cardinal_texts: dict[str, arcade.Text] = {}
 
@@ -135,11 +147,13 @@ class StoplightsWindow(arcade.Window):
         self._esc_chip = SkeuoKeyChip(hint_for("escape", "Esc"), side="left")
         self._back_chip = SkeuoKeyChip(hint_for("placement_pop", "<-"), side="right")
         self._select_hint = FlashHint()
+        self._hint_action = "select"
         self._camera = CameraController()
         self._mouse_x = 0.0
         self._mouse_y = 0.0
         self._mouse_in_window = False
         self._tool_manager = ToolManager(self, SelectTool(self))
+        self._tool_manager.register("camera", CameraTool(self))
         self._tool_manager.register("new_lane", CreateLaneTool(self))
         self._tool_manager.register("new_place", CreatePlaceTool(self))
         self._tool_manager.register("new_intersection", CreateIntersectionTool(self))
@@ -210,6 +224,10 @@ class StoplightsWindow(arcade.Window):
         return self._camera.zoom_scale
 
     @property
+    def view_yaw_q(self) -> int:
+        return self._camera.view_yaw_q
+
+    @property
     def _zoom_scale(self) -> float:
         return self._camera.zoom_scale
 
@@ -276,6 +294,37 @@ class StoplightsWindow(arcade.Window):
 
     def to_screen(self, gx: float, gy: float, center_x: float, center_y: float) -> tuple[float, float]:
         return self._to_screen(gx, gy, center_x, center_y)
+
+    def begin_camera_grab(self, x: float, y: float) -> None:
+        self._camera.begin_grab(x, y, self.width, self.height)
+
+    def update_camera_grab(self, x: float, y: float) -> None:
+        self._camera.update_grab(x, y, self.width, self.height)
+
+    def end_camera_grab(self) -> None:
+        self._camera.end_grab()
+
+    def begin_camera_fly(self, x: float, y: float) -> None:
+        self._camera.begin_fly(x, y)
+
+    def end_camera_fly(self) -> None:
+        self._camera.end_fly()
+
+    def begin_zoom_drag(self, x: float, y: float) -> None:
+        gx, gy = self._screen_to_grid(x, y, *self._effective_center())
+        self._camera.begin_zoom_drag(y, gx, gy)
+
+    def update_zoom_drag(self, x: float, y: float) -> None:
+        if self._camera.update_zoom_drag(y, x, y, self.width, self.height):
+            if self._car_sprite_pool is not None:
+                self._car_sprite_pool.set_zoom_scale(self._zoom_scale)
+
+    def end_zoom_drag(self) -> None:
+        self._camera.end_zoom_drag()
+
+    def orbit_camera_at(self, x: float, y: float, clockwise: bool) -> None:
+        self._camera.orbit_at(x, y, clockwise, self.width, self.height)
+        self._invalidate_draw_cache()
 
     def on_config_change(self, rebuild_world: bool = False) -> None:
         self._on_config_change(rebuild_world=rebuild_world)
@@ -439,28 +488,27 @@ class StoplightsWindow(arcade.Window):
 
     def _to_screen(self, gx: float, gy: float, center_x: float, center_y: float) -> tuple[float, float]:
         x_lo, y_lo, x_hi, y_hi = world.get_bounds()
-        return grid_to_screen(gx, gy, center_x, center_y, x_lo, y_lo, x_hi, y_hi, self._zoom_scale)
+        return grid_to_screen(
+            gx, gy, center_x, center_y, x_lo, y_lo, x_hi, y_hi,
+            self._zoom_scale, self._camera.view_yaw_q,
+        )
 
     def _screen_to_grid(self, sx: float, sy: float, center_x: float, center_y: float) -> tuple[float, float]:
         x_lo, y_lo, x_hi, y_hi = world.get_bounds()
-        return screen_to_grid(sx, sy, center_x, center_y, x_lo, y_lo, x_hi, y_hi, self._zoom_scale)
+        return screen_to_grid(
+            sx, sy, center_x, center_y, x_lo, y_lo, x_hi, y_hi,
+            self._zoom_scale, self._camera.view_yaw_q,
+        )
 
     def _lane_road_type(self, lane_index: int) -> str:
         """Return texture key for lane base tile (normal/passing)."""
-        direction = world.lane_direction(lane_index)
-        if direction == "N":
-            base = "road_n"
-        elif direction == "S":
-            base = "road_s"
-        elif direction == "E":
-            base = "road_e"
-        elif direction == "W":
-            base = "road_w"
-        else:
-            base = "road_n"
+        direction = world.lane_direction(lane_index) or "N"
         cfg = self.game.lanes.get(lane_index)
-        suffix = "_pass" if cfg and cfg.lane_type == places.LANE_TYPE_PASSING else ""
-        return base + suffix if self._tile_set.get(base + suffix) else base
+        passing = bool(cfg and cfg.lane_type == places.LANE_TYPE_PASSING)
+        key = road_tile_key(direction, self._camera.view_yaw_q, passing)
+        if passing and self._tile_set.get(key) is None:
+            key = road_tile_key(direction, self._camera.view_yaw_q, False)
+        return key
 
     def _build_lane_cell_to_road(self) -> dict[tuple[int, int], str]:
         lane_cell_to_road: dict[tuple[int, int], str] = {}
@@ -514,7 +562,7 @@ class StoplightsWindow(arcade.Window):
             self._append_sprite_at(road_cross_tex, gx, gy, center_x, center_y)
 
     def _rebuild_static_draw_cache(self, center_x: float, center_y: float) -> None:
-        self._cached_center = (center_x, center_y, self._zoom_scale)
+        self._cached_center = (center_x, center_y, self._zoom_scale, self._camera.view_yaw_q)
         self._tile_cells.clear()
 
         lane_cell_to_road = self._build_lane_cell_to_road()
@@ -555,21 +603,25 @@ class StoplightsWindow(arcade.Window):
             cfg = self.game.intersections.get(key)
             size_cells = cfg.size_cells if cfg else 4
             active, _, _ = classify_intersection_sides(key, cells)
-            itype = overlay_type_for_sides(active)
+            yaw = self._camera.view_yaw_q
+            display_active = rotate_sides(active, yaw)
+            itype = overlay_type_for_sides(display_active)
             centered_tex: arcade.Texture | None = None
             if itype == places.INTERSECTION_TYPE_NONE:
                 pass
             elif itype == places.INTERSECTION_TYPE_CROSS:
                 centered_tex = generate_cross_texture(size_cells)
             elif itype == places.INTERSECTION_TYPE_CORNER:
-                q = corner_quadrant_for_sides(active)
+                q = corner_quadrant_for_sides(display_active)
                 centered_tex = generate_corner_texture(size_cells, quadrant=q)
             elif itype == places.INTERSECTION_TYPE_STRAIGHT:
-                ax = straight_axis_for_intersection(key, cells, active)
+                ax = rotate_straight_axis(straight_axis_for_intersection(key, cells, active), yaw)
                 centered_tex = generate_straight_texture(size_cells, axis=ax)
             elif itype == places.INTERSECTION_TYPE_TEE:
-                ax = straight_axis_for_intersection(key, cells, active)
-                axis, stem = tee_layout_for_sides(active, through_fallback=ax)
+                world_ax = straight_axis_for_intersection(key, cells, active)
+                axis, stem = tee_layout_for_sides(
+                    display_active, through_fallback=rotate_straight_axis(world_ax, yaw)
+                )
                 centered_tex = generate_tee_texture(size_cells, axis=axis, stem=stem)
             self._overlay_intersection(cells, centered_tex, road_cross_tex, center_x, center_y)
 
@@ -597,10 +649,15 @@ class StoplightsWindow(arcade.Window):
         x_lo, y_lo, x_hi, y_hi = world.get_bounds()
         cx_grid = (x_lo + x_hi - 1) / 2
         cy_grid = (y_lo + y_hi - 1) / 2
+        yaw = self._camera.view_yaw_q
         self._cardinal_texts["N"].x, self._cardinal_texts["N"].y = self._to_screen(cx_grid, y_hi - 1, center_x, center_y)
         self._cardinal_texts["S"].x, self._cardinal_texts["S"].y = self._to_screen(cx_grid, y_lo, center_x, center_y)
         self._cardinal_texts["E"].x, self._cardinal_texts["E"].y = self._to_screen(x_hi - 1, cy_grid, center_x, center_y)
         self._cardinal_texts["W"].x, self._cardinal_texts["W"].y = self._to_screen(x_lo, cy_grid, center_x, center_y)
+        for name, txt in self._cardinal_texts.items():
+            ax, ay = cardinal_label_anchors(name, yaw)
+            txt.anchor_x = ax
+            txt.anchor_y = ay
 
     def _update_tile_positions(self, center_x: float, center_y: float) -> None:
         """Update sprite screen positions without rebuilding. Requires _tile_cells and _tile_sprite_list."""
@@ -629,8 +686,13 @@ class StoplightsWindow(arcade.Window):
 
     def _update_building_positions(self, center_x: float, center_y: float) -> None:
         zoom = self._zoom_scale
+        bounds = world.get_bounds()
+        yaw = self._camera.view_yaw_q
         for inst, spr, defn in self._building_draw_items:
-            sx, sy = self._to_screen(inst.origin_x, inst.origin_y, center_x, center_y)
+            plant = view_south_cell(
+                inst.origin_x, inst.origin_y, inst.cells_e, inst.cells_n, *bounds, yaw
+            )
+            sx, sy = self._to_screen(plant[0], plant[1], center_x, center_y)
             south_sx, south_sy = south_vertex_screen(sx, sy, zoom)
             scale = natural_sprite_scale(defn) * inst.fit_scale * zoom
             spr.scale = scale
@@ -651,14 +713,25 @@ class StoplightsWindow(arcade.Window):
         if hk is None:
             return
         if hk.action in ("select_toggle_mode", "select_toggle_overlay"):
-            if fw is not None or self._draw_tool_active():
+            if fw is not None:
                 return
-            sel = self._tool_manager.select
-            if hk.action == "select_toggle_mode":
-                label = sel.toggle_mode()
-            else:
-                label = sel.toggle_overlay()
-            self._select_hint.show(label)
+            active = self._tool_manager.active
+            if active.id == "select":
+                sel = self._tool_manager.select
+                if hk.action == "select_toggle_mode":
+                    label = sel.toggle_mode()
+                else:
+                    label = sel.toggle_overlay()
+                self._hint_action = "select"
+                self._select_hint.show(label)
+            elif active.id == "camera":
+                if hk.action == "select_toggle_mode":
+                    label = active.toggle_mode()
+                else:
+                    label = active.toggle_overlay()
+                if label:
+                    self._hint_action = "camera"
+                    self._select_hint.show(label)
             return
         if hk.action == "escape":
             if self._draw_tool_active():
@@ -746,13 +819,14 @@ class StoplightsWindow(arcade.Window):
         self.clear()
         center_x, center_y = self._effective_center()
         cached = self._cached_center
-        needs_rebuild = cached is None or cached[2] != self._zoom_scale
+        yaw = self._camera.view_yaw_q
+        needs_rebuild = cached is None or cached[2] != self._zoom_scale or cached[3] != yaw
         if needs_rebuild:
             self._rebuild_static_draw_cache(center_x, center_y)
         elif (center_x, center_y) != (cached[0], cached[1]):
             self._update_tile_positions(center_x, center_y)
             self._update_text_positions(center_x, center_y)
-            self._cached_center = (center_x, center_y, self._zoom_scale)
+            self._cached_center = (center_x, center_y, self._zoom_scale, yaw)
 
         grade_world = not is_identity_grade(self._color_hue, self._color_sat)
         if grade_world:
@@ -775,6 +849,10 @@ class StoplightsWindow(arcade.Window):
         for txt in self._cardinal_texts.values():
             txt.draw()
 
+        origin = self._camera.fly_origin
+        if origin is not None:
+            draw_pan_arrows(origin[0], origin[1], size=12.0)
+
         draw_ms = (time.perf_counter() - draw_start) * 1000.0
         self._draw_ms_ema = draw_ms if self._draw_ms_ema <= 0.0 else (0.9 * self._draw_ms_ema + 0.1 * draw_ms)
         perf = self.game.get_perf_stats()
@@ -793,7 +871,7 @@ class StoplightsWindow(arcade.Window):
         if self._placement_can_pop():
             self._back_chip.draw(self.width, self.height)
         self._toolbar.draw()
-        rect = self._toolbar.button_rect("select")
+        rect = self._toolbar.button_rect(self._hint_action)
         if rect is not None:
             l, b, w, h = rect
             self._select_hint.draw(l + w + TOOLBAR_HINT_GAP, b + h / 2)
@@ -813,9 +891,14 @@ class StoplightsWindow(arcade.Window):
             getattr(self._tool_manager.active, "hides_world_overlay", lambda: False)()
         )
         if not hide_overlay:
+            bounds = world.get_bounds()
+            yaw = self._camera.view_yaw_q
             overlay: list[tuple[float, int, arcade.Sprite]] = []
             for inst, spr, _defn in self._building_draw_items:
-                overlay.append((inst.depth, 1, spr))
+                plant = view_south_cell(
+                    inst.origin_x, inst.origin_y, inst.cells_e, inst.cells_n, *bounds, yaw
+                )
+                overlay.append((iso_depth(plant[0], plant[1], *bounds, yaw), 1, spr))
 
             if self._car_sprite_pool is not None:
                 active_police = [p for p in self.game.police_list if p.state in ("deploying", "holding", "diverting", "returning")]
@@ -829,11 +912,23 @@ class StoplightsWindow(arcade.Window):
                     else:
                         gx, gy = car.pose_gx, car.pose_gy
                     sx, sy = self._to_screen(gx, gy, center_x, center_y)
-                    car_data.append((gx + gy, car, _car_direction_index(car), sx, sy, getattr(car, "color", CAR_DEFAULT)))
+                    car_data.append((
+                        iso_depth(gx, gy, *bounds, yaw),
+                        car,
+                        display_dir_index(_car_direction_index(car), yaw),
+                        sx, sy,
+                        getattr(car, "color", CAR_DEFAULT),
+                    ))
                 for police in active_police:
                     gx, gy, di = police.get_pose()
                     sx, sy = self._to_screen(gx, gy, center_x, center_y)
-                    car_data.append((gx + gy, police, di, sx, sy, police.get_light_color()))
+                    car_data.append((
+                        iso_depth(gx, gy, *bounds, yaw),
+                        police,
+                        display_dir_index(di, yaw),
+                        sx, sy,
+                        police.get_light_color(),
+                    ))
                 car_data.sort(key=lambda t: t[0], reverse=True)
                 self._car_draw_order = [t[1] for t in car_data]
                 self._car_sprite_pool.begin_frame(len(car_data))
@@ -915,6 +1010,9 @@ class StoplightsWindow(arcade.Window):
         return world.get_intersection_at_cell(cell)
 
     def on_mouse_press(self, x: float, y: float, button: int, modifiers: int):
+        self._mouse_x = x
+        self._mouse_y = y
+        self._mouse_in_window = True
         if button != arcade.MOUSE_BUTTON_LEFT:
             return
         if not self._dialog_manager.contains_point(x, y):
@@ -955,15 +1053,25 @@ class StoplightsWindow(arcade.Window):
                 dlg.set_on_close(lambda d: self._dialog_manager.close(d))
                 self._dialog_manager.open(dlg)
             return
+        if self._tool_manager.active.on_press(x, y):
+            return
         self._tool_manager.active.on_click(x, y)
 
     def on_mouse_drag(self, x: float, y: float, dx: float, dy: float, buttons: int, modifiers: int):
+        self._mouse_x = x
+        self._mouse_y = y
+        self._mouse_in_window = True
         if buttons & arcade.MOUSE_BUTTON_LEFT:
-            self._dialog_manager.on_mouse_drag(x, y, dx, dy)
+            if self._dialog_manager.on_mouse_drag(x, y, dx, dy):
+                return
+            self._tool_manager.active.on_drag(x, y, dx, dy)
 
     def on_mouse_release(self, x: float, y: float, button: int, modifiers: int):
+        self._mouse_x = x
+        self._mouse_y = y
         if button == arcade.MOUSE_BUTTON_LEFT:
             self._dialog_manager.on_mouse_release(x, y)
+            self._tool_manager.active.on_release(x, y)
 
 
 def main():

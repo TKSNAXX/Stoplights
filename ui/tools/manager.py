@@ -65,5 +65,12 @@ class ToolManager:
         mode = getattr(self._default, "mode", None)
         if mode is not None:
             self._host.toolbar.select_mode = mode
+        cam = self._by_action.get("camera")
+        if cam is not None:
+            cam_mode = getattr(cam, "mode", None)
+            if cam_mode is not None:
+                self._host.toolbar.camera_mode = cam_mode
+            if hasattr(cam, "orbit_ccw"):
+                self._host.toolbar.orbit_ccw = bool(cam.orbit_ccw)
         if getattr(self._host, "_tool_manager", None) is self:
             self._host.sync_toolbar_bottom()

@@ -28,6 +28,15 @@ class Tool:
     def on_click(self, x: float, y: float) -> bool:
         return False
 
+    def on_press(self, x: float, y: float) -> bool:
+        return False
+
+    def on_drag(self, x: float, y: float, dx: float, dy: float) -> None:
+        return None
+
+    def on_release(self, x: float, y: float) -> None:
+        return None
+
     def on_hover(self, x: float, y: float) -> None:
         return None
 

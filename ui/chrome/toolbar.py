@@ -6,7 +6,11 @@ from dataclasses import dataclass
 import arcade
 
 from draw_compat import rect_filled, rect_outline
+from ui.chrome.camera_icons import draw_orbit_icon, draw_pan_arrows, draw_zoom_icon
 from ui.theme import (
+    CAMERA_MODE_ORBIT,
+    CAMERA_MODE_PAN,
+    CAMERA_MODE_ZOOM,
     LABEL_COLOR,
     SELECT_MODE_CARS,
     SELECT_MODE_MAP,
@@ -32,6 +36,7 @@ class ToolbarItem:
 
 DEFAULT_TOOLBAR_ITEMS: tuple[ToolbarItem, ...] = (
     ToolbarItem("select", "select"),
+    ToolbarItem("camera", "camera"),
     ToolbarItem("new_intersection", "create", "+"),
     ToolbarItem("new_place", "create", "P"),
     ToolbarItem("new_lane", "create", "L"),
@@ -60,6 +65,8 @@ class Toolbar:
         self._gap = TOOLBAR_GAP
         self.active_action: str | None = None
         self.select_mode: str = SELECT_MODE_MAP
+        self.camera_mode: str = CAMERA_MODE_PAN
+        self.orbit_ccw: bool = False
         self._icons: dict[str, tuple[arcade.Sprite, arcade.SpriteList]] = {}
         self._fallbacks: dict[str, arcade.Text] = {}
         for item in items:
@@ -156,6 +163,9 @@ class Toolbar:
             if action == "select":
                 self._draw_pointer(cx, cy)
                 continue
+            if action == "camera":
+                self._draw_camera_icon(cx, cy)
+                continue
             icon = self._icons.get(action)
             if icon is not None:
                 spr, lst = icon
@@ -178,19 +188,27 @@ class Toolbar:
         arcade.draw_polygon_filled(pts, fill)
         arcade.draw_polygon_outline(pts, stroke, 2)
 
+    def _draw_camera_icon(self, cx: float, cy: float) -> None:
+        mode = self.camera_mode
+        if mode == CAMERA_MODE_ZOOM:
+            draw_zoom_icon(cx, cy)
+        elif mode == CAMERA_MODE_ORBIT:
+            draw_orbit_icon(cx, cy, ccw=self.orbit_ccw)
+        else:
+            draw_pan_arrows(cx, cy)
+
 
 def _pointer_polygon(cx: float, cy: float) -> list[tuple[float, float]]:
     """Classic mouse arrow, tip toward the upper-left, centred on (cx, cy)."""
+    # Tip, left edge, barb, then a single right-shoulder back to the tip.
     local = (
         (0.0, 10.0),
-        (0.4, -6.5),
-        (3.6, -2.8),
-        (6.8, -9.0),
-        (9.2, -7.4),
-        (5.6, -1.6),
-        (10.2, 1.8),
-        (8.0, 3.8),
-        (3.0, 0.6),
+        (0.4, -6.0),
+        (3.4, -2.4),
+        (6.4, -8.8),
+        (8.8, -7.0),
+        (5.2, -1.2),
+        (8.0, 3.2),
     )
     xs = [p[0] for p in local]
     ys = [p[1] for p in local]
