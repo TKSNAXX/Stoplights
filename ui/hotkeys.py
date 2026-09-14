@@ -23,6 +23,11 @@ class Hotkey:
 HOTKEYS: tuple[Hotkey, ...] = (
     Hotkey(arcade.key.ESCAPE, "escape", "Esc", WHEN_TOOL),
     Hotkey(arcade.key.BACKSPACE, "placement_pop", "<-", WHEN_PLACEMENT),
+    Hotkey(arcade.key.TAB, "cycle_tool", "Tab", WHEN_ALWAYS),
+    Hotkey(arcade.key.SPACE, "cam_space_pan", "Space", WHEN_ALWAYS),
+    Hotkey(arcade.key.CAPSLOCK, "cam_toggle_fly", "Caps", WHEN_ALWAYS),
+    Hotkey(arcade.key.COMMA, "orbit_ccw", ",", WHEN_ALWAYS),
+    Hotkey(arcade.key.PERIOD, "orbit_cw", ".", WHEN_ALWAYS),
     Hotkey(arcade.key.V, "toggle_visibility_fans", "V", WHEN_ALWAYS),
     Hotkey(arcade.key.LSHIFT, "select_toggle_mode", "Shift", WHEN_SELECT),
     Hotkey(arcade.key.RSHIFT, "select_toggle_mode", "Shift", WHEN_SELECT),

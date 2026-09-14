@@ -149,6 +149,8 @@ class StoplightsWindow(arcade.Window):
         self._select_hint = FlashHint()
         self._hint_action = "select"
         self._camera = CameraController()
+        self._space_pan: str | None = None
+        self._held_hotkeys: set[str] = set()
         self._mouse_x = 0.0
         self._mouse_y = 0.0
         self._mouse_in_window = False
@@ -295,6 +297,23 @@ class StoplightsWindow(arcade.Window):
     def to_screen(self, gx: float, gy: float, center_x: float, center_y: float) -> tuple[float, float]:
         return self._to_screen(gx, gy, center_x, center_y)
 
+    @property
+    def pan_fly(self) -> bool:
+        return self._camera.pan_fly
+
+    @property
+    def space_panning(self) -> bool:
+        return self._space_pan is not None
+
+    def toggle_pan_fly(self) -> str:
+        self._camera.pan_fly = not self._camera.pan_fly
+        if self._space_pan is not None:
+            self._stop_space_pan()
+            self._start_space_pan()
+        elif not self._camera.pan_fly:
+            self.end_camera_fly()
+        return "Fly" if self._camera.pan_fly else "Grab"
+
     def begin_camera_grab(self, x: float, y: float) -> None:
         self._camera.begin_grab(x, y, self.width, self.height)
 
@@ -325,6 +344,33 @@ class StoplightsWindow(arcade.Window):
     def orbit_camera_at(self, x: float, y: float, clockwise: bool) -> None:
         self._camera.orbit_at(x, y, clockwise, self.width, self.height)
         self._invalidate_draw_cache()
+
+    def orbit_camera_about_cursor(self, clockwise: bool) -> None:
+        self._camera.orbit_about(
+            self._mouse_x, self._mouse_y, clockwise, self.width, self.height
+        )
+        self._invalidate_draw_cache()
+
+    def _start_space_pan(self) -> None:
+        if self._camera.pan_fly:
+            self.begin_camera_fly(self._mouse_x, self._mouse_y)
+            self._space_pan = "fly"
+        else:
+            self.begin_camera_grab(self._mouse_x, self._mouse_y)
+            self._space_pan = "grab"
+
+    def _stop_space_pan(self) -> None:
+        if self._space_pan == "fly":
+            self.end_camera_fly()
+        elif self._space_pan == "grab":
+            self.end_camera_grab()
+        self._space_pan = None
+
+    def _show_tool_hint(self, action: str, label: str | None) -> None:
+        if not label:
+            return
+        self._hint_action = action
+        self._select_hint.show(label)
 
     def on_config_change(self, rebuild_world: bool = False) -> None:
         self._on_config_change(rebuild_world=rebuild_world)
@@ -712,6 +758,10 @@ class StoplightsWindow(arcade.Window):
         hk = hotkey_for_key(key)
         if hk is None:
             return
+        if hk.action in ("cycle_tool", "cam_space_pan", "cam_toggle_fly", "orbit_ccw", "orbit_cw"):
+            if hk.action in self._held_hotkeys:
+                return
+            self._held_hotkeys.add(hk.action)
         if hk.action in ("select_toggle_mode", "select_toggle_overlay"):
             if fw is not None:
                 return
@@ -722,16 +772,40 @@ class StoplightsWindow(arcade.Window):
                     label = sel.toggle_mode()
                 else:
                     label = sel.toggle_overlay()
-                self._hint_action = "select"
-                self._select_hint.show(label)
+                self._show_tool_hint("select", label)
             elif active.id == "camera":
                 if hk.action == "select_toggle_mode":
                     label = active.toggle_mode()
                 else:
                     label = active.toggle_overlay()
-                if label:
-                    self._hint_action = "camera"
-                    self._select_hint.show(label)
+                self._show_tool_hint("camera", label)
+            return
+        if hk.action == "cycle_tool":
+            if fw is not None:
+                return
+            self._tool_manager.cycle_next()
+            return
+        if hk.action == "cam_space_pan":
+            if fw is not None:
+                return
+            if self._space_pan is None:
+                self._start_space_pan()
+            return
+        if hk.action == "cam_toggle_fly":
+            if fw is not None:
+                return
+            label = self.toggle_pan_fly()
+            self._show_tool_hint("camera", label)
+            return
+        if hk.action == "orbit_ccw":
+            if fw is not None:
+                return
+            self.orbit_camera_about_cursor(clockwise=False)
+            return
+        if hk.action == "orbit_cw":
+            if fw is not None:
+                return
+            self.orbit_camera_about_cursor(clockwise=True)
             return
         if hk.action == "escape":
             if self._draw_tool_active():
@@ -753,20 +827,25 @@ class StoplightsWindow(arcade.Window):
             on_text(text)
 
     def on_key_release(self, key: int, modifiers: int) -> None:
+        hk = hotkey_for_key(key)
+        if hk is not None:
+            self._held_hotkeys.discard(hk.action)
+        if key == arcade.key.SPACE:
+            self._stop_space_pan()
         self._camera.handle_key_release(key)
 
     def on_mouse_scroll(self, x: int, y: int, scroll_x: int, scroll_y: int) -> None:
         if self._dialog_manager.contains_point(x, y):
             return
-        self._camera.handle_scroll(scroll_y)
-        self._update_zoom_scale()
-        if self._car_sprite_pool is not None:
-            self._car_sprite_pool.set_zoom_scale(self._zoom_scale)
+        if self._camera.handle_scroll(scroll_y, float(x), float(y), self.width, self.height):
+            if self._car_sprite_pool is not None:
+                self._car_sprite_pool.set_zoom_scale(self._zoom_scale)
 
     def on_mouse_motion(self, x: float, y: float, dx: float, dy: float) -> None:
         self._mouse_x = x
         self._mouse_y = y
         self._mouse_in_window = True
+        self.update_camera_grab(x, y)
         if not self._dialog_manager.contains_point(x, y):
             self._tool_manager.active.on_hover(x, y)
 
@@ -1027,6 +1106,10 @@ class StoplightsWindow(arcade.Window):
             return
         toolbar_action = self._toolbar.on_press(x, y)
         if toolbar_action:
+            active = self._tool_manager.active
+            if toolbar_action == active.id and hasattr(active, "toggle_mode"):
+                self._show_tool_hint(toolbar_action, active.toggle_mode())
+                return
             if self._tool_manager.toggle_action(toolbar_action):
                 return
             if self._draw_tool_active():
@@ -1061,6 +1144,7 @@ class StoplightsWindow(arcade.Window):
         self._mouse_x = x
         self._mouse_y = y
         self._mouse_in_window = True
+        self.update_camera_grab(x, y)
         if buttons & arcade.MOUSE_BUTTON_LEFT:
             if self._dialog_manager.on_mouse_drag(x, y, dx, dy):
                 return

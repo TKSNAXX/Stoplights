@@ -5,6 +5,9 @@ from ui.tools.base import Tool
 from ui.tools.host import ToolHost
 
 
+TOOL_CYCLE: tuple[str, ...] = ("select", "camera", "new_intersection", "new_place", "new_lane")
+
+
 class ToolManager:
     def __init__(self, host: ToolHost, default: Tool) -> None:
         self._host = host
@@ -31,7 +34,7 @@ class ToolManager:
         return self._default
 
     def is_create_active(self) -> bool:
-        return self._active is not self._default
+        return self._active is not self._default and self._active.id != "camera"
 
     def activate_select(self) -> None:
         if self._active is not self._default:
@@ -42,6 +45,29 @@ class ToolManager:
 
     def activate_inspect(self) -> None:
         self.activate_select()
+
+    def activate_action(self, action: str) -> bool:
+        if action in ("select", self._default.id):
+            self.activate_select()
+            return True
+        tool = self._by_action.get(action)
+        if tool is None:
+            return False
+        if self._active is tool:
+            return True
+        if self._active is not self._default:
+            self._active.exit()
+        self._active = tool
+        tool.enter()
+        self._sync_chrome()
+        return True
+
+    def cycle_next(self) -> str:
+        cur = self._active.id or "select"
+        i = TOOL_CYCLE.index(cur) if cur in TOOL_CYCLE else 0
+        nxt = TOOL_CYCLE[(i + 1) % len(TOOL_CYCLE)]
+        self.activate_action(nxt)
+        return nxt
 
     def toggle_action(self, action: str) -> bool:
         tool = self._by_action.get(action)

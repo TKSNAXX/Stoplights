@@ -17,7 +17,6 @@ class CameraTool(Tool):
     def __init__(self, host: ToolHost) -> None:
         super().__init__(host)
         self.mode = CAMERA_MODE_PAN
-        self.fly = False
         self.orbit_ccw = False
         self._grabbing = False
         self._zooming = False
@@ -26,6 +25,10 @@ class CameraTool(Tool):
     @property
     def active_action(self) -> str | None:
         return "camera"
+
+    @property
+    def fly(self) -> bool:
+        return bool(getattr(self.host, "pan_fly", False))
 
     def enter(self) -> None:
         self._sync_toolbar()
@@ -41,9 +44,10 @@ class CameraTool(Tool):
         self._grabbing = False
         self._zooming = False
         self._orbit_press = None
-        self.host.end_camera_fly()
-        self.host.end_camera_grab()
         self.host.end_zoom_drag()
+        if not getattr(self.host, "space_panning", False):
+            self.host.end_camera_fly()
+            self.host.end_camera_grab()
 
     def toggle_mode(self) -> str:
         i = CAMERA_MODES.index(self.mode) if self.mode in CAMERA_MODES else 0
@@ -58,10 +62,10 @@ class CameraTool(Tool):
 
     def toggle_overlay(self) -> str | None:
         if self.mode == CAMERA_MODE_PAN:
-            self.fly = not self.fly
-            if not self.fly:
-                self.host.end_camera_fly()
-            return "Fly" if self.fly else "Grab"
+            toggle = getattr(self.host, "toggle_pan_fly", None)
+            if callable(toggle):
+                return toggle()
+            return "Grab"
         if self.mode == CAMERA_MODE_ORBIT:
             self.orbit_ccw = not self.orbit_ccw
             self._sync_toolbar()

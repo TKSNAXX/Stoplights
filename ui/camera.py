@@ -26,6 +26,7 @@ class CameraController:
         self.zoom_level = ZOOM_LEVEL_FIT
         self.zoom_scale = 1.0
         self.view_yaw_q = 0
+        self.pan_fly = False
         self.pan_speed = CAM_PAN_SPEED
         self._key_left = False
         self._key_right = False
@@ -71,11 +72,30 @@ class CameraController:
             return True
         return False
 
-    def handle_scroll(self, scroll_y: int) -> None:
+    def handle_scroll(
+        self,
+        scroll_y: int,
+        mx: float,
+        my: float,
+        width: float,
+        height: float,
+    ) -> bool:
+        """Step zoom and keep the grid point under (mx, my). True if the level changed."""
+        cx, cy = self.effective_center(width, height)
+        bounds = world.get_bounds()
+        gx, gy = screen_to_grid(
+            mx, my, cx, cy, *bounds, self.zoom_scale, self.view_yaw_q
+        )
+        old = self.zoom_level
         if scroll_y > 0:
             self.zoom_level = min(ZOOM_LEVEL_MAX, self.zoom_level + 1)
         elif scroll_y < 0:
             self.zoom_level = max(ZOOM_LEVEL_FIT, self.zoom_level - 1)
+        if self.zoom_level == old:
+            return False
+        self.update_zoom_scale(width, height)
+        self.keep_grid_at_screen(gx, gy, mx, my, width, height)
+        return True
 
     def update_zoom_scale(self, width: float, height: float) -> None:
         map_w = (world.get_grid_w() + world.get_grid_h()) * TILE_W
@@ -168,6 +188,16 @@ class CameraController:
         self.cam_x = sx0 - width / 2
         self.cam_y = sy0 - height / 2
         self.clamp(width, height)
+
+    def orbit_about(self, sx: float, sy: float, clockwise: bool, width: float, height: float) -> None:
+        """Yaw 90° and keep the grid point under (sx, sy)."""
+        bounds = world.get_bounds()
+        cx, cy = self.effective_center(width, height)
+        gx, gy = screen_to_grid(
+            sx, sy, cx, cy, *bounds, self.zoom_scale, self.view_yaw_q
+        )
+        self.view_yaw_q = (self.view_yaw_q + (1 if clockwise else -1)) % 4
+        self.keep_grid_at_screen(gx, gy, sx, sy, width, height)
 
     def update(
         self,
