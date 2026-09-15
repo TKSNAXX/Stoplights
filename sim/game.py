@@ -14,6 +14,7 @@ from sim.map_data import next_lane_index, place_rects_from_places
 from sim.impasse import apply_impasse
 from sim.movement import advance_car
 from sim.occupancy import Occupancy
+from sim.passing import hold_merge_speed
 from sim.situation import refresh_situations
 from sim.spawner import update_spawns
 from sim.visibility import build_poses, nearby_indices, rebuild_spatial_buckets_inplace, visibility_zone_band
@@ -483,6 +484,8 @@ class GameState:
             self._impasse_timers,
             self._collect_impasse_candidates(),
         )
+        # Last word on speed: a car astride a seam always finishes the change.
+        hold_merge_speed(self.cars)
 
         to_remove: list[cars.Car] = []
         for car in self.cars:

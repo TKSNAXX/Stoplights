@@ -53,6 +53,7 @@ class _WorldState:
         self.attached: dict[str, frozenset[str]] = {}
         self.cell_to_intersections: dict[tuple[int, int], tuple[str, ...]] = {}
         self.cell_to_lane: dict[tuple[int, int], int] = {}
+        self.cell_to_lane_pos: dict[tuple[int, int], tuple[int, int]] = {}
         self.oncoming: dict[int, int | None] = {}
         self.sisters: dict[int, int | None] = {}
         self.sister_kinds: dict[int, str | None] = {}
@@ -424,10 +425,13 @@ def _refresh_topology() -> None:
     _state.sister_kinds = kinds
 
     cell_to_lane: dict[tuple[int, int], int] = {}
+    cell_to_lane_pos: dict[tuple[int, int], tuple[int, int]] = {}
     for i in ids:
-        for c in _state.lanes.get(i, ()):
+        for pos, c in enumerate(_state.lanes.get(i, ())):
             cell_to_lane[c] = i
+            cell_to_lane_pos[c] = (i, pos)
     _state.cell_to_lane = cell_to_lane
+    _state.cell_to_lane_pos = cell_to_lane_pos
     _state.merge_sides = _compute_merge_sides(ids, cell_to_lane)
 
     nodes: set[str] = set(_state.place_rects)
@@ -612,6 +616,49 @@ def lane_merge_cells(lane_index: int) -> dict[tuple[int, int], str]:
 
 def lane_at_cell(gx: int, gy: int) -> int | None:
     return _state.cell_to_lane.get((int(gx), int(gy)))
+
+
+def lane_pos_at_cell(gx: int, gy: int) -> tuple[int, int] | None:
+    """Lane id and cell index owning this cell, or None."""
+    return _state.cell_to_lane_pos.get((int(gx), int(gy)))
+
+
+def merge_target(
+    lane_index: int,
+    pos: int,
+    side: str,
+    forward_cells: int,
+) -> tuple[int, int] | None:
+    """
+    Landing lane and cell index for a lane change: forward_cells ahead, one step
+    to the driver's side. None when that cell belongs to no lane (off the end) or
+    to the lane already being driven.
+    """
+    cells = get_lane_cells(lane_index)
+    if not cells or pos < 0 or pos >= len(cells) or forward_cells < 1:
+        return None
+    direction = lane_direction(lane_index)
+    left, right = _lateral_offsets(direction)
+    if side == MERGE_LEFT:
+        lat = left
+    elif side == MERGE_RIGHT:
+        lat = right
+    else:
+        return None
+    if lat == (0, 0):
+        return None
+    # Walk the heading from the current cell so a short source lane does not clip
+    # the runway, then step laterally onto the neighbour lane.
+    fx, fy = map_data.offset_for_direction(direction)
+    sx, sy = cells[pos]
+    cx = sx + fx * forward_cells + lat[0]
+    cy = sy + fy * forward_cells + lat[1]
+    found = _state.cell_to_lane_pos.get((cx, cy))
+    if found is None or found[0] == lane_index:
+        return None
+    if lane_direction(found[0]) != direction:
+        return None
+    return found
 
 
 def cell_occupancy() -> dict[tuple[int, int], int]:

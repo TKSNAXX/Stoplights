@@ -3,17 +3,26 @@ Car movement segment logic.
 """
 from __future__ import annotations
 
-from sim import cars, places, routes, world
+from sim import cars, passing, places, routes, world
 from sim.paths import (
     direction_index_8_from_tangent,
+    lane_heading,
     lane_segment_position,
     lane_segment_tangent,
+    merge_length,
+    merge_position,
+    merge_tangent,
     path_length,
     path_position,
     path_tangent,
+    screen_lean_degrees,
 )
 from sim.places import lane_is_full
 from sim.world import intersection_cell_for_transition
+
+# Lean held for the whole lane change. The jog's true screen angle runs to 44
+# degrees at its steepest, which looks airborne rather than steered.
+MERGE_LEAN_DEG = 16.0
 
 
 def pose_for_lane_position(lane_idx: int, lane_pos: float, direction: int = 1) -> tuple[float, float, int]:
@@ -33,11 +42,38 @@ def pose_for_lane_position(lane_idx: int, lane_pos: float, direction: int = 1) -
     return (gx, gy, direction_index_8_from_tangent(dx, dy))
 
 
+def _merge_lean(car: cars.Car, facing: tuple[float, float]) -> float:
+    """
+    The one lean a lane change gets, snapped on at the seam and off at the far side.
+
+    Sampled at the middle of the curve, where the jog is steepest: its ends run
+    parallel to the lane and would read as no lean at all. Held flat from there
+    rather than tweened, so the sprite flips once, as it does on a corner.
+    """
+    tangent = merge_tangent(
+        car.merge_source_lane, car.merge_source_pos, car.lane_index, car.position_in_lane, 0.5
+    )
+    lean = screen_lean_degrees(tangent, facing)
+    if lean == 0.0:
+        return 0.0
+    return MERGE_LEAN_DEG if lean > 0.0 else -MERGE_LEAN_DEG
+
+
 def set_pose_for_current_segment(car: cars.Car, t: float) -> None:
     t = max(0.0, min(1.0, t))
+    lean = 0.0
     if car.motion_mode == "path" and car.pending_out_lane_index is not None:
         gx, gy = path_position(car.lane_index, car.pending_out_lane_index, t)
         dx, dy = path_tangent(car.lane_index, car.pending_out_lane_index, t)
+    elif car.motion_mode == "merge" and car.merge_source_lane is not None and car.merge_source_pos is not None:
+        gx, gy = merge_position(
+            car.merge_source_lane, car.merge_source_pos, car.lane_index, car.position_in_lane, t
+        )
+        # Keep the road's own sprite and lean it instead. Rounding the curve to
+        # the nearest of the eight facings would pick the octant next door, which
+        # this projection draws bolt upright and reads as a 90-degree turn.
+        dx, dy = lane_heading(car.lane_index)
+        lean = _merge_lean(car, (dx, dy))
     else:
         if car.segment_start_pos is None or car.segment_end_pos is None:
             cell = car.current_cell()
@@ -51,6 +87,7 @@ def set_pose_for_current_segment(car: cars.Car, t: float) -> None:
     car.pose_gx = gx
     car.pose_gy = gy
     car.pose_dir_index_8 = direction_index_8_from_tangent(dx, dy)
+    car.pose_lean_deg = lean
 
 
 def start_lane_segment(car: cars.Car, start_time: float, speed: float, start_pos: int) -> bool:
@@ -59,7 +96,7 @@ def start_lane_segment(car: cars.Car, start_time: float, speed: float, start_pos
         return False
     if start_pos + 1 >= len(lane):
         return False
-    car.motion_mode = "lane"
+    _clear_merge(car)
     car.segment_start_time = start_time
     car.segment_duration = 1.0 / speed
     car.segment_start_pos = start_pos
@@ -67,6 +104,59 @@ def start_lane_segment(car: cars.Car, start_time: float, speed: float, start_pos
     car.segment_t_offset = 0.0
     car.segment_scale_reference = max(0.0, getattr(car, "speed_scale", 1.0))
     return True
+
+
+def start_merge_segment(
+    car: cars.Car,
+    start_time: float,
+    speed: float,
+    target_lane: int,
+    target_pos: int,
+    side: str,
+    reason: str,
+    occupancy=None,
+) -> bool:
+    """
+    Begin a lane change onto target_lane.
+
+    The car commits to the landing cell straight away, so occupancy, lane_is_full,
+    and the fan all treat the gap as taken; the source cell is kept only for the pose.
+    """
+    target_cells = world.get_lane_cells(target_lane)
+    if not target_cells or target_pos < 0 or target_pos >= len(target_cells):
+        return False
+    source_lane = car.lane_index
+    source_pos = car.position_in_lane
+    length = merge_length(source_lane, source_pos, target_lane, target_pos)
+    car.merge_source_lane = source_lane
+    car.merge_source_pos = source_pos
+    car.merge_side = side
+    car.merge_reason = reason
+    car.lane_index = target_lane
+    car.position_in_lane = target_pos
+    car.intersection_cell = None
+    car.pending_out_lane_index = None
+    car.motion_mode = "merge"
+    car.segment_start_time = start_time
+    # Pace is set on the curve's own length, so the car holds its road speed
+    # rather than trading pace for the extra distance the jog costs.
+    travel = speed * min(1.0, max(0.05, passing.MERGE_SPEED_KEEP))
+    car.segment_duration = length / travel if travel > 0 else 0.2
+    car.segment_start_pos = None
+    car.segment_end_pos = None
+    car.segment_t_offset = 0.0
+    car.segment_scale_reference = max(0.0, getattr(car, "speed_scale", 1.0))
+    if occupancy is not None:
+        occupancy.add(car)
+    return True
+
+
+def _clear_merge(car: cars.Car) -> None:
+    car.motion_mode = "lane"
+    car.merge_source_lane = None
+    car.merge_source_pos = None
+    car.merge_side = ""
+    car.merge_reason = ""
 
 
 def _planned_out_lane(car: cars.Car) -> tuple[int, int] | None:
@@ -135,7 +225,7 @@ def _place_on_lane(
     car.position_in_lane = 0
     car.intersection_cell = None
     car.pending_out_lane_index = None
-    car.motion_mode = "lane"
+    _clear_merge(car)
     car.route_index = route_index
     _clear_segment(car)
     if occupancy is not None:
@@ -143,9 +233,38 @@ def _place_on_lane(
     return True
 
 
+def _snap_to_sister(car: cars.Car, occupancy) -> bool:
+    """
+    Last resort at the end of a lane that leads nowhere: step straight onto the
+    sister. The exit rule in sim.passing should merge well before this, so the
+    abrupt sidestep is preferred only to vanishing.
+    """
+    cells = world.get_lane_cells(car.lane_index)
+    if not cells or car.position_in_lane < 0 or car.position_in_lane >= len(cells):
+        return False
+    sides = world.cell_merge(*cells[car.position_in_lane])
+    for side in (world.MERGE_LEFT, world.MERGE_RIGHT):
+        if sides not in (side, world.MERGE_BOTH):
+            continue
+        found = world.merge_target(car.lane_index, car.position_in_lane, side, 1)
+        if found is None:
+            continue
+        car.lane_index, car.position_in_lane = found
+        car.intersection_cell = None
+        car.pending_out_lane_index = None
+        _clear_merge(car)
+        _clear_segment(car)
+        if occupancy is not None:
+            occupancy.add(car)
+        return True
+    return False
+
+
 def _hop_through_place(car: cars.Car, occupancy) -> bool:
     """Instant hop onto the next itinerary lane. False → despawn (arrived, missing, or packed)."""
     arrived = world.lane_traffic_out(car.lane_index)
+    if not arrived:
+        return _snap_to_sister(car, occupancy)
     if arrived == car.destination:
         return False
     hop = routes.next_lane_after_place(car.route, car.route_index) if car.route else None
@@ -195,6 +314,10 @@ def advance_car(
         # Complete current segment.
         set_pose_for_current_segment(car, 1.0)
 
+        if car.motion_mode == "merge":
+            # Landing cell is already the car's position; carry on as a lane car.
+            _clear_merge(car)
+
         if car.motion_mode == "lane":
             if car.segment_end_pos is not None:
                 car.position_in_lane = car.segment_end_pos
@@ -204,6 +327,13 @@ def advance_car(
             if not lane:
                 to_remove.append(car)
                 return
+            choice = passing.merge_choice(car, occupancy)
+            if choice is not None:
+                target_lane, target_pos, side, reason = choice
+                if start_merge_segment(
+                    car, segment_end_time, speed, target_lane, target_pos, side, reason, occupancy
+                ):
+                    continue
             if car.position_in_lane + 1 < len(lane):
                 if not start_lane_segment(car, segment_end_time, speed, car.position_in_lane):
                     to_remove.append(car)

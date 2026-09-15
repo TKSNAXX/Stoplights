@@ -172,6 +172,14 @@ def _next_feature(car) -> str:
     return UNKNOWN
 
 
+def _merge_state(car) -> str:
+    side = getattr(car, "merge_side", "")
+    if getattr(car, "motion_mode", "lane") != "merge" or not side:
+        return UNKNOWN
+    reason = getattr(car, "merge_reason", "")
+    return f"{side} ({reason})" if reason else side
+
+
 def _ahead_behind(car, others: list) -> tuple[int, int]:
     pos = int(getattr(car, "position_in_lane", 0))
     ahead = 0
@@ -190,6 +198,7 @@ def _ahead_behind(car, others: list) -> tuple[int, int]:
 def _fill_car(car, occupancy: Occupancy) -> None:
     car.on_feature = _on_feature(car)
     car.next_feature = _next_feature(car)
+    car.merge_state = _merge_state(car)
     if getattr(car, "motion_mode", "lane") != "lane":
         car.cars_ahead = None
         car.cars_behind = None

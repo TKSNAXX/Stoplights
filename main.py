@@ -989,7 +989,7 @@ class StoplightsWindow(arcade.Window):
 
             if self._car_sprite_pool is not None:
                 active_police = [p for p in self.game.police_list if p.state in ("deploying", "holding", "diverting", "returning")]
-                car_data: list[tuple[float, object, int, float, float, tuple[int, int, int]]] = []
+                car_data: list[tuple[float, object, int, float, float, tuple[int, int, int], float]] = []
                 for car in self.game.cars:
                     if car.pose_gx is None or car.pose_gy is None:
                         curr = car.current_cell()
@@ -1005,6 +1005,7 @@ class StoplightsWindow(arcade.Window):
                         display_dir_index(_car_direction_index(car), yaw),
                         sx, sy,
                         getattr(car, "color", CAR_DEFAULT),
+                        float(getattr(car, "pose_lean_deg", 0.0) or 0.0),
                     ))
                 for police in active_police:
                     gx, gy, di = police.get_pose()
@@ -1015,14 +1016,15 @@ class StoplightsWindow(arcade.Window):
                         display_dir_index(di, yaw),
                         sx, sy,
                         police.get_light_color(),
+                        0.0,
                     ))
                 car_data.sort(key=lambda t: t[0], reverse=True)
                 self._car_draw_order = [t[1] for t in car_data]
                 self._car_sprite_pool.begin_frame(len(car_data))
                 overlay_alpha = getattr(self._tool_manager.active, "overlay_car_alpha", None)
-                for idx, (depth, entity, di, sx, sy, color) in enumerate(car_data):
+                for idx, (depth, entity, di, sx, sy, color, lean) in enumerate(car_data):
                     alpha = overlay_alpha(entity) if callable(overlay_alpha) else 255
-                    self._car_sprite_pool.set_sprite(idx, di, sx, sy, color, alpha)
+                    self._car_sprite_pool.set_sprite(idx, di, sx, sy, color, alpha, lean)
                     overlay.append((depth, 0, self._car_sprite_pool.sprite_at(idx)))
             overlay.sort(key=lambda t: (t[0], t[1]), reverse=True)
             for _, _, spr in overlay:

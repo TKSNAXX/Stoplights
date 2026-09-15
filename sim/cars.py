@@ -36,7 +36,7 @@ class Car:
     position_in_lane: int  # 0 = at start of lane (place end), len(lane)-1 = at intersection end
     intersection_cell: tuple[int, int] | None = None  # when set, car is in intersection
     pending_out_lane_index: int | None = None  # next lane when leaving intersection
-    motion_mode: str = "lane"  # "lane" or "path"
+    motion_mode: str = "lane"  # "lane", "path", or "merge"
 
     # Segment interpolation state
     segment_start_time: float | None = None
@@ -50,6 +50,7 @@ class Car:
     pose_gx: float | None = None  # continuous render position (grid x)
     pose_gy: float | None = None  # continuous render position (grid y)
     pose_dir_index_8: int = 0  # direction from continuous tangent
+    pose_lean_deg: float = 0.0  # sprite roll on screen, degrees clockwise (lane changes)
 
     # Behavior/transient state
     visibility_state: str = "green"  # green | yellow | red from visibility zone
@@ -75,6 +76,14 @@ class Car:
     next_feature_cars: int | None = None
     sister_ahead: int | None = None
     sister_behind: int | None = None
+    merge_state: str = ""
+
+    # Lane change: lane_index/position_in_lane are the target from commit onward,
+    # so the source cell is kept here only to interpolate the pose.
+    merge_source_lane: int | None = None
+    merge_source_pos: int | None = None
+    merge_side: str = ""  # left | right while merging, "" otherwise
+    merge_reason: str = ""  # keep | pass | exit while merging, "" otherwise
 
     def current_cell(self) -> tuple[int, int] | None:
         """Current grid position, or None if invalid."""

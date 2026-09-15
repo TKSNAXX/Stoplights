@@ -22,10 +22,11 @@ class CarDeetsDialog(Dialog):
         ("Lane", "lane"),
         ("Next Cars", "next_cars"),
         ("Sister", "sister"),
+        ("Merge", "merge"),
     )
 
     def __init__(self, x: float, y: float, car, game) -> None:
-        super().__init__(x, y, DIALOG_WIDTH, dialog_height(10, extra=32), "Details", kind="Car")
+        super().__init__(x, y, DIALOG_WIDTH, dialog_height(11, extra=32), "Details", kind="Car")
         self._car = car
         self._game = game
         self._rows: list[tuple[ParamLabel, DatumBox, str]] = []
@@ -68,6 +69,7 @@ class CarDeetsDialog(Dialog):
             "lane": lane,
             "next_cars": str(nfc) if nfc is not None else "—",
             "sister": sister,
+            "merge": getattr(self._car, "merge_state", "") or "—",
         }
 
     def _layout_widgets(self) -> None:

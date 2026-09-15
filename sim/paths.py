@@ -5,10 +5,12 @@ Curves are fitted once in rebuild_path_cache (called from world.rebuild_world).
 """
 from __future__ import annotations
 
+import bisect
 import math
 from dataclasses import dataclass
 
 from sim import world
+from sim.constants import TILE_H, TILE_W
 
 # Sample step for path length integral and tangent epsilon
 _PATH_LENGTH_SAMPLES = 32
@@ -384,6 +386,156 @@ def lane_segment_tangent(lane_index: int, from_pos: int, to_pos: int) -> tuple[f
     if length < 1e-9:
         return (0.0, 0.0)
     return (dx / length, dy / length)
+
+
+def lane_heading(lane_index: int) -> tuple[float, float]:
+    """Constant unit heading of a lane (cells run one cardinal direction)."""
+    return lane_segment_tangent(lane_index, 0, 1)
+
+
+def _merge_curve(
+    source_lane: int,
+    source_pos: int,
+    target_lane: int,
+    target_pos: int,
+) -> tuple[tuple[float, float], tuple[float, float], tuple[float, float], tuple[float, float]] | None:
+    """Start, both handles, and end of a lane-change curve, or None if unusable."""
+    source = world.get_lane_cells(source_lane)
+    target = world.get_lane_cells(target_lane)
+    if not source or not target:
+        return None
+    if source_pos < 0 or source_pos >= len(source):
+        return None
+    if target_pos < 0 or target_pos >= len(target):
+        return None
+    start = (float(source[source_pos][0]), float(source[source_pos][1]))
+    end = (float(target[target_pos][0]), float(target[target_pos][1]))
+    heading = lane_heading(source_lane)
+    if heading == (0.0, 0.0):
+        return None
+    # Both handles run along the heading, so lateral speed is zero at each lane.
+    p1, p2 = _cubic_handles(start, end, heading, heading)
+    return (start, p1, p2, end)
+
+
+def merge_position(
+    source_lane: int,
+    source_pos: int,
+    target_lane: int,
+    target_pos: int,
+    t: float,
+) -> tuple[float, float]:
+    """Position a fraction t of the way along the lane-change curve by distance."""
+    curve = _merge_curve(source_lane, source_pos, target_lane, target_pos)
+    if curve is None:
+        return lane_segment_position(target_lane, target_pos, target_pos, 1.0)
+    start, p1, p2, end = curve
+    u = _t_at_distance(_merge_arc_table(source_lane, curve), t)
+    return _bezier_position(start, p1, p2, end, u)
+
+
+def merge_tangent(
+    source_lane: int,
+    source_pos: int,
+    target_lane: int,
+    target_pos: int,
+    t: float,
+) -> tuple[float, float]:
+    """Unit tangent a fraction t along the lane-change curve; analytic, so t=1 is exact."""
+    curve = _merge_curve(source_lane, source_pos, target_lane, target_pos)
+    if curve is None:
+        return lane_heading(target_lane)
+    (sx, sy), (p1x, p1y), (p2x, p2y), (ex, ey) = curve
+    t = _t_at_distance(_merge_arc_table(source_lane, curve), t)
+    u = 1.0 - t
+    dx = 3.0 * u * u * (p1x - sx) + 6.0 * u * t * (p2x - p1x) + 3.0 * t * t * (ex - p2x)
+    dy = 3.0 * u * u * (p1y - sy) + 6.0 * u * t * (p2y - p1y) + 3.0 * t * t * (ey - p2y)
+    length = math.hypot(dx, dy)
+    if length < 1e-9:
+        return lane_heading(target_lane)
+    return (dx / length, dy / length)
+
+
+# Steps in the merge curve's distance table. Shape depends only on the forward run
+# (the lateral shift is always one cell), so one table per run serves the whole map.
+_MERGE_ARC_STEPS = 64
+_MERGE_ARCS: dict[int, tuple[float, ...]] = {}
+
+
+def _merge_arc_table(
+    source_lane: int,
+    curve: tuple[tuple[float, float], tuple[float, float], tuple[float, float], tuple[float, float]],
+) -> tuple[float, ...]:
+    """Distance travelled at each of _MERGE_ARC_STEPS equal steps in t."""
+    start, p1, p2, end = curve
+    heading = lane_heading(source_lane)
+    forward = abs((end[0] - start[0]) * heading[0] + (end[1] - start[1]) * heading[1])
+    key = int(round(forward))
+    cached = _MERGE_ARCS.get(key)
+    if cached is not None:
+        return cached
+    cumulative = [0.0]
+    prev = start
+    for step in range(1, _MERGE_ARC_STEPS + 1):
+        point = _bezier_position(start, p1, p2, end, step / _MERGE_ARC_STEPS)
+        cumulative.append(cumulative[-1] + math.hypot(point[0] - prev[0], point[1] - prev[1]))
+        prev = point
+    table = tuple(cumulative)
+    _MERGE_ARCS[key] = table
+    return table
+
+
+def _t_at_distance(table: tuple[float, ...], fraction: float) -> float:
+    """
+    Curve parameter at fraction of the way along by distance.
+
+    A cubic's parameter is not its arc length: these handles crowd the middle of
+    the change, so even steps in t would coast the car through the seam at 55 per
+    cent of its speed and then fling it out the far side.
+    """
+    total = table[-1]
+    if total <= 1e-9:
+        return max(0.0, min(1.0, fraction))
+    target = max(0.0, min(1.0, fraction)) * total
+    hi = max(1, bisect.bisect_left(table, target))
+    span = table[hi] - table[hi - 1]
+    within = 0.0 if span <= 1e-12 else (target - table[hi - 1]) / span
+    return (hi - 1 + within) / (len(table) - 1)
+
+
+def merge_length(
+    source_lane: int,
+    source_pos: int,
+    target_lane: int,
+    target_pos: int,
+) -> float:
+    """Arc length of the lane-change curve in grid units."""
+    curve = _merge_curve(source_lane, source_pos, target_lane, target_pos)
+    if curve is None:
+        return 1.0
+    return _merge_arc_table(source_lane, curve)[-1]
+
+
+def _screen_angle(dx: float, dy: float) -> float:
+    """Angle of a grid vector once projected to the iso screen, radians CCW."""
+    return math.atan2((dx + dy) * TILE_H, (dx - dy) * TILE_W)
+
+
+def screen_lean_degrees(
+    tangent: tuple[float, float],
+    facing: tuple[float, float],
+) -> float:
+    """
+    Degrees clockwise (arcade's sprite convention) from facing to tangent on screen.
+
+    The projection squashes one axis, so a grid angle is not a screen angle: 35
+    degrees off a northbound lane comes out near 44 on screen. That squash also
+    means a quarter-turn of yaw is not a plain screen rotation, so the same pair
+    of vectors leans between 22 and 44 degrees depending on the yaw. The sign is
+    steady, and callers clamp well below 22, so this is measured at yaw 0 only.
+    """
+    lean = _screen_angle(*tangent) - _screen_angle(*facing)
+    return -math.degrees((lean + math.pi) % (2.0 * math.pi) - math.pi)
 
 
 def direction_index_8_from_tangent(dx: float, dy: float) -> int:

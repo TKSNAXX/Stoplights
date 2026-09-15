@@ -2022,6 +2022,291 @@ def test_situation_place_and_on_lane_from_route() -> None:
     GameState()
 
 
+def _sister_highway() -> None:
+    """The four-lane pair east of the Park: 9/82 northbound, 10/83 southbound."""
+    places.set_route_hints([])
+    world.rebuild_world(
+        {},
+        {},
+        {
+            9: places.LaneConfig(start_tile=(64, 23), end_tile=(64, 70)),
+            10: places.LaneConfig(start_tile=(63, 70), end_tile=(63, 23)),
+            82: places.LaneConfig(start_tile=(65, 25), end_tile=(65, 67)),
+            83: places.LaneConfig(start_tile=(62, 67), end_tile=(62, 25)),
+        },
+    )
+
+
+def test_merge_target_geometry() -> None:
+    _sister_highway()
+    assert world.lane_pos_at_cell(65, 41) == (82, 16)
+    assert world.lane_pos_at_cell(64, 23) == (9, 0)
+    assert world.lane_pos_at_cell(1, 1) is None
+
+    # Three cells of runway, one cell across, onto the neighbour lane.
+    assert world.merge_target(9, 15, world.MERGE_RIGHT, 3) == (82, 16)
+    assert world.merge_target(82, 16, world.MERGE_LEFT, 3) == (9, 21)
+    # Southbound sisters sit at lower x, so the sides flip with the heading.
+    assert world.merge_target(10, 15, world.MERGE_RIGHT, 3) == (83, 15)
+    assert world.merge_target(83, 15, world.MERGE_LEFT, 3) == (10, 21)
+    # Nothing on that side, and "neither" is not a side.
+    assert world.merge_target(9, 15, world.MERGE_LEFT, 3) is None
+    assert world.merge_target(9, 15, world.MERGE_NEITHER, 3) is None
+    # The little sister's last cell still reaches its big sister.
+    last_82 = len(world.get_lane_cells(82)) - 1
+    assert world.merge_target(82, last_82, world.MERGE_LEFT, 3) == (9, 47)
+    # Past the little sister's end there is nowhere to land.
+    assert world.merge_target(9, 46, world.MERGE_RIGHT, 3) is None
+    # Crossing the yellow is not a merge.
+    world.rebuild_world(
+        {},
+        {},
+        {
+            1: places.LaneConfig(start_tile=(0, 10), end_tile=(0, 20)),
+            2: places.LaneConfig(start_tile=(1, 20), end_tile=(1, 10)),
+        },
+    )
+    assert world.merge_target(1, 4, world.MERGE_RIGHT, 3) is None
+    assert world.merge_target(1, 4, world.MERGE_LEFT, 3) is None
+    GameState()
+
+
+def test_merge_curve_is_a_smooth_s() -> None:
+    from sim.paths import merge_length, merge_position, merge_tangent
+
+    _sister_highway()
+    assert world.merge_target(9, 15, world.MERGE_RIGHT, 3) == (82, 16)
+    assert merge_position(9, 15, 82, 16, 0.0) == (64.0, 38.0)
+    assert merge_position(9, 15, 82, 16, 1.0) == (65.0, 41.0)
+
+    # Dead ahead at both lanes: no lateral velocity where the car sits in a lane.
+    for t in (0.0, 1.0):
+        dx, dy = merge_tangent(9, 15, 82, 16, t)
+        assert abs(dx) < 1e-6
+        assert abs(dy - 1.0) < 1e-6
+
+    prev_x, prev_y = -1.0, -1.0
+    for i in range(21):
+        t = i / 20.0
+        gx, gy = merge_position(9, 15, 82, 16, t)
+        assert gx >= prev_x - 1e-9
+        assert gy >= prev_y - 1e-9
+        prev_x, prev_y = gx, gy
+        _dx, dy = merge_tangent(9, 15, 82, 16, t)
+        assert dy >= 0.7  # never swings past 45 degrees off the lane heading
+
+    length = merge_length(9, 15, 82, 16)
+    assert 3.0 <= length <= 3.4  # barely longer than the straight three cells
+    short = world.merge_target(9, 15, world.MERGE_RIGHT, 2)
+    assert merge_length(9, 15, short[0], short[1]) < length
+    GameState()
+
+
+def test_keep_right_onto_little_sister() -> None:
+    from sim import passing
+    from sim.occupancy import Occupancy
+
+    _sister_highway()
+    car = _make_test_car(lane_index=9, position=15)
+    assert passing.merge_choice(car, Occupancy.from_cars([car])) == (
+        82,
+        16,
+        world.MERGE_RIGHT,
+        passing.REASON_KEEP,
+    )
+
+    # Before the little sister starts there is no merge to make.
+    early = _make_test_car(lane_index=9, position=0)
+    assert passing.merge_choice(early, Occupancy.from_cars([early])) is None
+
+    # Nor where it would run out from under the car.
+    late = _make_test_car(lane_index=9, position=len(world.get_lane_cells(9)) - 8)
+    assert passing.merge_choice(late, Occupancy.from_cars([late])) is None
+
+    # A car already on the right keeps it.
+    settled = _make_test_car(lane_index=82, position=15)
+    assert passing.merge_choice(settled, Occupancy.from_cars([settled])) is None
+
+    # Traffic in the blind spot of the target lane holds the merge back.
+    blind = _make_test_car(lane_index=82, position=12)
+    keeper = _make_test_car(lane_index=9, position=15)
+    assert passing.merge_choice(keeper, Occupancy.from_cars([keeper, blind])) is None
+    GameState()
+
+
+def test_pass_left_only_when_faster() -> None:
+    from sim import passing
+    from sim.occupancy import Occupancy
+
+    _sister_highway()
+    slow = _make_test_car(lane_index=82, position=20)
+    slow.base_speed_multiplier = 0.8
+    fast = _make_test_car(lane_index=82, position=18)
+    fast.base_speed_multiplier = 1.2
+    assert passing.merge_choice(fast, Occupancy.from_cars([slow, fast])) == (
+        9,
+        23,
+        world.MERGE_LEFT,
+        passing.REASON_PASS,
+    )
+
+    # No advantage, no point pulling out.
+    same = _make_test_car(lane_index=82, position=18)
+    same.base_speed_multiplier = 0.8
+    assert passing.merge_choice(same, Occupancy.from_cars([slow, same])) is None
+
+    # Too far ahead to have been caught up with.
+    distant = _make_test_car(lane_index=82, position=30)
+    distant.base_speed_multiplier = 0.8
+    chaser = _make_test_car(lane_index=82, position=18)
+    chaser.base_speed_multiplier = 1.2
+    assert passing.merge_choice(chaser, Occupancy.from_cars([distant, chaser])) is None
+
+    # The passing lane must be clear to use it.
+    occupied = _make_test_car(lane_index=9, position=23)
+    assert passing.merge_choice(fast, Occupancy.from_cars([slow, fast, occupied])) is None
+    GameState()
+
+
+def test_forced_exit_and_who_takes_the_gap() -> None:
+    from sim import passing
+    from sim.occupancy import Occupancy
+
+    _sister_highway()
+    cells_82 = world.get_lane_cells(82)
+    forced_pos = len(cells_82) - 1 - passing.MERGE_EXIT_LOOKAHEAD
+    car = _make_test_car(lane_index=82, position=forced_pos)
+    choice = passing.merge_choice(car, Occupancy.from_cars([car]))
+    assert choice is not None
+    target_lane, _target_pos, side, reason = choice
+    assert (target_lane, side, reason) == (9, world.MERGE_LEFT, passing.REASON_EXIT)
+
+    # One cell earlier the lane still has room, so nothing is forced.
+    unhurried = _make_test_car(lane_index=82, position=forced_pos - 1)
+    assert passing.merge_choice(unhurried, Occupancy.from_cars([unhurried])) is None
+
+    # Whoever is ahead takes the gap: a car further along blocks the merge.
+    merger = _make_test_car(lane_index=82, position=forced_pos)
+    landing = world.merge_target(82, forced_pos, world.MERGE_LEFT, passing.MERGE_FORWARD_CELLS)
+    ahead = _make_test_car(lane_index=9, position=landing[1])
+    assert passing.merge_choice(merger, Occupancy.from_cars([merger, ahead])) is None
+
+    # A car behind the merging one gives way, so the exit still goes ahead.
+    behind = _make_test_car(lane_index=9, position=landing[1] - passing.MERGE_FORWARD_CELLS - 1)
+    assert passing.merge_choice(merger, Occupancy.from_cars([merger, behind])) == (
+        landing[0],
+        landing[1],
+        world.MERGE_LEFT,
+        passing.REASON_EXIT,
+    )
+
+    # The same car behind would hold back a discretionary merge.
+    keeper = _make_test_car(lane_index=9, position=15)
+    tail = _make_test_car(lane_index=82, position=12)
+    assert passing.merge_choice(keeper, Occupancy.from_cars([keeper, tail])) is None
+    GameState()
+
+
+def test_merge_drives_through_and_returns_to_lane_mode() -> None:
+    import math
+
+    from sim import movement
+    from sim.movement import advance_car
+    from sim.occupancy import Occupancy
+
+    _sister_highway()
+    car = _make_test_car(lane_index=9, position=14)
+    occ = Occupancy.from_cars([car])
+    to_remove: list = []
+    speed = 10.0
+    t = 0.0
+    advance_car(car, t, speed, to_remove, occ)
+
+    merged = False
+    poses: list[tuple[float, float]] = []
+    facings: set[int] = set()
+    leans: list[float] = []
+    merge_poses: list[tuple[float, float]] = []
+    for _ in range(400):
+        t += 1.0 / 60.0
+        advance_car(car, t, speed, to_remove, occ)
+        if car.pose_gx is not None and car.pose_gy is not None:
+            poses.append((car.pose_gx, car.pose_gy))
+        if car.motion_mode == "merge":
+            merged = True
+            facings.add(car.pose_dir_index_8)
+            leans.append(car.pose_lean_deg)
+            if car.pose_gx is not None and car.pose_gy is not None:
+                merge_poses.append((car.pose_gx, car.pose_gy))
+            assert car.merge_source_lane == 9
+            assert car.lane_index == 82  # committed to the landing cell at once
+            assert car.merge_side == world.MERGE_RIGHT
+        if merged and car.motion_mode == "lane" and car.lane_index == 82:
+            break
+
+    assert merged
+    assert not to_remove
+    assert car.motion_mode == "lane"
+    assert car.lane_index == 82
+    assert car.merge_source_lane is None
+    assert car.merge_side == ""
+    # The pose never jumps: one cell per step at most, and it crosses the seam.
+    assert len(poses) > 3
+    assert max(
+        max(abs(b[0] - a[0]), abs(b[1] - a[1])) for a, b in zip(poses, poses[1:])
+    ) < 1.0
+    assert any(64.0 < gx < 65.0 for gx, _gy in poses)
+    # The sprite keeps the lane's own texture and leans instead: the octant next
+    # door is drawn bolt upright and would read as a 90 degree turn.
+    assert facings == {0}
+    # One lean, snapped on and held: no tween, and no wobble across the seam.
+    assert set(leans) in ({movement.MERGE_LEAN_DEG}, {-movement.MERGE_LEAN_DEG})
+    assert car.pose_lean_deg == 0.0  # and stands back up on the far side
+    # Pace holds along the curve: the cubic's own parameter would coast the
+    # middle of the change at little better than half speed.
+    steps = [
+        math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(merge_poses, merge_poses[1:])
+    ]
+    assert len(steps) > 6
+    assert min(steps) > 0.95 * max(steps)
+    GameState()
+
+
+def test_dangling_lane_end_snaps_instead_of_despawning() -> None:
+    from sim.movement import advance_car
+    from sim.occupancy import Occupancy
+
+    _sister_highway()
+    # Sitting on the very last cell, past any chance to merge: the old code path
+    # hopped through a place and despawned.
+    car = _make_test_car(lane_index=82, position=len(world.get_lane_cells(82)) - 1)
+    occ = Occupancy.from_cars([car])
+    to_remove: list = []
+    advance_car(car, 0.0, 10.0, to_remove, occ)
+    assert not to_remove
+    assert car.lane_index == 9
+    assert car.motion_mode == "lane"
+    GameState()
+
+
+def test_merge_speed_floor_completes_the_change() -> None:
+    from sim.passing import MERGE_MIN_SCALE, hold_merge_speed
+
+    _sister_highway()
+    merging = _make_test_car(lane_index=82, position=16)
+    merging.motion_mode = "merge"
+    merging.merge_source_lane = 9
+    merging.merge_source_pos = 15
+    merging.merge_side = world.MERGE_RIGHT
+    merging.speed_scale = 0.0
+    stopped = _make_test_car(lane_index=9, position=15)
+    stopped.speed_scale = 0.0
+    hold_merge_speed([merging, stopped])
+    assert merging.speed_scale == MERGE_MIN_SCALE
+    assert stopped.speed_scale == 0.0
+    GameState()
+
+
 def test_lane_and_node_mouth_cells() -> None:
     GameState()
     lane_ids = world.lane_ids()
@@ -2182,6 +2467,14 @@ def main() -> None:
         test_situation_lane_counts_and_next_feature_cars,
         test_situation_sister_counts,
         test_situation_place_and_on_lane_from_route,
+        test_merge_target_geometry,
+        test_merge_curve_is_a_smooth_s,
+        test_keep_right_onto_little_sister,
+        test_pass_left_only_when_faster,
+        test_forced_exit_and_who_takes_the_gap,
+        test_merge_drives_through_and_returns_to_lane_mode,
+        test_dangling_lane_end_snaps_instead_of_despawning,
+        test_merge_speed_floor_completes_the_change,
         test_lane_and_node_mouth_cells,
         test_nearest_car_in_radius,
         test_observed_cars_membership,
