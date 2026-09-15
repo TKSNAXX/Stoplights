@@ -3,13 +3,12 @@ from __future__ import annotations
 
 from typing import Callable
 
-import arcade
-
 from ui.dialogs.base import Dialog
-from ui.theme import DROPDOWN_ROW_HEIGHT, LABEL_COLOR, NUMBER_BOX_HEIGHT
+from ui.dialogs.layout import ParamLabel, dialog_height, form_row
+from ui.theme import DATUM_HEIGHT, DIALOG_WIDTH, DROPDOWN_ROW_HEIGHT, ICON_BUTTON_SIZE
 from ui.widgets.buttons import CommitButton, RemoveButton
 from ui.widgets.compass import CompassSelect
-from ui.widgets.text import NumberBox
+from ui.widgets.text import DatumBox, NumberBox
 
 
 def next_intersection_key(configs: dict) -> str:
@@ -41,32 +40,41 @@ class IntersectionVarsDialog(Dialog):
         on_commit: Callable[[], None] | None = None,
         on_remove: Callable[[], None] | None = None,
     ):
-        super().__init__(x, y, 220, 140, f"Intersection: {intersection_key}")
+        self._can_remove = bool(
+            game is not None and hasattr(game, "can_remove_intersection") and game.can_remove_intersection(intersection_key)
+        )
+        super().__init__(
+            x, y, DIALOG_WIDTH, dialog_height(4 if self._can_remove else 3),
+            intersection_key, kind="Intersection",
+        )
         self.intersection_key = intersection_key
         self._config = intersection_config
         self._game = game
         self._on_change = on_change
         self._on_commit = on_commit
         self._on_remove = on_remove
-        self._can_remove = bool(game is not None and hasattr(game, "can_remove_intersection") and game.can_remove_intersection(intersection_key))
 
         cx = getattr(intersection_config, "center_x", 18)
         cy = getattr(intersection_config, "center_y", 24)
         size_val = getattr(intersection_config, "size_cells", 4)
 
-        control_width = 140
+        self._type_datum = DatumBox()
         self._center_compass = CompassSelect(
-            0, 0, control_width, DROPDOWN_ROW_HEIGHT, (cx, cy), on_change=lambda _: self._apply_config(),
+            0, 0, 140, DROPDOWN_ROW_HEIGHT, (cx, cy), on_change=lambda _: self._apply_config(),
         )
-        self._size_box = NumberBox(0, 0, 100, NUMBER_BOX_HEIGHT, size_val, 2, 12, 2, on_change=lambda _: self._apply_config(), on_unfocus=self._apply_config)
-        self._remove_btn = RemoveButton(0, 0, 70, 22, on_click=self._do_remove)
+        self._size_box = NumberBox(
+            0, 0, 100, DATUM_HEIGHT, size_val, 2, 12, 2,
+            on_change=lambda _: self._apply_config(), on_unfocus=self._apply_config,
+        )
+        self._remove_btn = RemoveButton(0, 0, on_click=self._do_remove)
 
         self.widgets = [self._center_compass, self._size_box]
         if self._can_remove:
             self.widgets.append(self._remove_btn)
-        self._type_label = arcade.Text("", 0, 0, color=LABEL_COLOR, font_size=10, anchor_x="left", anchor_y="center")
-        self._center_label = arcade.Text("Center:", 0, 0, color=LABEL_COLOR, font_size=10, anchor_x="left", anchor_y="center")
-        self._size_label = arcade.Text("", 0, 0, color=LABEL_COLOR, font_size=10, anchor_x="left", anchor_y="center")
+        self._type_label = ParamLabel("Type")
+        self._center_label = ParamLabel("Center")
+        self._size_label = ParamLabel("Size")
+        self.labels = [self._type_label, self._center_label, self._size_label]
 
     def _inferred_type(self) -> str:
         from sim import world
@@ -75,10 +83,10 @@ class IntersectionVarsDialog(Dialog):
         cells_map = world.get_intersection_cells_map()
         cells = cells_map.get(self.intersection_key, [])
         active, _, _ = classify_intersection_sides(self.intersection_key, cells)
-        return overlay_type_for_sides(active)
+        raw = overlay_type_for_sides(active)
+        return (raw or "none").replace("_", " ").title()
 
     def _apply_config(self) -> None:
-        """Apply center and size from widgets to config and call on_commit."""
         new_cx, new_cy = self._center_compass.value
         new_size = max(2, min(12, self._size_box.value))
         if new_size % 2 != 0:
@@ -95,7 +103,6 @@ class IntersectionVarsDialog(Dialog):
             self._on_commit()
 
     def _do_remove(self) -> None:
-        """Remove this intersection from game and call on_remove."""
         if self._game is not None and self.intersection_key in self._game.intersections:
             del self._game.intersections[self.intersection_key]
             self._game.rebuild_world_from_config()
@@ -103,29 +110,23 @@ class IntersectionVarsDialog(Dialog):
             self._on_remove()
 
     def _layout_widgets(self) -> None:
-        left = self.x + 12
-        content_top = self.y - 32
-        box_w = 100
-        control_left = left + 70
-        self._center_compass.rect = (control_left, content_top - 48, 140, DROPDOWN_ROW_HEIGHT)
-        self._size_box.rect = (control_left, content_top - 74, box_w, NUMBER_BOX_HEIGHT)
+        r0 = form_row(self, 0)
+        self._type_label.place(r0.label_x, r0.label_y)
+        self._type_datum.rect = (r0.control_left, r0.control_bottom, r0.control_width, DATUM_HEIGHT)
+        r1 = form_row(self, 1)
+        self._center_label.place(r1.label_x, r1.label_y)
+        self._center_compass.rect = (r1.control_left, r1.control_bottom, r1.control_width, DATUM_HEIGHT)
+        r2 = form_row(self, 2)
+        self._size_label.place(r2.label_x, r2.label_y)
+        self._size_box.rect = (r2.control_left, r2.control_bottom, r2.control_width, DATUM_HEIGHT)
         if self._can_remove:
-            self._remove_btn.rect = (left, content_top - 100, 70, 22)
-        self._type_label.x = left
-        self._type_label.y = content_top - 12
-        self._center_label.x = left
-        self._center_label.y = content_top - 36
-        self._size_label.x = left
-        self._size_label.y = content_top - 62
+            r3 = form_row(self, 3)
+            self._remove_btn.rect = (r3.control_left, r3.control_bottom, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE)
 
     def draw(self) -> None:
-        self._layout_widgets()
-        self._type_label.value = f"Type: {self._inferred_type()}"
-        self._size_label.value = "Size:"
+        self._type_datum.set_value(self._inferred_type())
         super().draw()
-        self._type_label.draw()
-        self._center_label.draw()
-        self._size_label.draw()
+        self._type_datum.draw()
 
     def on_mouse_press(self, x: float, y: float) -> bool:
         self._layout_widgets()
@@ -158,29 +159,28 @@ class NewIntersectionDialog(Dialog):
         on_geometry_change: Callable[[tuple[int, int], int], None] | None = None,
     ):
         key = next_intersection_key(game.intersections)
-        super().__init__(x, y, 220, 150, f"New Intersection: {key}")
+        super().__init__(x, y, DIALOG_WIDTH, dialog_height(3), key, kind="Intersection")
         self._game = game
         self._key = key
         self._on_commit = on_commit
         self._on_geometry_change = on_geometry_change
 
-        control_width = 140
         self._center_compass = CompassSelect(
-            0, 0, control_width, DROPDOWN_ROW_HEIGHT, (36, 48),
+            0, 0, 140, DROPDOWN_ROW_HEIGHT, (36, 48),
             on_change=lambda _: self._notify_geometry(),
         )
         self._size_box = NumberBox(
-            0, 0, 100, NUMBER_BOX_HEIGHT, 2, 2, 12, 2,
+            0, 0, 100, DATUM_HEIGHT, 2, 2, 12, 2,
             on_change=lambda _: self._notify_geometry(),
         )
-        self._commit_btn = CommitButton(0, 0, 70, 22, on_click=self._do_commit)
+        self._commit_btn = CommitButton(0, 0, on_click=self._do_commit)
 
         self.widgets = [self._center_compass, self._size_box, self._commit_btn]
-        self._center_label = arcade.Text("Center:", 0, 0, color=LABEL_COLOR, font_size=10, anchor_x="left", anchor_y="center")
-        self._size_label = arcade.Text("", 0, 0, color=LABEL_COLOR, font_size=10, anchor_x="left", anchor_y="center")
+        self._center_label = ParamLabel("Center")
+        self._size_label = ParamLabel("Size")
+        self.labels = [self._center_label, self._size_label]
 
     def set_geometry(self, center: tuple[int, int], size: int) -> None:
-        """Update readout from the map tool without fighting a focused field."""
         if not self._center_compass._focused:
             self._center_compass.set_value(center)
         if not self._size_box._focused:
@@ -212,25 +212,11 @@ class NewIntersectionDialog(Dialog):
             self._on_commit()
 
     def _layout_widgets(self) -> None:
-        left = self.x + 12
-        content_top = self.y - 32
-        box_w = 100
-        control_left = left + 70
-        self._center_compass.rect = (control_left, content_top - 24, 140, DROPDOWN_ROW_HEIGHT)
-        self._size_box.rect = (control_left, content_top - 50, box_w, NUMBER_BOX_HEIGHT)
-        self._commit_btn.rect = (left, content_top - 82, 70, 22)
-        self._center_label.x = left
-        self._center_label.y = content_top - 12
-        self._size_label.x = left
-        self._size_label.y = content_top - 38
-
-    def draw(self) -> None:
-        self._layout_widgets()
-        self._size_label.value = "Size:"
-        super().draw()
-        self._center_label.draw()
-        self._size_label.draw()
-
-    def on_mouse_press(self, x: float, y: float) -> bool:
-        self._layout_widgets()
-        return super().on_mouse_press(x, y)
+        r0 = form_row(self, 0)
+        self._center_label.place(r0.label_x, r0.label_y)
+        self._center_compass.rect = (r0.control_left, r0.control_bottom, r0.control_width, DATUM_HEIGHT)
+        r1 = form_row(self, 1)
+        self._size_label.place(r1.label_x, r1.label_y)
+        self._size_box.rect = (r1.control_left, r1.control_bottom, r1.control_width, DATUM_HEIGHT)
+        r2 = form_row(self, 2)
+        self._commit_btn.rect = (r2.control_left, r2.control_bottom, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE)

@@ -1,10 +1,8 @@
-"""Boolean toggle."""
+"""Boolean toggle: dark track, white square thumb."""
 from __future__ import annotations
 
-import arcade
-
-from draw_compat import rect_filled
-from ui.theme import LABEL_COLOR
+from draw_compat import ipx, rect_filled
+from ui.theme import ICON_BUTTON_BG, SLIDER_TRACK
 
 
 class Switch:
@@ -17,21 +15,13 @@ class Switch:
         width: float,
         height: float,
         initial_value: bool = True,
-        bar_color: tuple[int, int, int] = (100, 100, 100),
-        thumb_color: tuple[int, int, int] = (180, 180, 180),
+        bar_color: tuple[int, int, int] = SLIDER_TRACK,
+        thumb_color: tuple[int, int, int] = ICON_BUTTON_BG,
     ):
         self.rect = (left, bottom, width, height)
         self.value = initial_value
         self.bar_color = bar_color
         self.thumb_color = thumb_color
-        self._text_on = arcade.Text(
-            "On", 0, 0, color=LABEL_COLOR, font_size=10,
-            anchor_x="center", anchor_y="center",
-        )
-        self._text_off = arcade.Text(
-            "Off", 0, 0, color=LABEL_COLOR, font_size=10,
-            anchor_x="center", anchor_y="center",
-        )
 
     def contains(self, x: float, y: float) -> bool:
         left, bottom, width, height = self.rect
@@ -55,13 +45,13 @@ class Switch:
 
     def draw(self) -> None:
         left, bottom, width, height = self.rect
-        color = self.thumb_color if self.value else self.bar_color
-        rect_filled(left, bottom, width, height, color)
-        cx = left + width / 2
-        cy = bottom + height / 2
+        left, bottom, width, height = ipx(left), ipx(bottom), ipx(width), ipx(height)
+        track_h = max(4, height // 3)
+        track_b = bottom + (height - track_h) // 2
+        rect_filled(left, track_b, width, track_h, self.bar_color)
+        thumb = min(width, height) - 2
         if self.value:
-            self._text_on.x, self._text_on.y = cx, cy
-            self._text_on.draw()
+            tx = left + width - thumb
         else:
-            self._text_off.x, self._text_off.y = cx, cy
-            self._text_off.draw()
+            tx = left
+        rect_filled(tx, bottom + (height - thumb) // 2, thumb, thumb, self.thumb_color)

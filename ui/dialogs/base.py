@@ -1,44 +1,81 @@
 """Dialog chrome and z-order manager."""
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Iterator
 
-import arcade
-
-from draw_compat import rect_filled, rect_outline
+from draw_compat import ipx, round_rect_filled
+from ui.font import ui_text
+from ui.hotkeys import hint_for
 from ui.theme import (
-    DIALOG_BG,
-    DIALOG_BORDER,
-    DIALOG_TITLE_BG,
+    CHIP_FILL,
+    CHIP_FILL_ACTIVE,
+    CHIP_H,
+    CHIP_RADIUS,
+    CHIP_STROKE,
+    CHIP_W,
+    DIALOG_BORDER_PX,
+    DIALOG_FOOTER_H,
+    DIALOG_HEADER_H,
+    DIALOG_RADIUS,
+    DIALOG_SHELL,
+    DIALOG_WELL,
+    FONT_HOTKEY,
+    FONT_TITLE,
+    FONT_TYPE,
+    FORM_PAD,
     LABEL_COLOR,
-    TITLE_BAR_HEIGHT,
-    X_BUTTON_SIZE,
 )
 from ui.widgets.dropdown import Dropdown
 from ui.widgets.protocols import ExpandedHitWidget, FocusableWidget
+from ui.widgets.text import TextBox
 
 
 class Dialog:
-    """Base dialog: draggable, title bar, X close. Position (x, y) is top-left in screen coords."""
+    """Rounded-rect overlay: Esc close, typable title, Ctrl isolate chip. (x, y) is top-left."""
 
-    def __init__(self, x: float, y: float, width: float, height: float, title: str):
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        title: str,
+        *,
+        kind: str = "",
+        title_editable: bool = False,
+    ):
         self.x = x
-        self.y = y  # top edge
+        self.y = y
         self.width = width
         self.height = height
         self.title = title
+        self.kind = kind
         self.visible = True
         self.widgets: list = []
+        self.labels: list = []
         self._dragging = False
         self._drag_start: tuple[float, float] | None = None
         self._on_close: Callable | None = None
         self._dialog_manager: DialogManager | None = None
-        self._title_text = arcade.Text(
-            title, 0, 0, color=LABEL_COLOR, font_size=12, anchor_x="left", anchor_y="center",
+        self._kind_text = ui_text(
+            kind, size=FONT_TYPE, color=LABEL_COLOR, anchor_x="center", anchor_y="center",
         )
-        self._x_text = arcade.Text(
-            "X", 0, 0, color=LABEL_COLOR, font_size=11, anchor_x="center", anchor_y="center",
+        self._title_text = ui_text(
+            title, size=FONT_TITLE, color=LABEL_COLOR, anchor_x="center", anchor_y="center",
         )
+        self._esc_text = ui_text(
+            hint_for("escape", "Esc"), size=FONT_HOTKEY, color=LABEL_COLOR,
+            anchor_x="center", anchor_y="center",
+        )
+        self._ctrl_text = ui_text(
+            hint_for("select_toggle_overlay", "Ctrl"), size=FONT_HOTKEY, color=LABEL_COLOR,
+            anchor_x="center", anchor_y="center",
+        )
+        self._title_box: TextBox | None = None
+        if title_editable:
+            self._title_box = TextBox(
+                0, 0, 120, 24, title, chrome=False, font_size=FONT_TITLE, align="center",
+            )
 
     def set_dialog_manager(self, manager: "DialogManager") -> None:
         self._dialog_manager = manager
@@ -47,7 +84,6 @@ class Dialog:
         self._on_close = cb
 
     def clamp_to_window(self, window_w: float, window_h: float, margin: float = 8) -> None:
-        """Adjust x, y so the entire dialog stays within window bounds with optional margin."""
         self.x = max(margin, min(window_w - self.width - margin, self.x))
         self.y = max(self.height + margin, min(window_h - margin, self.y))
 
@@ -60,7 +96,6 @@ class Dialog:
         return left <= x <= left + self.width and bottom <= y <= self.y
 
     def extended_contains(self, x: float, y: float) -> bool:
-        """True if point is in dialog rect or in any open dropdown's expanded list."""
         if self.contains(x, y):
             return True
         for w in self.widgets:
@@ -68,43 +103,99 @@ class Dialog:
                 return True
         return False
 
-    def _x_button_rect(self) -> tuple[float, float, float, float]:
-        """(left, bottom, width, height) for X button."""
-        left = self.x + self.width - X_BUTTON_SIZE - 4
-        bottom = self.y - TITLE_BAR_HEIGHT + (TITLE_BAR_HEIGHT - X_BUTTON_SIZE) / 2
-        return (left, bottom, X_BUTTON_SIZE, X_BUTTON_SIZE)
+    def _iter_widgets(self) -> Iterator:
+        if self._title_box is not None:
+            yield self._title_box
+        yield from self.widgets
 
-    def _title_bar_contains(self, x: float, y: float) -> bool:
-        left = self.x
-        bottom = self.y - TITLE_BAR_HEIGHT
-        return left <= x <= left + self.width and bottom <= y <= self.y
+    def _esc_rect(self) -> tuple[int, int, int, int]:
+        left = ipx(self.x) + FORM_PAD
+        bottom = ipx(self.y - DIALOG_HEADER_H / 2 - CHIP_H / 2)
+        return left, bottom, CHIP_W, CHIP_H
 
-    def _x_button_contains(self, x: float, y: float) -> bool:
-        l, b, w, h = self._x_button_rect()
+    def _ctrl_rect(self) -> tuple[int, int, int, int]:
+        left = ipx(self.x) + FORM_PAD
+        bottom = ipx(self._bottom() + DIALOG_FOOTER_H / 2 - CHIP_H / 2)
+        return left, bottom, CHIP_W, CHIP_H
+
+    def _header_contains(self, x: float, y: float) -> bool:
+        return self.x <= x <= self.x + self.width and self.y - DIALOG_HEADER_H <= y <= self.y
+
+    def _chip_contains(self, rect: tuple[int, int, int, int], x: float, y: float) -> bool:
+        l, b, w, h = rect
         return l <= x <= l + w and b <= y <= b + h
 
+    def _layout_title_box(self) -> None:
+        if self._title_box is None:
+            return
+        esc_l, _, esc_w, _ = self._esc_rect()
+        width = min(220, ipx(self.width) - FORM_PAD * 2 - CHIP_W)
+        left = ipx(self.x + (self.width - width) / 2)
+        esc_right = esc_l + esc_w + 4
+        if left < esc_right:
+            left = esc_right
+            width = max(40, ipx(self.x + self.width) - FORM_PAD - left)
+        if self.kind:
+            bottom = ipx(self.y - DIALOG_HEADER_H + 8)
+            height = 26
+        else:
+            bottom = ipx(self.y - DIALOG_HEADER_H / 2 - 12)
+            height = 24
+        self._title_box.rect = (left, bottom, width, height)
+
     def _layout_widgets(self) -> None:
-        """Override in subclasses to position widgets. Called before draw and when position changes."""
         pass
+
+    def dismiss(self) -> None:
+        self.visible = False
+        if self._on_close:
+            self._on_close(self)
+
+    def _draw_chip(self, rect: tuple[int, int, int, int], label, filled: bool) -> None:
+        l, b, w, h = rect
+        round_rect_filled(l, b, w, h, CHIP_STROKE, CHIP_RADIUS)
+        inner = DIALOG_BORDER_PX
+        fill = CHIP_FILL_ACTIVE if filled else CHIP_FILL
+        round_rect_filled(l + inner, b + inner, w - inner * 2, h - inner * 2, fill, max(CHIP_RADIUS - inner, 0))
+        label.x = l + w / 2
+        label.y = b + h / 2
+        label.draw()
 
     def draw(self) -> None:
         if not self.visible:
             return
         self._layout_widgets()
-        left = self.x
-        bottom = self._bottom()
-        rect_filled(left, bottom, self.width, self.height, DIALOG_BG)
-        rect_outline(left, bottom, self.width, self.height, DIALOG_BORDER, 1)
-        rect_filled(left, self.y - TITLE_BAR_HEIGHT, self.width, TITLE_BAR_HEIGHT, DIALOG_TITLE_BG)
-        self._title_text.value = self.title
-        self._title_text.x = left + 8
-        self._title_text.y = bottom + self.height - TITLE_BAR_HEIGHT / 2 - 4
-        self._title_text.draw()
-        xl, xb, xw, xh = self._x_button_rect()
-        rect_filled(xl, xb, xw, xh, (120, 80, 80))
-        self._x_text.x = xl + xw / 2
-        self._x_text.y = xb + xh / 2
-        self._x_text.draw()
+        self._layout_title_box()
+        left, bottom = ipx(self.x), ipx(self._bottom())
+        width, height = ipx(self.width), ipx(self.height)
+        round_rect_filled(left, bottom, width, height, DIALOG_SHELL, DIALOG_RADIUS)
+        well_l = left + DIALOG_BORDER_PX
+        well_w = width - DIALOG_BORDER_PX * 2
+        well_b = bottom + DIALOG_FOOTER_H + DIALOG_BORDER_PX
+        well_h = height - DIALOG_HEADER_H - DIALOG_FOOTER_H - DIALOG_BORDER_PX * 2
+        if well_h > 0:
+            round_rect_filled(well_l, well_b, well_w, well_h, DIALOG_WELL, DIALOG_RADIUS)
+        isolate = bool(self._dialog_manager and self._dialog_manager.isolate_active)
+        self._draw_chip(self._esc_rect(), self._esc_text, False)
+        self._draw_chip(self._ctrl_rect(), self._ctrl_text, isolate)
+        cx = left + width / 2
+        if self.kind:
+            self._kind_text.value = self.kind
+            self._kind_text.x = cx
+            self._kind_text.y = ipx(self.y - 14)
+            self._kind_text.draw()
+        if self._title_box is not None:
+            self._title_box.draw()
+        else:
+            self._title_text.value = self.title
+            self._title_text.x = cx
+            if self.kind:
+                self._title_text.y = ipx(self.y - 38)
+            else:
+                self._title_text.y = ipx(self.y - DIALOG_HEADER_H / 2)
+            self._title_text.draw()
+        for label in self.labels:
+            label.draw()
         for w in self.widgets:
             w.draw()
         for w in self.widgets:
@@ -115,22 +206,25 @@ class Dialog:
         if not self.extended_contains(x, y) or not self.visible:
             return False
         self._layout_widgets()
-        if self._x_button_contains(x, y):
-            self.visible = False
-            if self._on_close:
-                self._on_close(self)
+        self._layout_title_box()
+        if self._chip_contains(self._esc_rect(), x, y):
+            self.dismiss()
             return True
-        if self._title_bar_contains(x, y):
+        if self._chip_contains(self._ctrl_rect(), x, y):
+            if self._dialog_manager and self._dialog_manager.on_isolate_toggle:
+                self._dialog_manager.on_isolate_toggle()
+            return True
+        for w in self._iter_widgets():
+            if w.on_press(x, y):
+                if self._dialog_manager and isinstance(w, FocusableWidget):
+                    self._dialog_manager.set_focused_widget(w)
+                return True
+        if self._header_contains(x, y):
             self._dragging = True
             self._drag_start = (self.x - x, self.y - y)
             if self._dialog_manager:
                 self._dialog_manager.set_focused_widget(None)
             return True
-        for w in self.widgets:
-            if w.on_press(x, y):
-                if self._dialog_manager and isinstance(w, FocusableWidget):
-                    self._dialog_manager.set_focused_widget(w)
-                return True
         if self._dialog_manager:
             self._dialog_manager.set_focused_widget(None)
         return True
@@ -163,6 +257,8 @@ class DialogManager:
         self._dialogs: list[Dialog] = []
         self._focused_widget: FocusableWidget | None = None
         self._get_window_size = get_window_size
+        self.isolate_active = False
+        self.on_isolate_toggle: Callable[[], None] | None = None
 
     def set_focused_widget(self, widget: FocusableWidget | None) -> None:
         if self._focused_widget is not None:
@@ -189,18 +285,15 @@ class DialogManager:
             self._dialogs.remove(dialog)
         dialog.visible = False
         if self._focused_widget is not None:
-            for w in dialog.widgets:
+            for w in dialog._iter_widgets():
                 if w is self._focused_widget:
                     self.set_focused_widget(None)
                     break
 
     def close_all(self) -> None:
-        """Dismiss every open dialog (same cleanup as the X button)."""
         for d in list(self._dialogs):
-            d.visible = False
-            if d._on_close:
-                d._on_close(d)
-            elif d in self._dialogs:
+            d.dismiss()
+            if d in self._dialogs:
                 self.close(d)
         self._dialogs.clear()
         self.set_focused_widget(None)
@@ -208,24 +301,19 @@ class DialogManager:
     def close_top(self) -> bool:
         if not self._dialogs:
             return False
-        top = self._dialogs.pop()
-        top.visible = False
-        if self._focused_widget is not None:
-            for w in top.widgets:
-                if w is self._focused_widget:
-                    self.set_focused_widget(None)
-                    break
+        top = self._dialogs[-1]
+        top.dismiss()
+        if top in self._dialogs:
+            self.close(top)
         return True
 
     def contains_point(self, x: float, y: float) -> bool:
-        """True if (x, y) is over any visible dialog (including open dropdowns)."""
         for d in self._dialogs:
             if d.visible and d.extended_contains(x, y):
                 return True
         return False
 
     def iter_open(self):
-        """Visible dialogs, bottom to top."""
         for d in self._dialogs:
             if d.visible:
                 yield d

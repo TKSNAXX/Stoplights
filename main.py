@@ -56,6 +56,7 @@ from sim.constants import (
 from sim.game import GameState
 from sim import persistence, world
 from sim.scenario import clamp_color_hue, clamp_color_sat
+from ui.font import load_ui_font
 from ui import (
     CameraController,
     CameraTool,
@@ -107,6 +108,7 @@ def _car_direction_index(car) -> int:
 class StoplightsWindow(arcade.Window):
     def __init__(self):
         super().__init__(800, 600, "Stoplights", resizable=True)
+        load_ui_font()
         arcade.set_background_color(arcade.color.BLACK)
         self.game = GameState()
         self._edge_pan_enabled = True
@@ -159,6 +161,7 @@ class StoplightsWindow(arcade.Window):
         self._tool_manager.register("new_lane", CreateLaneTool(self))
         self._tool_manager.register("new_place", CreatePlaceTool(self))
         self._tool_manager.register("new_intersection", CreateIntersectionTool(self))
+        self._dialog_manager.on_isolate_toggle = self._toggle_dialog_isolate
 
         assets_dir = Path(__file__).resolve().parent / "assets"
         self._tile_set = TileSet(assets_dir / "ortho")
@@ -371,6 +374,13 @@ class StoplightsWindow(arcade.Window):
             return
         self._hint_action = action
         self._select_hint.show(label)
+
+    def _toggle_dialog_isolate(self) -> None:
+        sel = self._tool_manager.select
+        if not hasattr(sel, "isolate"):
+            return
+        sel.isolate = not bool(sel.isolate)
+        self._show_tool_hint("select", "Isolate" if sel.isolate else "Default")
 
     def on_config_change(self, rebuild_world: bool = False) -> None:
         self._on_config_change(rebuild_world=rebuild_world)
@@ -954,6 +964,7 @@ class StoplightsWindow(arcade.Window):
         if rect is not None:
             l, b, w, h = rect
             self._select_hint.draw(l + w + TOOLBAR_HINT_GAP, b + h / 2)
+        self._dialog_manager.isolate_active = bool(getattr(self._tool_manager.select, "isolate", False))
         self._dialog_manager.draw_all()
 
     def _draw_world_pass(self, center_x: float, center_y: float) -> None:

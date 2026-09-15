@@ -3,13 +3,22 @@ from __future__ import annotations
 
 from typing import Callable
 
-import arcade
-
 from sim.scenario import clamp_color_hue, clamp_color_sat
 from ui.dialogs.base import Dialog
-from ui.theme import COLOR_HUE_NUM_STEPS, COLOR_SAT_NUM_STEPS, LABEL_COLOR
+from ui.dialogs.layout import ParamLabel, dialog_height, form_row
+from ui.theme import (
+    COLOR_HUE_NUM_STEPS,
+    COLOR_SAT_NUM_STEPS,
+    DATUM_HEIGHT,
+    DATUM_WIDTH,
+    DIALOG_WIDTH,
+    FORM_GAP,
+    SLIDER_THUMB,
+    SLIDER_TRACK,
+)
 from ui.widgets.slider import Slider
 from ui.widgets.switch import Switch
+from ui.widgets.text import DatumBox
 
 
 class SettingsDialog(Dialog):
@@ -27,22 +36,24 @@ class SettingsDialog(Dialog):
         on_grass_close_change: Callable[[bool], None] | None = None,
         on_color_change: Callable[[int, float], None] | None = None,
     ):
-        super().__init__(x, y, 240, 210, "Settings")
+        super().__init__(x, y, DIALOG_WIDTH, dialog_height(4), "Settings")
         self._on_edge_pan_change = on_edge_pan_change
         self._on_grass_close_change = on_grass_close_change
         self._on_color_change = on_color_change
-        self._switch = Switch(0, 0, 50, 24, initial_value=edge_pan_enabled)
-        self._grass_switch = Switch(0, 0, 50, 24, initial_value=grass_close_enabled)
+        self._switch = Switch(0, 0, 50, DATUM_HEIGHT, initial_value=edge_pan_enabled)
+        self._grass_switch = Switch(0, 0, 50, DATUM_HEIGHT, initial_value=grass_close_enabled)
         hue_step = min(COLOR_HUE_NUM_STEPS - 1, clamp_color_hue(color_hue) // 10)
         sat_step = max(0, min(COLOR_SAT_NUM_STEPS - 1, int(clamp_color_sat(color_sat) * 10.0 + 0.5)))
-        self._hue_slider = Slider(0, 0, 160, 20, COLOR_HUE_NUM_STEPS, hue_step, (100, 100, 100), (180, 180, 180))
-        self._sat_slider = Slider(0, 0, 160, 20, COLOR_SAT_NUM_STEPS, sat_step, (100, 100, 100), (180, 180, 180))
-        self._label = arcade.Text("Edge pan", 0, 0, color=LABEL_COLOR, font_size=10, anchor_x="left", anchor_y="center")
-        self._grass_label = arcade.Text("Grass close", 0, 0, color=LABEL_COLOR, font_size=10, anchor_x="left", anchor_y="center")
-        self._colors_label = arcade.Text("Colors", 0, 0, color=LABEL_COLOR, font_size=10, anchor_x="left", anchor_y="center")
-        self._hue_label = arcade.Text("", 0, 0, color=LABEL_COLOR, font_size=10, anchor_x="left", anchor_y="center")
-        self._sat_label = arcade.Text("", 0, 0, color=LABEL_COLOR, font_size=10, anchor_x="left", anchor_y="center")
+        self._hue_slider = Slider(0, 0, 160, DATUM_HEIGHT, COLOR_HUE_NUM_STEPS, hue_step, SLIDER_TRACK, SLIDER_THUMB)
+        self._sat_slider = Slider(0, 0, 160, DATUM_HEIGHT, COLOR_SAT_NUM_STEPS, sat_step, SLIDER_TRACK, SLIDER_THUMB)
+        self._hue_datum = DatumBox()
+        self._sat_datum = DatumBox()
+        self._label = ParamLabel("Edge Pan")
+        self._grass_label = ParamLabel("Grass Close")
+        self._hue_label = ParamLabel("Hue")
+        self._sat_label = ParamLabel("Sat")
         self.widgets = [self._switch, self._grass_switch, self._hue_slider, self._sat_slider]
+        self.labels = [self._label, self._grass_label, self._hue_label, self._sat_label]
         self._last_hue = self._hue_degrees()
         self._last_sat = self._sat_value()
 
@@ -62,35 +73,32 @@ class SettingsDialog(Dialog):
             self._on_color_change(hue, sat)
 
     def _layout_widgets(self) -> None:
-        left = self.x + 12
-        content_top = self.y - 32
-        label_w = 88
-        self._label.x = left
-        self._label.y = content_top - 12
-        self._switch.rect = (left + label_w, content_top - 24, 50, 24)
-        self._grass_label.x = left
-        self._grass_label.y = content_top - 44
-        self._grass_switch.rect = (left + label_w, content_top - 56, 50, 24)
-        self._colors_label.x = left
-        self._colors_label.y = content_top - 84
-        self._hue_label.x = left
-        self._hue_label.y = content_top - 104
-        self._hue_slider.rect = (left, content_top - 124, 216, 20)
-        self._sat_label.x = left
-        self._sat_label.y = content_top - 144
-        self._sat_slider.rect = (left, content_top - 164, 216, 20)
+        r0 = form_row(self, 0)
+        self._label.place(r0.label_x, r0.label_y)
+        self._switch.rect = (r0.control_left, r0.control_bottom, 50, DATUM_HEIGHT)
+        r1 = form_row(self, 1)
+        self._grass_label.place(r1.label_x, r1.label_y)
+        self._grass_switch.rect = (r1.control_left, r1.control_bottom, 50, DATUM_HEIGHT)
+        r2 = form_row(self, 2)
+        self._hue_label.place(r2.label_x, r2.label_y)
+        self._hue_datum.rect = (r2.control_left, r2.control_bottom, DATUM_WIDTH, DATUM_HEIGHT)
+        hs = r2.control_left + DATUM_WIDTH + FORM_GAP
+        hw = max(24, r2.control_width - DATUM_WIDTH - FORM_GAP)
+        self._hue_slider.rect = (hs, r2.control_bottom, hw, DATUM_HEIGHT)
+        r3 = form_row(self, 3)
+        self._sat_label.place(r3.label_x, r3.label_y)
+        self._sat_datum.rect = (r3.control_left, r3.control_bottom, DATUM_WIDTH, DATUM_HEIGHT)
+        ss = r3.control_left + DATUM_WIDTH + FORM_GAP
+        sw = max(24, r3.control_width - DATUM_WIDTH - FORM_GAP)
+        self._sat_slider.rect = (ss, r3.control_bottom, sw, DATUM_HEIGHT)
 
     def draw(self) -> None:
-        self._layout_widgets()
         hue_disp = self._hue_slider.value * 10
-        self._hue_label.value = f"Hue: {hue_disp}°"
-        self._sat_label.value = f"Sat: {self._sat_slider.value * 10}%"
+        self._hue_datum.set_value(f"{hue_disp}°")
+        self._sat_datum.set_value(f"{self._sat_slider.value * 10}%")
         super().draw()
-        self._label.draw()
-        self._grass_label.draw()
-        self._colors_label.draw()
-        self._hue_label.draw()
-        self._sat_label.draw()
+        self._hue_datum.draw()
+        self._sat_datum.draw()
 
     def on_mouse_press(self, x: float, y: float) -> bool:
         self._layout_widgets()

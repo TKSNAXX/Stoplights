@@ -3,15 +3,23 @@ from __future__ import annotations
 
 from typing import Callable
 
-import arcade
-
-from draw_compat import rect_filled, rect_outline
-from ui.theme import DROPDOWN_ROW_HEIGHT, LABEL_COLOR, MUTED_COLOR
+from draw_compat import ipx, rect_filled
+from ui.font import ui_text
+from ui.theme import (
+    DATUM_FILL,
+    DATUM_PAD_X,
+    DROPDOWN_ROW_HEIGHT,
+    FONT_DATUM,
+    ICON_BUTTON_FG,
+    LABEL_COLOR,
+)
+from ui.widgets.icons import draw_icon
+from ui.widgets.text import draw_datum
 
 
 class Dropdown:
     """
-    Option selector: shows current value in a box; click to expand list, click option to select.
+    Option selector: current value in a datum box; click to expand list.
     Rect (left, bottom, width, height). options is list[str]; value is selected index.
     """
 
@@ -30,14 +38,8 @@ class Dropdown:
         self.value = max(0, min(initial_index, len(self.options) - 1))
         self._on_change = on_change
         self._open = False
-        self._text = arcade.Text(
-            "", 0, 0, color=LABEL_COLOR, font_size=10,
-            anchor_x="left", anchor_y="center",
-        )
-        self._arrow = arcade.Text(
-            "▼", 0, 0, color=MUTED_COLOR, font_size=9, anchor_x="center", anchor_y="center"
-        )
-        self._option_texts: list[arcade.Text] = []
+        self._text = ui_text("", size=FONT_DATUM, color=LABEL_COLOR, anchor_x="left", anchor_y="center")
+        self._option_texts: list = []
         self._option_texts_key: tuple[str, ...] | None = None
 
     def contains(self, x: float, y: float) -> bool:
@@ -57,7 +59,6 @@ class Dropdown:
         return self._open
 
     def expanded_contains(self, x: float, y: float) -> bool:
-        """Public expanded hit area (includes open list rows)."""
         return self.contains(x, y)
 
     def set_value(self, index: int) -> None:
@@ -69,15 +70,14 @@ class Dropdown:
 
     def draw(self) -> None:
         left, bottom, width, height = self.rect
-        rect_filled(left, bottom, width, height, (70, 70, 85))
-        rect_outline(left, bottom, width, height, (100, 100, 120), 1)
+        left, bottom, width, height = ipx(left), ipx(bottom), ipx(width), ipx(height)
+        draw_datum(left, bottom, width, height)
         self._text.value = self.options[self.value] if self.options else "-"
-        self._text.x = left + 6
+        self._text.x = left + DATUM_PAD_X
         self._text.y = bottom + height / 2
         self._text.draw()
-        self._arrow.x = left + width - 12
-        self._arrow.y = bottom + height / 2
-        self._arrow.draw()
+        chev = 12
+        draw_icon("chevron", left + width - chev - 4, bottom + (height - chev) / 2, chev, ICON_BUTTON_FG)
 
     def _ensure_option_texts(self) -> None:
         key = tuple(self.options)
@@ -85,26 +85,24 @@ class Dropdown:
             return
         self._option_texts_key = key
         self._option_texts = [
-            arcade.Text(opt, 0, 0, color=LABEL_COLOR, font_size=10, anchor_x="left", anchor_y="center")
+            ui_text(opt, size=FONT_DATUM, color=LABEL_COLOR, anchor_x="left", anchor_y="center")
             for opt in self.options
         ]
 
     def draw_expanded_list(self) -> None:
-        """Draw open option rows on top of sibling widgets; Dialog calls this after all widget.draw()."""
         if not self._open or not self.options:
             return
         self._ensure_option_texts()
         left, bottom, width, height = self.rect
+        left, bottom, width, height = ipx(left), ipx(bottom), ipx(width), ipx(height)
         list_top = bottom + height
         for i, opt in enumerate(self.options):
             row_bottom = list_top - (i + 1) * DROPDOWN_ROW_HEIGHT
-            rect_filled(left, row_bottom, width, DROPDOWN_ROW_HEIGHT, (55, 55, 65))
-            rect_outline(left, row_bottom, width, DROPDOWN_ROW_HEIGHT, (80, 80, 95), 1)
-            if i == self.value:
-                rect_filled(left + 1, row_bottom + 1, width - 2, DROPDOWN_ROW_HEIGHT - 2, (90, 90, 110))
+            fill = (48, 48, 58) if i == self.value else DATUM_FILL
+            rect_filled(left, row_bottom, width, DROPDOWN_ROW_HEIGHT, fill)
             item_text = self._option_texts[i]
             item_text.value = opt
-            item_text.x = left + 6
+            item_text.x = left + DATUM_PAD_X
             item_text.y = row_bottom + DROPDOWN_ROW_HEIGHT / 2
             item_text.draw()
 

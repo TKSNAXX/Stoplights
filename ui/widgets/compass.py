@@ -6,9 +6,22 @@ from typing import Callable
 
 import arcade
 
-from draw_compat import rect_filled, rect_outline
+from draw_compat import ipx, rect_filled
+from ui.font import ui_text
+from ui.theme import (
+    DATUM_PAD_X,
+    DATUM_WIDTH,
+    FONT_DATUM,
+    ICON_BUTTON_BG,
+    ICON_BUTTON_DISABLED_BG,
+    ICON_BUTTON_DISABLED_FG,
+    ICON_BUTTON_FG,
+    ICON_BUTTON_GAP,
+    ICON_BUTTON_SIZE,
+    LABEL_COLOR,
+)
+from ui.widgets.text import draw_datum
 from sim.constants import TILE_H, TILE_W
-from ui.theme import DIALOG_BORDER, LABEL_COLOR, WIDGET_BORDER, WIDGET_FILL
 
 _COMPASS_ISO_DIRS: dict[str, tuple[float, float]] = {
     "W": (-TILE_W, -TILE_H),
@@ -20,9 +33,7 @@ _COMPASS_ISO_DIRS: dict[str, tuple[float, float]] = {
 
 class CompassSelect:
     """
-    Tile selector control.
-    Displays (x, y) plus directional buttons in one row: W, E, N, S.
-    Coordinates are keyboard-editable. Arrow icons use iso projection.
+    Tile selector: dark (x, y) datum plus four white iso-direction squares.
     locked_axis:
       - "x": disable E/W (x fixed)
       - "y": disable N/S (y fixed)
@@ -40,16 +51,18 @@ class CompassSelect:
         locked_axis: str | None = None,
         min_val: int = -200,
         max_val: int = 200,
+        datum_width: float = DATUM_WIDTH,
     ):
         self.rect = (left, bottom, width, height)
         self.value = (int(value[0]), int(value[1]))
         self.locked_axis = locked_axis
+        self.datum_width = datum_width
         self._on_change = on_change
         self._min_val = min_val
         self._max_val = max_val
         self._focused = False
         self._text_buffer = f"{self.value[0]}, {self.value[1]}"
-        self._text = arcade.Text("", 0, 0, color=LABEL_COLOR, font_size=10, anchor_x="left", anchor_y="center")
+        self._text = ui_text("", size=FONT_DATUM, color=LABEL_COLOR, anchor_x="left", anchor_y="center")
 
     def set_value(self, value: tuple[int, int]) -> None:
         self.value = (int(value[0]), int(value[1]))
@@ -62,10 +75,8 @@ class CompassSelect:
                 self._commit_text()
 
     def _box_rect(self) -> tuple[float, float, float, float]:
-        """Text box portion: (left, bottom, width, height)."""
-        left, bottom, width, height = self.rect
-        text_w = min(64.0, width * 0.35)
-        return (left, bottom, text_w + 6, height)
+        left, bottom, _, height = self.rect
+        return (left, bottom, self.datum_width, height)
 
     def _commit_text(self) -> None:
         parts = self._text_buffer.replace(",", " ").split()
@@ -92,12 +103,10 @@ class CompassSelect:
         ]
 
     def _button_rect(self, idx: int) -> tuple[float, float, float, float]:
-        left, bottom, width, height = self.rect
-        text_w = min(64.0, width * 0.35)
-        btn_left = left + text_w + 6
-        btn_width_total = max(40.0, width - (btn_left - left))
-        btn_w = max(18.0, btn_width_total / 4 - 2)
-        return (btn_left + idx * (btn_w + 2), bottom, btn_w, height)
+        left, bottom, _, height = self.rect
+        btn_left = left + self.datum_width + ICON_BUTTON_GAP
+        y = bottom + (height - ICON_BUTTON_SIZE) / 2
+        return (btn_left + idx * (ICON_BUTTON_SIZE + ICON_BUTTON_GAP), y, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE)
 
     def _is_disabled(self, key: str) -> bool:
         if self.locked_axis == "x":
@@ -107,7 +116,6 @@ class CompassSelect:
         return False
 
     def _draw_iso_arrow(self, cx: float, cy: float, key: str, color: tuple[int, int, int]) -> None:
-        """Draw arrow with head and tail pointing in iso direction for key."""
         dx, dy = _COMPASS_ISO_DIRS[key]
         length = math.hypot(dx, dy)
         if length < 0.01:
@@ -115,32 +123,22 @@ class CompassSelect:
         dx, dy = dx / length, dy / length
         perp_x = -dy
         perp_y = dx
-        head_size = 7.0
-        base_half = 5.0
-        tail_len = 5.0
-        tail_half = 1.5
+        head_size = 5.0
+        base_half = 3.5
+        tail_len = 4.0
+        tail_half = 1.0
         tip_x = cx + dx * head_size
         tip_y = cy + dy * head_size
         base_x = cx - dx * head_size * 0.3
         base_y = cy - dy * head_size * 0.3
         v1 = (base_x + perp_x * base_half, base_y + perp_y * base_half)
         v2 = (base_x - perp_x * base_half, base_y - perp_y * base_half)
-        arcade.draw_triangle_filled(
-            tip_x, tip_y,
-            v1[0], v1[1],
-            v2[0], v2[1],
-            color,
-        )
+        arcade.draw_triangle_filled(tip_x, tip_y, v1[0], v1[1], v2[0], v2[1], color)
         tail_tip_x = cx - dx * (head_size * 0.3 + tail_len)
         tail_tip_y = cy - dy * (head_size * 0.3 + tail_len)
         t1 = (base_x + perp_x * tail_half, base_y + perp_y * tail_half)
         t2 = (base_x - perp_x * tail_half, base_y - perp_y * tail_half)
-        arcade.draw_triangle_filled(
-            tail_tip_x, tail_tip_y,
-            t1[0], t1[1],
-            t2[0], t2[1],
-            color,
-        )
+        arcade.draw_triangle_filled(tail_tip_x, tail_tip_y, t1[0], t1[1], t2[0], t2[1], color)
 
     def contains(self, x: float, y: float) -> bool:
         left, bottom, width, height = self.rect
@@ -201,20 +199,17 @@ class CompassSelect:
         return False
 
     def draw(self) -> None:
-        left, bottom, width, height = self.rect
         bx, by, bw, bh = self._box_rect()
-        rect_filled(bx, by, bw, bh, WIDGET_FILL)
-        rect_outline(bx, by, bw, bh, DIALOG_BORDER if self._focused else WIDGET_BORDER, 1)
+        draw_datum(bx, by, bw, bh)
         self._text.value = self._text_buffer if self._focused else f"({self.value[0]}, {self.value[1]})"
-        self._text.x = left + 2
-        self._text.y = bottom + height / 2
+        self._text.x = ipx(bx) + DATUM_PAD_X
+        self._text.y = ipx(by + bh / 2)
         self._text.draw()
         for i, (key, _label, _delta) in enumerate(self._button_defs()):
             l, b, w, h = self._button_rect(i)
             disabled = self._is_disabled(key)
-            bg = (70, 70, 80) if not disabled else (52, 52, 58)
-            border = (100, 100, 115) if not disabled else (78, 78, 88)
-            fg = (220, 220, 220) if not disabled else (130, 130, 140)
-            rect_filled(l, b, w, h, bg)
-            rect_outline(l, b, w, h, border, 1)
-            self._draw_iso_arrow(l + w / 2, b + h / 2, key, fg)
+            s = ipx(min(w, h))
+            l, b = ipx(l), ipx(b)
+            rect_filled(l, b, s, s, ICON_BUTTON_DISABLED_BG if disabled else ICON_BUTTON_BG)
+            fg = ICON_BUTTON_DISABLED_FG if disabled else ICON_BUTTON_FG
+            self._draw_iso_arrow(l + s / 2, b + s / 2, key, fg)

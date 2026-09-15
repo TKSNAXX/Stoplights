@@ -1,7 +1,8 @@
-"""Horizontal step slider."""
+"""Horizontal step slider: thin dark track, compact vertical thumb."""
 from __future__ import annotations
 
-from draw_compat import rect_filled
+from draw_compat import ipx, rect_filled
+from ui.theme import SLIDER_THUMB, SLIDER_THUMB_H, SLIDER_THUMB_W, SLIDER_TRACK, SLIDER_TRACK_H
 
 
 class Slider:
@@ -15,8 +16,8 @@ class Slider:
         height: float,
         num_steps: int,
         initial_step: int = 0,
-        bar_color: tuple[int, int, int] = (100, 100, 100),
-        thumb_color: tuple[int, int, int] = (180, 180, 180),
+        bar_color: tuple[int, int, int] = SLIDER_TRACK,
+        thumb_color: tuple[int, int, int] = SLIDER_THUMB,
     ):
         self.rect = (left, bottom, width, height)
         self.num_steps = max(1, num_steps)
@@ -40,17 +41,18 @@ class Slider:
 
     def draw(self) -> None:
         left, bottom, width, height = self.rect
-        bar_height = min(height * 0.35, 8)
-        bar_center_y = bottom + height / 2
-        bar_bottom = bar_center_y - bar_height / 2
-        rect_filled(left, bar_bottom, width, bar_height, self.bar_color)
-        thumb_w = 16
-        thumb_h = height - 4
+        left, bottom, width, height = ipx(left), ipx(bottom), ipx(width), ipx(height)
+        bar_h = SLIDER_TRACK_H
+        bar_bottom = bottom + (height - bar_h) // 2
+        rect_filled(left, bar_bottom, width, bar_h, self.bar_color)
+        thumb_w = SLIDER_THUMB_W
+        thumb_h = min(SLIDER_THUMB_H, height)
         t = self.value / (self.num_steps - 1) if self.num_steps > 1 else 0
-        thumb_left = left + thumb_w / 2 + t * (width - thumb_w) - thumb_w / 2
+        thumb_left = left + t * max(0, width - thumb_w)
         if self.num_steps <= 1:
             thumb_left = left + (width - thumb_w) / 2
-        rect_filled(thumb_left, bottom + 2, thumb_w, thumb_h, self.thumb_color)
+        thumb_bottom = bottom + (height - thumb_h) // 2
+        rect_filled(thumb_left, thumb_bottom, thumb_w, thumb_h, self.thumb_color)
 
     def on_press(self, x: float, y: float) -> bool:
         if not self.contains(x, y):
