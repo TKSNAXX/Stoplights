@@ -25,12 +25,12 @@ class CarDeetsDialog(Dialog):
     )
 
     def __init__(self, x: float, y: float, car, game) -> None:
-        super().__init__(x, y, DIALOG_WIDTH, dialog_height(10, extra=16), "Details", kind="Car")
+        super().__init__(x, y, DIALOG_WIDTH, dialog_height(10, extra=32), "Details", kind="Car")
         self._car = car
         self._game = game
         self._rows: list[tuple[ParamLabel, DatumBox, str]] = []
         for title, key in self._FIELDS:
-            wrap = key == "route"
+            wrap = key in ("route", "on")
             self._rows.append((ParamLabel(title), DatumBox(wrap=wrap), key))
         self.labels = [pair[0] for pair in self._rows]
 
@@ -85,7 +85,7 @@ class CarDeetsDialog(Dialog):
         control_left = None
         control_width = None
         for _i, (label, box, key) in enumerate(self._rows):
-            h = 40 if key == "route" else DATUM_HEIGHT
+            h = 40 if key in ("route", "on") else DATUM_HEIGHT
             row_h = max(FORM_ROW_H, h + 6)
             y -= row_h
             cy = y + row_h / 2

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from draw_compat import ipx, rect_filled
-from ui.theme import SLIDER_THUMB, SLIDER_THUMB_H, SLIDER_THUMB_W, SLIDER_TRACK, SLIDER_TRACK_H
+from ui.theme import SLIDER_THUMB, SLIDER_THUMB_H, SLIDER_THUMB_W, SLIDER_TRACK, SLIDER_TRACK_H, grade_ui_color
 
 
 class Slider:
@@ -52,7 +52,7 @@ class Slider:
         if self.num_steps <= 1:
             thumb_left = left + (width - thumb_w) / 2
         thumb_bottom = bottom + (height - thumb_h) // 2
-        rect_filled(thumb_left, thumb_bottom, thumb_w, thumb_h, self.thumb_color)
+        rect_filled(thumb_left, thumb_bottom, thumb_w, thumb_h, grade_ui_color(self.thumb_color))
 
     def on_press(self, x: float, y: float) -> bool:
         if not self.contains(x, y):

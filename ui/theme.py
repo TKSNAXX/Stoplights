@@ -1,7 +1,7 @@
 """Shared UI colours and metrics. Screen space: x right, y up."""
 
 NUMBER_BOX_HEIGHT = 22
-NUMBER_BOX_ARROW_SIZE = 22
+NUMBER_BOX_ARROW_SIZE = 16
 TEXT_BOX_MAX_LEN = 24
 
 DROPDOWN_ROW_HEIGHT = 22
@@ -38,17 +38,21 @@ ICON_BUTTON_DISABLED_BG = (186, 186, 194)
 ICON_BUTTON_DISABLED_FG = (120, 120, 128)
 ICON_BUTTON_SIZE = 22
 ICON_BUTTON_GAP = 4
+COMPASS_BUTTON_SIZE = 26
+
+ISOLATE_TINT_GREEN = (40, 190, 70, 140)
+ISOLATE_TINT_RED = (220, 55, 55, 140)
 
 SLIDER_TRACK = (36, 36, 44)
 SLIDER_THUMB = (210, 210, 218)
-SLIDER_SPAWN = (46, 186, 72)
-SLIDER_ATTRACT = (196, 48, 54)
+SLIDER_SPAWN = ISOLATE_TINT_GREEN[:3]
+SLIDER_ATTRACT = ISOLATE_TINT_RED[:3]
 SLIDER_TRACK_H = 2
 SLIDER_THUMB_W = 5
 SLIDER_THUMB_H = 16
 
 CHIP_W = 44
-CHIP_H = 24
+CHIP_H = 28
 CHIP_RADIUS = 8
 CHIP_STROKE = (214, 214, 222)
 CHIP_FILL = (62, 62, 74)
@@ -56,7 +60,7 @@ CHIP_FILL_ACTIVE = (92, 92, 108)
 
 FORM_LABEL_W = 90
 FORM_ROW_H = 28
-FORM_PAD = 12
+FORM_PAD = 16
 FORM_GAP = 8
 
 PLACE_SPAWN_VALUES = (0.5, 1.0, 2.0, 4.0, 8.0)
@@ -90,8 +94,6 @@ SELECT_POINTER_MAP_FILL = (255, 255, 255)
 SELECT_POINTER_MAP_STROKE = (16, 16, 16)
 SELECT_POINTER_CARS_FILL = (16, 16, 16)
 SELECT_POINTER_CARS_STROKE = (255, 255, 255)
-ISOLATE_TINT_GREEN = (40, 190, 70, 140)
-ISOLATE_TINT_RED = (220, 55, 55, 140)
 CAR_HOVER_RING = (255, 255, 255, 200)
 CAR_SELECT_RING = (255, 220, 40, 220)
 
@@ -116,3 +118,20 @@ MUTED_COLOR = (180, 180, 186)
 WIDGET_FILL = DATUM_FILL
 WIDGET_BORDER = (80, 80, 90)
 WARNING_COLOR = (220, 180, 100)
+
+_ui_hue = 0
+_ui_sat = 1.0
+
+
+def set_ui_grade(hue: float, sat: float) -> None:
+    """Keep dialog chrome in step with the world hue/sat grade."""
+    from sim.scenario import clamp_color_hue, clamp_color_sat
+    global _ui_hue, _ui_sat
+    _ui_hue = clamp_color_hue(hue)
+    _ui_sat = clamp_color_sat(sat)
+
+
+def grade_ui_color(color: tuple) -> tuple:
+    """Grade an RGB/RGBA fill used by coloured UI controls."""
+    from sim.scenario import grade_rgb
+    return grade_rgb(color, _ui_hue, _ui_sat)

@@ -7,6 +7,7 @@ import arcade
 
 from draw_compat import rect_filled, rect_outline
 from ui.chrome.camera_icons import draw_orbit_icon, draw_pan_arrows, draw_zoom_icon
+from ui.font import ui_text
 from ui.theme import (
     CAMERA_MODE_ORBIT,
     CAMERA_MODE_PAN,
@@ -70,10 +71,10 @@ class Toolbar:
         self._icons: dict[str, tuple[arcade.Sprite, arcade.SpriteList]] = {}
         self._fallbacks: dict[str, arcade.Text] = {}
         for item in items:
-            self._fallbacks[item.action] = arcade.Text(
+            self._fallbacks[item.action] = ui_text(
                 item.fallback or item.action[:1],
                 0, 0, color=LABEL_COLOR,
-                font_size=16 if item.action == "settings" else 18,
+                size=16 if item.action == "settings" else 18,
                 anchor_x="center", anchor_y="center",
             )
 

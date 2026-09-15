@@ -1,4 +1,4 @@
-"""Liberator loader for dialog type."""
+"""Liberation Sans loader for all UI type."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,8 +7,28 @@ import arcade
 
 from ui.theme import LABEL_COLOR
 
-_FAMILY = "Liberator"
+_FAMILY = "Liberation Sans"
 _LOADED = False
+
+_FONT_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
+_EXTRA_DIRS = (
+    Path(r"C:\Windows\Fonts"),
+    Path.home() / "AppData" / "Local" / "Microsoft" / "Windows" / "Fonts",
+)
+
+
+def _use_nearest_glyphs() -> None:
+    """Sample glyph atlases with GL_NEAREST so type stays crisp like the tiles."""
+    try:
+        from pyglet.font.base import Font
+        from pyglet.gl import GL_NEAREST
+    except Exception:
+        return
+    Font.texture_min_filter = GL_NEAREST
+    Font.texture_mag_filter = GL_NEAREST
+
+
+_use_nearest_glyphs()
 
 _FONT_DIR = Path(__file__).resolve().parent.parent / "assets" / "fonts"
 _EXTRA_DIRS = (
@@ -19,14 +39,9 @@ _EXTRA_DIRS = (
 
 def _candidate_files() -> list[Path]:
     names = (
-        "Liberator.ttf",
-        "Liberator.otf",
-        "liberator.ttf",
-        "liberator.otf",
-        "Liberator-Regular.ttf",
-        "Liberator-Regular.otf",
-        "Liberator-Medium.ttf",
-        "Liberator-Medium.otf",
+        "LiberationSans-Regular.ttf",
+        "LiberationSans-Regular.otf",
+        "LiberationSans.ttf",
     )
     out: list[Path] = []
     for folder in (_FONT_DIR, *_EXTRA_DIRS):
@@ -38,7 +53,7 @@ def _candidate_files() -> list[Path]:
                 out.append(p)
         try:
             for p in folder.iterdir():
-                if p.is_file() and "liberat" in p.name.lower() and p.suffix.lower() in (".ttf", ".otf"):
+                if p.is_file() and "liberationsans" in p.name.lower().replace("-", "") and p.suffix.lower() in (".ttf", ".otf"):
                     if p not in out:
                         out.append(p)
         except OSError:
@@ -47,8 +62,9 @@ def _candidate_files() -> list[Path]:
 
 
 def load_ui_font() -> str:
-    """Register Liberator from assets/fonts (or a system copy). Call once at startup."""
+    """Register Liberation Sans from assets/fonts (or a system copy). Call once at startup."""
     global _LOADED, _FAMILY
+    _use_nearest_glyphs()
     if _LOADED:
         return _FAMILY
     _LOADED = True

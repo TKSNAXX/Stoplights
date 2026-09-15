@@ -44,7 +44,7 @@ class SelectTool(Tool):
         self.host.toolbar.select_mode = self.mode
 
     def hides_world_overlay(self) -> bool:
-        return self.mode == MODE_MAP and self.isolate
+        return self.mode == MODE_MAP and self.isolate and any(self.host.dialogs.iter_open())
 
     def awareness_active(self) -> bool:
         return self.mode == MODE_CARS and self.awareness
@@ -56,8 +56,10 @@ class SelectTool(Tool):
         self.host.toolbar.select_mode = self.mode
         return "Cars" if self.mode == MODE_CARS else "Map"
 
-    def toggle_overlay(self) -> str:
+    def toggle_overlay(self) -> str | None:
         if self.mode == MODE_MAP:
+            if not any(self.host.dialogs.iter_open()):
+                return None
             self.isolate = not self.isolate
             return "Isolate" if self.isolate else "Default"
         self.awareness = not self.awareness

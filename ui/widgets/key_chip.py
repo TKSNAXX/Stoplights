@@ -1,9 +1,8 @@
 """Skeuomorphic keyboard-key chip."""
 from __future__ import annotations
 
-import arcade
-
 from draw_compat import rect_filled, rect_outline
+from ui.font import ui_text
 from ui.theme import (
     ESC_CHIP_HEIGHT,
     ESC_CHIP_LEFT,
@@ -18,8 +17,8 @@ class SkeuoKeyChip:
 
     def __init__(self, label: str, side: str = "left"):
         self._side = side
-        self._label = arcade.Text(
-            label, 0, 0, color=(30, 30, 35), font_size=12, anchor_x="center", anchor_y="center"
+        self._label = ui_text(
+            label, 0, 0, color=(30, 30, 35), size=12, anchor_x="center", anchor_y="center"
         )
 
     def set_label(self, label: str) -> None:

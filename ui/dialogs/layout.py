@@ -15,7 +15,7 @@ from ui.theme import (
     FORM_LABEL_W,
     FORM_PAD,
     FORM_ROW_H,
-    LABEL_COLOR,
+    MUTED_COLOR,
 )
 
 
@@ -63,10 +63,10 @@ def form_row(dialog, index: int, control_h: int = DATUM_HEIGHT) -> FormRow:
 
 
 class ParamLabel:
-    """Right-aligned parameter title (15px Liberator)."""
+    """Right-aligned parameter title."""
 
     def __init__(self, text: str):
-        self._text = ui_text(text, size=FONT_PARAM, color=LABEL_COLOR, anchor_x="right", anchor_y="center")
+        self._text = ui_text(text, size=FONT_PARAM, color=MUTED_COLOR, anchor_x="right", anchor_y="center")
 
     def place(self, x: float, y: float) -> None:
         self._text.x = ipx(x)

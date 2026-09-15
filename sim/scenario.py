@@ -79,6 +79,47 @@ def clamp_color_sat(value: Any) -> float:
     return int(v * 10.0 + 0.5) / 10.0
 
 
+def _rgb_to_hsv(r: float, g: float, b: float) -> tuple[float, float, float]:
+    """Match the world-grade GLSL rgb2hsv; channels in 0–1."""
+    if g >= b:
+        px, py, pz, pw = g, b, 0.0, -1.0 / 3.0
+    else:
+        px, py, pz, pw = b, g, -1.0, 2.0 / 3.0
+    if r >= px:
+        qx, qy, qz, qw = r, py, pz, px
+    else:
+        qx, qy, qz, qw = px, py, pw, r
+    d = qx - min(qw, qy)
+    e = 1.0e-10
+    h = abs(qz + (qw - qy) / (6.0 * d + e))
+    s = d / (qx + e)
+    return (h, s, qx)
+
+
+def _hsv_to_rgb(h: float, s: float, v: float) -> tuple[float, float, float]:
+    """Match the world-grade GLSL hsv2rgb; channels in 0–1."""
+    def _chan(offset: float) -> float:
+        p = abs(((h + offset) % 1.0) * 6.0 - 3.0)
+        return v * ((1.0 - s) + s * max(0.0, min(p - 1.0, 1.0)))
+    return (_chan(1.0), _chan(2.0 / 3.0), _chan(1.0 / 3.0))
+
+
+def grade_rgb(color: tuple, hue_deg: float, sat: float) -> tuple:
+    """Apply the world hue/sat grade to an RGB or RGBA tuple."""
+    hue = clamp_color_hue(hue_deg)
+    sat_m = clamp_color_sat(sat)
+    rgb = tuple(int(c) for c in color[:3])
+    alpha = color[3:]
+    if hue == 0 and abs(sat_m - 1.0) < 1e-9:
+        return rgb + tuple(alpha)
+    r, g, b = (c / 255.0 for c in rgb)
+    h, s, v = _rgb_to_hsv(r, g, b)
+    h = (h + (hue % 360) / 360.0) % 1.0
+    s = max(0.0, min(1.0, s * sat_m))
+    out = tuple(max(0, min(255, int(round(c * 255.0)))) for c in _hsv_to_rgb(h, s, v))
+    return out + tuple(alpha)
+
+
 def migrate_to_schema_4(data: dict) -> dict:
     """
     Normalize any supported save/map dict to schema 4.

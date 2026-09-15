@@ -159,6 +159,44 @@ def _min_chebyshev(
     return best if best != 10**9 else 10**9
 
 
+def _lane_span(cells: tuple[tuple[int, int], ...]) -> tuple[int, int, int, int]:
+    xs = [c[0] for c in cells]
+    ys = [c[1] for c in cells]
+    return min(xs), max(xs), min(ys), max(ys)
+
+
+def _ranges_overlap(a0: int, a1: int, b0: int, b1: int) -> bool:
+    return a0 <= b1 and b0 <= a1
+
+
+def _are_sisters(
+    cells_a: tuple[tuple[int, int], ...],
+    dir_a: str,
+    cells_b: tuple[tuple[int, int], ...],
+    dir_b: str,
+) -> bool:
+    """Same heading, adjacent on the perpendicular, overlapping on the travel axis."""
+    if not cells_a or not cells_b or dir_a != dir_b:
+        return False
+    ax0, ax1, ay0, ay1 = _lane_span(cells_a)
+    bx0, bx1, by0, by1 = _lane_span(cells_b)
+    if dir_a in ("N", "S"):
+        return (
+            ax0 == ax1
+            and bx0 == bx1
+            and abs(ax0 - bx0) == 1
+            and _ranges_overlap(ay0, ay1, by0, by1)
+        )
+    if dir_a in ("E", "W"):
+        return (
+            ay0 == ay1
+            and by0 == by1
+            and abs(ay0 - by0) == 1
+            and _ranges_overlap(ax0, ax1, bx0, bx1)
+        )
+    return False
+
+
 def _bfs_distance(start: str, destination: str, graph: dict[str, set[str]]) -> int | None:
     if start == destination:
         return 0
@@ -249,30 +287,35 @@ def _refresh_topology() -> None:
     oncoming: dict[int, int | None] = {i: None for i in ids}
     sisters: dict[int, int | None] = {i: None for i in ids}
     for a_idx, a in enumerate(ids):
-        tin_a = lane_traffic_in(a)
-        tout_a = lane_traffic_out(a)
         dir_a = lane_direction(a)
         cells_a = _state.lanes.get(a, ())
-        if not tin_a or not tout_a or not cells_a:
+        if not dir_a or not cells_a:
             continue
+        tin_a = lane_traffic_in(a)
+        tout_a = lane_traffic_out(a)
         axis_a = _axis(dir_a)
         for b in ids[a_idx + 1 :]:
+            dir_b = lane_direction(b)
+            cells_b = _state.lanes.get(b, ())
+            if not dir_b or not cells_b:
+                continue
+            if (
+                sisters[a] is None
+                and sisters[b] is None
+                and _are_sisters(cells_a, dir_a, cells_b, dir_b)
+            ):
+                sisters[a] = b
+                sisters[b] = a
             tin_b = lane_traffic_in(b)
             tout_b = lane_traffic_out(b)
-            cells_b = _state.lanes.get(b, ())
-            if not tin_b or not tout_b or not cells_b:
+            if not tin_a or not tout_a or not tin_b or not tout_b:
                 continue
             if _min_chebyshev(cells_a, cells_b) != 1:
                 continue
-            axis_b = _axis(lane_direction(b))
-            if tin_a == tout_b and tout_a == tin_b and axis_a == axis_b:
+            if tin_a == tout_b and tout_a == tin_b and axis_a == _axis(dir_b):
                 if oncoming[a] is None and oncoming[b] is None:
                     oncoming[a] = b
                     oncoming[b] = a
-            if tin_a == tin_b and tout_a == tout_b and dir_a == lane_direction(b):
-                if sisters[a] is None and sisters[b] is None:
-                    sisters[a] = b
-                    sisters[b] = a
     _state.oncoming = oncoming
     _state.sisters = sisters
 

@@ -24,6 +24,8 @@ from ui.theme import (
     FONT_TYPE,
     FORM_PAD,
     LABEL_COLOR,
+    MUTED_COLOR,
+    TOOLBAR_HINT_GAP,
 )
 from ui.widgets.dropdown import Dropdown
 from ui.widgets.protocols import ExpandedHitWidget, FocusableWidget
@@ -58,7 +60,7 @@ class Dialog:
         self._on_close: Callable | None = None
         self._dialog_manager: DialogManager | None = None
         self._kind_text = ui_text(
-            kind, size=FONT_TYPE, color=LABEL_COLOR, anchor_x="center", anchor_y="center",
+            kind, size=FONT_TYPE, color=MUTED_COLOR, anchor_x="center", anchor_y="center",
         )
         self._title_text = ui_text(
             title, size=FONT_TITLE, color=LABEL_COLOR, anchor_x="center", anchor_y="center",
@@ -70,6 +72,10 @@ class Dialog:
         self._ctrl_text = ui_text(
             hint_for("select_toggle_overlay", "Ctrl"), size=FONT_HOTKEY, color=LABEL_COLOR,
             anchor_x="center", anchor_y="center",
+        )
+        self._isolate_hint = ui_text(
+            "Isolate", size=FONT_HOTKEY, color=LABEL_COLOR,
+            anchor_x="left", anchor_y="center",
         )
         self._title_box: TextBox | None = None
         if title_editable:
@@ -178,6 +184,10 @@ class Dialog:
         isolate = bool(self._dialog_manager and self._dialog_manager.isolate_active)
         self._draw_chip(self._esc_rect(), self._esc_text, False)
         self._draw_chip(self._ctrl_rect(), self._ctrl_text, isolate)
+        cl, cb, cw, ch = self._ctrl_rect()
+        self._isolate_hint.x = cl + cw + TOOLBAR_HINT_GAP
+        self._isolate_hint.y = cb + ch / 2
+        self._isolate_hint.draw()
         cx = left + width / 2
         if self.kind:
             self._kind_text.value = self.kind
@@ -259,6 +269,7 @@ class DialogManager:
         self._get_window_size = get_window_size
         self.isolate_active = False
         self.on_isolate_toggle: Callable[[], None] | None = None
+        self.on_empty: Callable[[], None] | None = None
 
     def set_focused_widget(self, widget: FocusableWidget | None) -> None:
         if self._focused_widget is not None:
@@ -289,6 +300,7 @@ class DialogManager:
                 if w is self._focused_widget:
                     self.set_focused_widget(None)
                     break
+        self._notify_if_empty()
 
     def close_all(self) -> None:
         for d in list(self._dialogs):
@@ -297,6 +309,7 @@ class DialogManager:
                 self.close(d)
         self._dialogs.clear()
         self.set_focused_widget(None)
+        self._notify_if_empty()
 
     def close_top(self) -> bool:
         if not self._dialogs:
@@ -306,6 +319,12 @@ class DialogManager:
         if top in self._dialogs:
             self.close(top)
         return True
+
+    def _notify_if_empty(self) -> None:
+        if any(d.visible for d in self._dialogs):
+            return
+        if self.on_empty:
+            self.on_empty()
 
     def contains_point(self, x: float, y: float) -> bool:
         for d in self._dialogs:

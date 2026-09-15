@@ -56,7 +56,8 @@ from sim.constants import (
 from sim.game import GameState
 from sim import persistence, world
 from sim.scenario import clamp_color_hue, clamp_color_sat
-from ui.font import load_ui_font
+from ui.font import load_ui_font, ui_text
+from ui.theme import set_ui_grade
 from ui import (
     CameraController,
     CameraTool,
@@ -117,6 +118,7 @@ class StoplightsWindow(arcade.Window):
         self._color_sat = 1.0
         self._color_grade = WorldColorGrade(self.ctx)
         persistence.load_config(self.game, window=self)
+        set_ui_grade(self._color_hue, self._color_sat)
         self.game.rebuild_world_from_config()
         self._tick_accumulator = 0.0
         self._sim_time = 0.0
@@ -127,14 +129,14 @@ class StoplightsWindow(arcade.Window):
         self._cardinal_texts: dict[str, arcade.Text] = {}
 
         for place in self.game.spawn_places:
-            self._place_texts[place] = arcade.Text(place, 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE, anchor_x="center", anchor_y="center")
+            self._place_texts[place] = ui_text(place, 0, 0, color=PLACE_LABEL_COLOR, size=PLACE_LABEL_FONT_SIZE, anchor_x="center", anchor_y="center")
         self._cardinal_texts = {
-            "N": arcade.Text("N", 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE, anchor_x="center", anchor_y="bottom"),
-            "S": arcade.Text("S", 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE, anchor_x="center", anchor_y="top"),
-            "E": arcade.Text("E", 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE, anchor_x="right", anchor_y="center"),
-            "W": arcade.Text("W", 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE, anchor_x="left", anchor_y="center"),
+            "N": ui_text("N", 0, 0, color=PLACE_LABEL_COLOR, size=PLACE_LABEL_FONT_SIZE, anchor_x="center", anchor_y="bottom"),
+            "S": ui_text("S", 0, 0, color=PLACE_LABEL_COLOR, size=PLACE_LABEL_FONT_SIZE, anchor_x="center", anchor_y="top"),
+            "E": ui_text("E", 0, 0, color=PLACE_LABEL_COLOR, size=PLACE_LABEL_FONT_SIZE, anchor_x="right", anchor_y="center"),
+            "W": ui_text("W", 0, 0, color=PLACE_LABEL_COLOR, size=PLACE_LABEL_FONT_SIZE, anchor_x="left", anchor_y="center"),
         }
-        self._perf_text = arcade.Text("", 10, self.height - 10, color=PLACE_LABEL_COLOR, font_size=11, anchor_x="left", anchor_y="top")
+        self._perf_text = ui_text("", 10, self.height - 10, color=PLACE_LABEL_COLOR, size=11, anchor_x="left", anchor_y="top")
 
         self._fps_ema = 0.0
         self._last_substeps = 0
@@ -162,6 +164,7 @@ class StoplightsWindow(arcade.Window):
         self._tool_manager.register("new_place", CreatePlaceTool(self))
         self._tool_manager.register("new_intersection", CreateIntersectionTool(self))
         self._dialog_manager.on_isolate_toggle = self._toggle_dialog_isolate
+        self._dialog_manager.on_empty = self._clear_dialog_isolate
 
         assets_dir = Path(__file__).resolve().parent / "assets"
         self._tile_set = TileSet(assets_dir / "ortho")
@@ -381,6 +384,11 @@ class StoplightsWindow(arcade.Window):
             return
         sel.isolate = not bool(sel.isolate)
         self._show_tool_hint("select", "Isolate" if sel.isolate else "Default")
+
+    def _clear_dialog_isolate(self) -> None:
+        sel = self._tool_manager.select
+        if getattr(sel, "isolate", False):
+            sel.isolate = False
 
     def on_config_change(self, rebuild_world: bool = False) -> None:
         self._on_config_change(rebuild_world=rebuild_world)
@@ -691,8 +699,8 @@ class StoplightsWindow(arcade.Window):
             if not cells:
                 continue
             if place not in self._place_texts:
-                self._place_texts[place] = arcade.Text(
-                    place, 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE,
+                self._place_texts[place] = ui_text(
+                    place, 0, 0, color=PLACE_LABEL_COLOR, size=PLACE_LABEL_FONT_SIZE,
                     anchor_x="center", anchor_y="center",
                 )
             min_gx = min(p[0] for p in cells)
@@ -930,8 +938,8 @@ class StoplightsWindow(arcade.Window):
         for place in world.get_place_rects():
             if places.place_bounds(place):
                 if place not in self._place_texts:
-                    self._place_texts[place] = arcade.Text(
-                        place, 0, 0, color=PLACE_LABEL_COLOR, font_size=PLACE_LABEL_FONT_SIZE,
+                    self._place_texts[place] = ui_text(
+                        place, 0, 0, color=PLACE_LABEL_COLOR, size=PLACE_LABEL_FONT_SIZE,
                         anchor_x="center", anchor_y="center",
                     )
                 self._place_texts[place].draw()
@@ -1055,6 +1063,7 @@ class StoplightsWindow(arcade.Window):
     def _on_color_grade_change(self, hue: int, sat: float) -> None:
         self._color_hue = clamp_color_hue(hue)
         self._color_sat = clamp_color_sat(sat)
+        set_ui_grade(self._color_hue, self._color_sat)
         persistence.request_debounced_save()
 
     def _place_at_screen(self, sx: float, sy: float) -> str | None:

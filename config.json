@@ -119,7 +119,7 @@
       "spawn_interval": 8.0,
       "attract_weight": 1.0,
       "protected": false,
-      "building_kind": "residential",
+      "building_kind": "none",
       "building_seed": 720571912
     },
     "Marcies": {
@@ -1256,19 +1256,6 @@
       "lane_type": "normal",
       "protected": false
     },
-    "78": {
-      "start_tile": [
-        55,
-        26
-      ],
-      "end_tile": [
-        55,
-        35
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
     "79": {
       "start_tile": [
         54,
@@ -1329,6 +1316,19 @@
       "end_tile": [
         62,
         25
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "84": {
+      "start_tile": [
+        55,
+        26
+      ],
+      "end_tile": [
+        55,
+        35
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",

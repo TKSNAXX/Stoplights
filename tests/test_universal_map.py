@@ -46,6 +46,7 @@ from sim.scenario import (
     clamp_color_hue,
     clamp_color_sat,
     game_to_scenario,
+    grade_rgb,
     load_default_scenario,
     migrate_to_schema_4,
     apply_scenario_to_game,
@@ -1032,6 +1033,16 @@ def test_color_settings_clamp_roundtrip() -> None:
     assert migrated["user_settings"]["color_sat"] == 0.0
 
 
+def test_grade_rgb_identity_and_hue_shift() -> None:
+    green = (40, 190, 70)
+    assert grade_rgb(green, 0, 1.0) == green
+    assert grade_rgb((255, 255, 255), 90, 1.5) == (255, 255, 255)
+    assert grade_rgb((40, 190, 70, 140), 0, 1.0)[3] == 140
+    shifted = grade_rgb(green, 120, 1.0)
+    assert shifted != green
+    assert shifted[2] > shifted[1]
+
+
 def _pack_test_defs() -> list[BuildingDef]:
     return [
         BuildingDef(
@@ -1266,6 +1277,39 @@ def test_rebuild_topology_tables() -> None:
     assert "C" not in world.attached_intersections("A")
     assert world.attached_intersections("B") == frozenset({"C"})
     g.rebuild_world_from_config()
+
+
+def test_sister_geometry_staggered_and_corner() -> None:
+    """Sisters share heading, adjacency, and travel-range overlap; endpoints need not match."""
+    places.set_route_hints([])
+    lanes = {
+        9: places.LaneConfig(start_tile=(64, 23), end_tile=(64, 70)),
+        10: places.LaneConfig(start_tile=(63, 70), end_tile=(63, 23)),
+        82: places.LaneConfig(start_tile=(65, 25), end_tile=(65, 67)),
+        83: places.LaneConfig(start_tile=(62, 67), end_tile=(62, 25)),
+    }
+    world.rebuild_world({}, {}, lanes)
+    assert world.sister_lane(9) == 82
+    assert world.sister_lane(82) == 9
+    assert world.sister_lane(10) == 83
+    assert world.sister_lane(83) == 10
+
+    corner = {
+        1: places.LaneConfig(start_tile=(0, 10), end_tile=(5, 10)),
+        2: places.LaneConfig(start_tile=(6, 11), end_tile=(10, 11)),
+    }
+    world.rebuild_world({}, {}, corner)
+    assert world.sister_lane(1) is None
+    assert world.sister_lane(2) is None
+
+    shared = {
+        1: places.LaneConfig(start_tile=(4, 10), end_tile=(12, 10)),
+        2: places.LaneConfig(start_tile=(4, 11), end_tile=(12, 11)),
+    }
+    world.rebuild_world({}, {}, shared)
+    assert world.sister_lane(1) == 2
+    assert world.sister_lane(2) == 1
+    GameState()
 
 
 def test_path_cache_matches_live() -> None:
@@ -1937,6 +1981,7 @@ def main() -> None:
         test_iso_aabb_silhouette,
         test_selection_rim_offset_and_facing,
         test_color_settings_clamp_roundtrip,
+        test_grade_rgb_identity_and_hue_shift,
         test_building_pack_counts,
         test_building_pack_long_variants,
         test_building_kind_roundtrip,
@@ -1944,6 +1989,7 @@ def main() -> None:
         test_building_layout_shuffle,
         test_building_catalog_natural_scale,
         test_rebuild_topology_tables,
+        test_sister_geometry_staggered_and_corner,
         test_path_cache_matches_live,
         test_occupancy_jam_and_lane_full,
         test_route_hinted_housing_park_via_bypass,

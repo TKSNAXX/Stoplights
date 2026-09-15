@@ -9,6 +9,7 @@ import arcade
 from draw_compat import ipx, rect_filled
 from ui.font import ui_text
 from ui.theme import (
+    COMPASS_BUTTON_SIZE,
     DATUM_PAD_X,
     DATUM_WIDTH,
     FONT_DATUM,
@@ -17,8 +18,8 @@ from ui.theme import (
     ICON_BUTTON_DISABLED_FG,
     ICON_BUTTON_FG,
     ICON_BUTTON_GAP,
-    ICON_BUTTON_SIZE,
     LABEL_COLOR,
+    grade_ui_color,
 )
 from ui.widgets.text import draw_datum
 from sim.constants import TILE_H, TILE_W
@@ -52,11 +53,13 @@ class CompassSelect:
         min_val: int = -200,
         max_val: int = 200,
         datum_width: float = DATUM_WIDTH,
+        button_fill=ICON_BUTTON_BG,
     ):
         self.rect = (left, bottom, width, height)
         self.value = (int(value[0]), int(value[1]))
         self.locked_axis = locked_axis
         self.datum_width = datum_width
+        self.button_fill = button_fill
         self._on_change = on_change
         self._min_val = min_val
         self._max_val = max_val
@@ -104,9 +107,10 @@ class CompassSelect:
 
     def _button_rect(self, idx: int) -> tuple[float, float, float, float]:
         left, bottom, _, height = self.rect
+        size = COMPASS_BUTTON_SIZE
         btn_left = left + self.datum_width + ICON_BUTTON_GAP
-        y = bottom + (height - ICON_BUTTON_SIZE) / 2
-        return (btn_left + idx * (ICON_BUTTON_SIZE + ICON_BUTTON_GAP), y, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE)
+        y = bottom + height - size
+        return (btn_left + idx * (size + ICON_BUTTON_GAP), y, size, size)
 
     def _is_disabled(self, key: str) -> bool:
         if self.locked_axis == "x":
@@ -115,7 +119,7 @@ class CompassSelect:
             return key in ("N", "S")
         return False
 
-    def _draw_iso_arrow(self, cx: float, cy: float, key: str, color: tuple[int, int, int]) -> None:
+    def _draw_iso_arrow(self, cx: float, cy: float, key: str, color: tuple[int, int, int], size: float) -> None:
         dx, dy = _COMPASS_ISO_DIRS[key]
         length = math.hypot(dx, dy)
         if length < 0.01:
@@ -123,10 +127,10 @@ class CompassSelect:
         dx, dy = dx / length, dy / length
         perp_x = -dy
         perp_y = dx
-        head_size = 5.0
-        base_half = 3.5
-        tail_len = 4.0
-        tail_half = 1.0
+        head_size = size * 0.45
+        base_half = size * 0.32
+        tail_len = size * 0.36
+        tail_half = size * 0.09
         tip_x = cx + dx * head_size
         tip_y = cy + dy * head_size
         base_x = cx - dx * head_size * 0.3
@@ -210,6 +214,7 @@ class CompassSelect:
             disabled = self._is_disabled(key)
             s = ipx(min(w, h))
             l, b = ipx(l), ipx(b)
-            rect_filled(l, b, s, s, ICON_BUTTON_DISABLED_BG if disabled else ICON_BUTTON_BG)
+            fill = ICON_BUTTON_DISABLED_BG if disabled else grade_ui_color(self.button_fill)
+            rect_filled(l, b, s, s, fill)
             fg = ICON_BUTTON_DISABLED_FG if disabled else ICON_BUTTON_FG
-            self._draw_iso_arrow(l + s / 2, b + s / 2, key, fg)
+            self._draw_iso_arrow(l + s / 2, b + s / 2, key, fg, float(s))

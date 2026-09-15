@@ -10,8 +10,7 @@ from ui.theme import (
     DATUM_PAD_X,
     DROPDOWN_ROW_HEIGHT,
     FONT_DATUM,
-    ICON_BUTTON_FG,
-    LABEL_COLOR,
+    MUTED_COLOR,
 )
 from ui.widgets.icons import draw_icon
 from ui.widgets.text import draw_datum
@@ -38,7 +37,7 @@ class Dropdown:
         self.value = max(0, min(initial_index, len(self.options) - 1))
         self._on_change = on_change
         self._open = False
-        self._text = ui_text("", size=FONT_DATUM, color=LABEL_COLOR, anchor_x="left", anchor_y="center")
+        self._text = ui_text("", size=FONT_DATUM, color=MUTED_COLOR, anchor_x="left", anchor_y="center")
         self._option_texts: list = []
         self._option_texts_key: tuple[str, ...] | None = None
 
@@ -77,7 +76,7 @@ class Dropdown:
         self._text.y = bottom + height / 2
         self._text.draw()
         chev = 12
-        draw_icon("chevron", left + width - chev - 4, bottom + (height - chev) / 2, chev, ICON_BUTTON_FG)
+        draw_icon("down", left + width - chev - 4, bottom + (height - chev) / 2, chev, MUTED_COLOR)
 
     def _ensure_option_texts(self) -> None:
         key = tuple(self.options)
@@ -85,7 +84,7 @@ class Dropdown:
             return
         self._option_texts_key = key
         self._option_texts = [
-            ui_text(opt, size=FONT_DATUM, color=LABEL_COLOR, anchor_x="left", anchor_y="center")
+            ui_text(opt, size=FONT_DATUM, color=MUTED_COLOR, anchor_x="left", anchor_y="center")
             for opt in self.options
         ]
 

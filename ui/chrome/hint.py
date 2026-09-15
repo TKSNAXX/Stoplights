@@ -1,8 +1,7 @@
 """Brief label flashed beside a toolbar button."""
 from __future__ import annotations
 
-import arcade
-
+from ui.font import ui_text
 from ui.theme import LABEL_COLOR, SELECT_HINT_DURATION, SELECT_HINT_FADE
 
 
@@ -13,12 +12,12 @@ class FlashHint:
         self._duration = duration
         self._age = 0.0
         self._live = False
-        self._text = arcade.Text(
+        self._text = ui_text(
             "",
             0,
             0,
+            size=12,
             color=LABEL_COLOR,
-            font_size=12,
             anchor_x="left",
             anchor_y="center",
         )

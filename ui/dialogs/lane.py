@@ -13,7 +13,9 @@ from ui.theme import (
     DROPDOWN_ROW_HEIGHT,
     FORM_GAP,
     ICON_BUTTON_SIZE,
-    LABEL_COLOR,
+    ISOLATE_TINT_GREEN,
+    ISOLATE_TINT_RED,
+    MUTED_COLOR,
     LANE_SPEED_VALUES,
     LANE_TYPE_LABELS,
     LANE_TYPE_VALUES,
@@ -46,10 +48,12 @@ class AddLaneDialog(Dialog):
         self._start_compass = CompassSelect(
             0, 0, 220, DROPDOWN_ROW_HEIGHT, self._start_tile,
             on_change=self._on_start_change,
+            button_fill=ISOLATE_TINT_GREEN[:3],
         )
         self._end_compass = CompassSelect(
             0, 0, 220, DROPDOWN_ROW_HEIGHT, self._end_tile,
             on_change=self._on_end_change,
+            button_fill=ISOLATE_TINT_RED[:3],
         )
         self._commit_btn = CommitButton(0, 0, on_click=self._do_commit)
         self._dir_datum = DatumBox()
@@ -121,7 +125,7 @@ class AddLaneDialog(Dialog):
 
     def draw(self) -> None:
         self._dir_datum.set_value(self._direction_text())
-        self._dir_datum.color = WARNING_COLOR if not self._is_valid_lane() else LABEL_COLOR
+        self._dir_datum.color = WARNING_COLOR if not self._is_valid_lane() else MUTED_COLOR
         super().draw()
         self._dir_datum.draw()
 
@@ -142,7 +146,7 @@ class LaneVarsDialog(Dialog):
         self._game = game
         self._can_remove = bool(game is not None and hasattr(game, "can_remove_lane") and game.can_remove_lane(lane_index))
         super().__init__(
-            x, y, DIALOG_WIDTH, dialog_height(8 if self._can_remove else 7),
+            x, y, DIALOG_WIDTH, dialog_height(10 if self._can_remove else 9),
             str(lane_index), kind="Lane",
         )
         self.lane_index = lane_index
@@ -159,15 +163,19 @@ class LaneVarsDialog(Dialog):
         self._start_compass = CompassSelect(
             0, 0, 220, DROPDOWN_ROW_HEIGHT, getattr(lane_config, "start_tile", (0, 0)),
             on_change=self._on_start_change,
+            button_fill=ISOLATE_TINT_GREEN[:3],
         )
         self._end_compass = CompassSelect(
             0, 0, 220, DROPDOWN_ROW_HEIGHT, getattr(lane_config, "end_tile", (0, 0)),
             on_change=lambda _v: self._sync_from_widgets(),
+            button_fill=ISOLATE_TINT_RED[:3],
         )
         self._update_locked_axes()
         self._dir_datum = DatumBox()
         self._in_datum = DatumBox()
         self._out_datum = DatumBox()
+        self._oncoming_datum = DatumBox()
+        self._sister_datum = DatumBox()
 
         self.widgets = [
             self._speed_slider,
@@ -185,9 +193,12 @@ class LaneVarsDialog(Dialog):
         self._dir_label = ParamLabel("Direction")
         self._in_label = ParamLabel("Traffic In")
         self._out_label = ParamLabel("Traffic Out")
+        self._oncoming_label = ParamLabel("Oncoming")
+        self._sister_label = ParamLabel("Sister")
         self.labels = [
             self._speed_label, self._type_label, self._start_label, self._end_label,
             self._dir_label, self._in_label, self._out_label,
+            self._oncoming_label, self._sister_label,
         ]
 
     def _update_locked_axes(self) -> None:
@@ -263,9 +274,15 @@ class LaneVarsDialog(Dialog):
         r6 = form_row(self, 6)
         self._out_label.place(r6.label_x, r6.label_y)
         self._out_datum.rect = (r6.control_left, r6.control_bottom, r6.control_width, DATUM_HEIGHT)
+        r7 = form_row(self, 7)
+        self._oncoming_label.place(r7.label_x, r7.label_y)
+        self._oncoming_datum.rect = (r7.control_left, r7.control_bottom, r7.control_width, DATUM_HEIGHT)
+        r8 = form_row(self, 8)
+        self._sister_label.place(r8.label_x, r8.label_y)
+        self._sister_datum.rect = (r8.control_left, r8.control_bottom, r8.control_width, DATUM_HEIGHT)
         if self._can_remove:
-            r7 = form_row(self, 7)
-            self._remove_btn.rect = (r7.control_left, r7.control_bottom, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE)
+            r9 = form_row(self, 9)
+            self._remove_btn.rect = (r9.control_left, r9.control_bottom, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE)
 
     def draw(self) -> None:
         self._speed_datum.set_value(f"{LANE_SPEED_VALUES[self._speed_slider.value]:g}x")
@@ -277,12 +294,18 @@ class LaneVarsDialog(Dialog):
         self._dir_datum.set_value(direction_map.get(direction, "—"))
         self._in_datum.set_value(str(traffic_in))
         self._out_datum.set_value(str(traffic_out))
+        oncoming = world.oncoming_lane(self.lane_index)
+        sister = world.sister_lane(self.lane_index)
+        self._oncoming_datum.set_value("—" if oncoming is None else str(oncoming))
+        self._sister_datum.set_value("—" if sister is None else str(sister))
         super().draw()
         self._speed_datum.draw()
         self._type_datum.draw()
         self._dir_datum.draw()
         self._in_datum.draw()
         self._out_datum.draw()
+        self._oncoming_datum.draw()
+        self._sister_datum.draw()
 
     def on_mouse_press(self, x: float, y: float) -> bool:
         self._layout_widgets()

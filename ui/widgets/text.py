@@ -16,8 +16,9 @@ from ui.theme import (
     ICON_BUTTON_BG,
     ICON_BUTTON_FG,
     ICON_BUTTON_GAP,
-    ICON_BUTTON_SIZE,
     LABEL_COLOR,
+    MUTED_COLOR,
+    NUMBER_BOX_ARROW_SIZE,
     TEXT_BOX_MAX_LEN,
 )
 from ui.widgets.icons import draw_icon
@@ -34,25 +35,39 @@ class DatumBox:
         self.rect = (left, bottom, width, height)
         self.value = value
         self.wrap = wrap
-        self.color = LABEL_COLOR
-        kwargs = dict(anchor_x="left", anchor_y="center", color=LABEL_COLOR)
-        if wrap:
-            kwargs["multiline"] = True
-            kwargs["width"] = max(8, ipx(width) - DATUM_PAD_X * 2)
-            kwargs["anchor_y"] = "top"
-        self._text = ui_text(value, size=FONT_DATUM, **kwargs)
+        self.color = MUTED_COLOR
+        self._wrap_width = 0
+        self._text = None
+        self._rebuild_text(max(8, ipx(width) - DATUM_PAD_X * 2))
 
     def set_value(self, value: str) -> None:
         self.value = value
+
+    def _rebuild_text(self, inner_w: int) -> None:
+        inner_w = max(8, int(inner_w))
+        if self.wrap:
+            self._wrap_width = inner_w
+            self._text = ui_text(
+                self.value, size=FONT_DATUM, color=self.color,
+                anchor_x="left", anchor_y="top", multiline=True, width=inner_w,
+            )
+        else:
+            self._wrap_width = 0
+            self._text = ui_text(
+                self.value, size=FONT_DATUM, color=self.color,
+                anchor_x="left", anchor_y="center",
+            )
 
     def draw(self) -> None:
         left, bottom, width, height = self.rect
         left, bottom, width, height = ipx(left), ipx(bottom), ipx(width), ipx(height)
         draw_datum(left, bottom, width, height)
+        inner = max(8, width - DATUM_PAD_X * 2)
+        if self.wrap and inner != self._wrap_width:
+            self._rebuild_text(inner)
         self._text.color = self.color
         self._text.value = self.value
         if self.wrap:
-            self._text.width = max(8, width - DATUM_PAD_X * 2)
             self._text.x = left + DATUM_PAD_X
             self._text.y = bottom + height - 4
         else:
@@ -92,7 +107,7 @@ class NumberBox:
 
     def contains(self, x: float, y: float) -> bool:
         left, bottom, width, height = self.rect
-        total_w = self.datum_width + ICON_BUTTON_GAP + ICON_BUTTON_SIZE * 2 + ICON_BUTTON_GAP
+        total_w = self.datum_width + ICON_BUTTON_GAP + NUMBER_BOX_ARROW_SIZE * 2 + ICON_BUTTON_GAP
         return left <= x <= left + min(width, total_w) and bottom <= y <= bottom + height
 
     def _box_rect(self) -> tuple[float, float, float, float]:
@@ -102,14 +117,14 @@ class NumberBox:
     def _up_arrow_rect(self) -> tuple[float, float, float, float]:
         left, bottom, _, height = self.rect
         x = left + self.datum_width + ICON_BUTTON_GAP
-        y = bottom + (height - ICON_BUTTON_SIZE) / 2
-        return (x, y, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE)
+        y = bottom + height - NUMBER_BOX_ARROW_SIZE
+        return (x, y, NUMBER_BOX_ARROW_SIZE, NUMBER_BOX_ARROW_SIZE)
 
     def _down_arrow_rect(self) -> tuple[float, float, float, float]:
         left, bottom, _, height = self.rect
-        x = left + self.datum_width + ICON_BUTTON_GAP + ICON_BUTTON_SIZE + ICON_BUTTON_GAP
-        y = bottom + (height - ICON_BUTTON_SIZE) / 2
-        return (x, y, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE)
+        x = left + self.datum_width + ICON_BUTTON_GAP + NUMBER_BOX_ARROW_SIZE + ICON_BUTTON_GAP
+        y = bottom + height - NUMBER_BOX_ARROW_SIZE
+        return (x, y, NUMBER_BOX_ARROW_SIZE, NUMBER_BOX_ARROW_SIZE)
 
     def set_focus(self, focused: bool) -> None:
         if self._focused != focused:
