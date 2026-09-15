@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from render.camera import road_tile_key
-from sim import places
+from render.lane_paint import paint_spec
+from render.tiles import generate_lane_paint_texture
+from sim import places, world
 from sim.map_data import build_lane_cells, snap_cardinal_end, _direction_from_tiles
 from ui.dialogs.lane import AddLaneDialog
-from ui.tools.base import Tool, draw_ghost_cells, readout_anchor
+from ui.tools.base import Tool, draw_ghost_textures, readout_anchor
 from ui.tools.host import ToolHost
 
 
@@ -136,6 +138,24 @@ class CreateLaneTool(Tool):
         cells = build_lane_cells(start, end)
         if not cells:
             return
-        direction = _direction_from_tiles(start, end)
-        key = road_tile_key(direction or "N", self.host.view_yaw_q)
-        draw_ghost_cells(self.host, key, cells, center_x, center_y)
+        direction = _direction_from_tiles(start, end) or "N"
+        occupancy = world.cell_occupancy()
+        ghost_id = -1
+        for c in cells:
+            occupancy[c] = ghost_id
+
+        def heading_for(lane_id: int) -> str:
+            if lane_id == ghost_id:
+                return direction
+            return world.lane_direction(lane_id) or ""
+
+        stamped = []
+        for gx, gy in cells:
+            display_dir, role_a, role_b, phase = paint_spec(
+                direction, gx, gy, self.host.view_yaw_q, occupancy, heading_for,
+            )
+            tex = generate_lane_paint_texture(display_dir, role_a, role_b, phase)
+            if tex is None:
+                tex = self.host.tile_set.get(road_tile_key(direction, self.host.view_yaw_q))
+            stamped.append((gx, gy, tex))
+        draw_ghost_textures(self.host, stamped, center_x, center_y)

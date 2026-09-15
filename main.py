@@ -21,6 +21,7 @@ from render.color_grade import WorldColorGrade, is_identity_grade
 from render.debug import visibility_fan_vertices
 from render.selection import iso_aabb_silhouette, occupancy_aabb, rim_quads
 from render.sprites import CarSpritePool, load_car_textures
+from render.lane_paint import paint_spec
 from render.intersection_topology import (
     classify_intersection_sides,
     corner_quadrant_for_sides,
@@ -32,6 +33,7 @@ from render.tiles import (
     TileSet,
     generate_corner_texture,
     generate_cross_texture,
+    generate_lane_paint_texture,
     generate_straight_texture,
     generate_tee_texture,
 )
@@ -564,24 +566,22 @@ class StoplightsWindow(arcade.Window):
             self._zoom_scale, self._camera.view_yaw_q,
         )
 
-    def _lane_road_type(self, lane_index: int) -> str:
-        """Return texture key for lane base tile (normal/passing)."""
-        direction = world.lane_direction(lane_index) or "N"
-        cfg = self.game.lanes.get(lane_index)
-        passing = bool(cfg and cfg.lane_type == places.LANE_TYPE_PASSING)
-        key = road_tile_key(direction, self._camera.view_yaw_q, passing)
-        if passing and self._tile_set.get(key) is None:
-            key = road_tile_key(direction, self._camera.view_yaw_q, False)
-        return key
+    def _lane_cell_texture(self, lane_index: int, gx: int, gy: int) -> arcade.Texture | None:
+        heading = world.lane_direction(lane_index) or "N"
+        display_dir, role_a, role_b, phase = paint_spec(
+            heading, gx, gy, self._camera.view_yaw_q,
+        )
+        tex = generate_lane_paint_texture(display_dir, role_a, role_b, phase)
+        if tex is not None:
+            return tex
+        return self._tile_set.get(road_tile_key(heading, self._camera.view_yaw_q))
 
-    def _build_lane_cell_to_road(self) -> dict[tuple[int, int], str]:
-        lane_cell_to_road: dict[tuple[int, int], str] = {}
+    def _build_lane_cell_to_tex(self) -> dict[tuple[int, int], arcade.Texture | None]:
+        lane_cell_to_tex: dict[tuple[int, int], arcade.Texture | None] = {}
         for lane_index in world.lane_ids():
-            lane = world.get_lane_cells(lane_index)
-            road_type = self._lane_road_type(lane_index)
-            for gx, gy in lane:
-                lane_cell_to_road[(gx, gy)] = road_type
-        return lane_cell_to_road
+            for gx, gy in world.get_lane_cells(lane_index):
+                lane_cell_to_tex[(gx, gy)] = self._lane_cell_texture(lane_index, gx, gy)
+        return lane_cell_to_tex
 
     def _collect_place_cells(self) -> set[tuple[int, int]]:
         place_cells: set[tuple[int, int]] = set()
@@ -629,22 +629,12 @@ class StoplightsWindow(arcade.Window):
         self._cached_center = (center_x, center_y, self._zoom_scale, self._camera.view_yaw_q)
         self._tile_cells.clear()
 
-        lane_cell_to_road = self._build_lane_cell_to_road()
+        lane_cell_to_tex = self._build_lane_cell_to_tex()
         place_cells = self._collect_place_cells()
 
         self._tile_sprite_list = arcade.SpriteList()
         grass_tex = self._tile_set.get("grass")
         place_zone_tex = self._tile_set.get("place_zone")
-        road_tex: dict[str, arcade.Texture | None] = {
-            "road_n": self._tile_set.get("road_n"),
-            "road_s": self._tile_set.get("road_s"),
-            "road_e": self._tile_set.get("road_e"),
-            "road_w": self._tile_set.get("road_w"),
-            "road_n_pass": self._tile_set.get("road_n_pass"),
-            "road_s_pass": self._tile_set.get("road_s_pass"),
-            "road_e_pass": self._tile_set.get("road_e_pass"),
-            "road_w_pass": self._tile_set.get("road_w_pass"),
-        }
         road_cross_tex = self._tile_set.get("road_cross")
         intersection_cells_map = world.get_intersection_cells_map()
         all_inter_cells = {c for cells in intersection_cells_map.values() for c in cells}
@@ -654,9 +644,8 @@ class StoplightsWindow(arcade.Window):
                 cell = (gx, gy)
                 if cell in all_inter_cells:
                     tex = grass_tex  # always grass under intersections; overlay drawn below
-                elif cell in lane_cell_to_road:
-                    rt = lane_cell_to_road[cell]
-                    tex = road_tex.get(rt)
+                elif cell in lane_cell_to_tex:
+                    tex = lane_cell_to_tex[cell]
                 elif cell in place_cells and place_zone_tex is not None:
                     tex = place_zone_tex
                 else:

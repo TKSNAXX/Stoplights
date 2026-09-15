@@ -17,8 +17,6 @@ from ui.theme import (
     ISOLATE_TINT_RED,
     MUTED_COLOR,
     LANE_SPEED_VALUES,
-    LANE_TYPE_LABELS,
-    LANE_TYPE_VALUES,
     SLIDER_THUMB,
     SLIDER_TRACK,
     WARNING_COLOR,
@@ -131,7 +129,7 @@ class AddLaneDialog(Dialog):
 
 
 class LaneVarsDialog(Dialog):
-    """Dialog for editing lane speed/type and start/end tiles."""
+    """Dialog for editing lane speed and start/end tiles."""
 
     def __init__(
         self,
@@ -146,7 +144,7 @@ class LaneVarsDialog(Dialog):
         self._game = game
         self._can_remove = bool(game is not None and hasattr(game, "can_remove_lane") and game.can_remove_lane(lane_index))
         super().__init__(
-            x, y, DIALOG_WIDTH, dialog_height(10 if self._can_remove else 9),
+            x, y, DIALOG_WIDTH, dialog_height(9 if self._can_remove else 8),
             str(lane_index), kind="Lane",
         )
         self.lane_index = lane_index
@@ -155,11 +153,8 @@ class LaneVarsDialog(Dialog):
         self._on_remove = on_remove
 
         speed_step = self._step_for_speed(lane_config.speed_limit)
-        type_step = self._step_for_type(lane_config.lane_type)
         self._speed_slider = Slider(0, 0, 220, DATUM_HEIGHT, len(LANE_SPEED_VALUES), speed_step, SLIDER_TRACK, SLIDER_THUMB)
-        self._type_slider = Slider(0, 0, 220, DATUM_HEIGHT, len(LANE_TYPE_VALUES), type_step, SLIDER_TRACK, SLIDER_THUMB)
         self._speed_datum = DatumBox()
-        self._type_datum = DatumBox()
         self._start_compass = CompassSelect(
             0, 0, 220, DROPDOWN_ROW_HEIGHT, getattr(lane_config, "start_tile", (0, 0)),
             on_change=self._on_start_change,
@@ -179,7 +174,6 @@ class LaneVarsDialog(Dialog):
 
         self.widgets = [
             self._speed_slider,
-            self._type_slider,
             self._start_compass,
             self._end_compass,
         ]
@@ -187,7 +181,6 @@ class LaneVarsDialog(Dialog):
         if self._can_remove:
             self.widgets.append(self._remove_btn)
         self._speed_label = ParamLabel("Speed")
-        self._type_label = ParamLabel("Type")
         self._start_label = ParamLabel("Start")
         self._end_label = ParamLabel("End")
         self._dir_label = ParamLabel("Direction")
@@ -196,7 +189,7 @@ class LaneVarsDialog(Dialog):
         self._oncoming_label = ParamLabel("Oncoming")
         self._sister_label = ParamLabel("Sister")
         self.labels = [
-            self._speed_label, self._type_label, self._start_label, self._end_label,
+            self._speed_label, self._start_label, self._end_label,
             self._dir_label, self._in_label, self._out_label,
             self._oncoming_label, self._sister_label,
         ]
@@ -242,12 +235,6 @@ class LaneVarsDialog(Dialog):
                 best = i
         return best
 
-    def _step_for_type(self, val: str) -> int:
-        try:
-            return LANE_TYPE_VALUES.index(val)
-        except ValueError:
-            return 0
-
     def _slider_row(self, index: int, label: ParamLabel, datum: DatumBox, slider: Slider) -> None:
         row = form_row(self, index)
         label.place(row.label_x, row.label_y)
@@ -258,35 +245,33 @@ class LaneVarsDialog(Dialog):
 
     def _layout_widgets(self) -> None:
         self._slider_row(0, self._speed_label, self._speed_datum, self._speed_slider)
-        self._slider_row(1, self._type_label, self._type_datum, self._type_slider)
+        r1 = form_row(self, 1)
+        self._start_label.place(r1.label_x, r1.label_y)
+        self._start_compass.rect = (r1.control_left, r1.control_bottom, r1.control_width, DATUM_HEIGHT)
         r2 = form_row(self, 2)
-        self._start_label.place(r2.label_x, r2.label_y)
-        self._start_compass.rect = (r2.control_left, r2.control_bottom, r2.control_width, DATUM_HEIGHT)
+        self._end_label.place(r2.label_x, r2.label_y)
+        self._end_compass.rect = (r2.control_left, r2.control_bottom, r2.control_width, DATUM_HEIGHT)
         r3 = form_row(self, 3)
-        self._end_label.place(r3.label_x, r3.label_y)
-        self._end_compass.rect = (r3.control_left, r3.control_bottom, r3.control_width, DATUM_HEIGHT)
+        self._dir_label.place(r3.label_x, r3.label_y)
+        self._dir_datum.rect = (r3.control_left, r3.control_bottom, r3.control_width, DATUM_HEIGHT)
         r4 = form_row(self, 4)
-        self._dir_label.place(r4.label_x, r4.label_y)
-        self._dir_datum.rect = (r4.control_left, r4.control_bottom, r4.control_width, DATUM_HEIGHT)
+        self._in_label.place(r4.label_x, r4.label_y)
+        self._in_datum.rect = (r4.control_left, r4.control_bottom, r4.control_width, DATUM_HEIGHT)
         r5 = form_row(self, 5)
-        self._in_label.place(r5.label_x, r5.label_y)
-        self._in_datum.rect = (r5.control_left, r5.control_bottom, r5.control_width, DATUM_HEIGHT)
+        self._out_label.place(r5.label_x, r5.label_y)
+        self._out_datum.rect = (r5.control_left, r5.control_bottom, r5.control_width, DATUM_HEIGHT)
         r6 = form_row(self, 6)
-        self._out_label.place(r6.label_x, r6.label_y)
-        self._out_datum.rect = (r6.control_left, r6.control_bottom, r6.control_width, DATUM_HEIGHT)
+        self._oncoming_label.place(r6.label_x, r6.label_y)
+        self._oncoming_datum.rect = (r6.control_left, r6.control_bottom, r6.control_width, DATUM_HEIGHT)
         r7 = form_row(self, 7)
-        self._oncoming_label.place(r7.label_x, r7.label_y)
-        self._oncoming_datum.rect = (r7.control_left, r7.control_bottom, r7.control_width, DATUM_HEIGHT)
-        r8 = form_row(self, 8)
-        self._sister_label.place(r8.label_x, r8.label_y)
-        self._sister_datum.rect = (r8.control_left, r8.control_bottom, r8.control_width, DATUM_HEIGHT)
+        self._sister_label.place(r7.label_x, r7.label_y)
+        self._sister_datum.rect = (r7.control_left, r7.control_bottom, r7.control_width, DATUM_HEIGHT)
         if self._can_remove:
-            r9 = form_row(self, 9)
-            self._remove_btn.rect = (r9.control_left, r9.control_bottom, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE)
+            r8 = form_row(self, 8)
+            self._remove_btn.rect = (r8.control_left, r8.control_bottom, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE)
 
     def draw(self) -> None:
         self._speed_datum.set_value(f"{LANE_SPEED_VALUES[self._speed_slider.value]:g}x")
-        self._type_datum.set_value(LANE_TYPE_LABELS[self._type_slider.value])
         direction = world.lane_direction(self.lane_index)
         traffic_in = world.lane_traffic_in(self.lane_index) or "—"
         traffic_out = world.lane_traffic_out(self.lane_index) or "—"
@@ -300,7 +285,6 @@ class LaneVarsDialog(Dialog):
         self._sister_datum.set_value("—" if sister is None else str(sister))
         super().draw()
         self._speed_datum.draw()
-        self._type_datum.draw()
         self._dir_datum.draw()
         self._in_datum.draw()
         self._out_datum.draw()
@@ -327,21 +311,18 @@ class LaneVarsDialog(Dialog):
 
     def _sync_from_widgets(self) -> None:
         speed = LANE_SPEED_VALUES[self._speed_slider.value]
-        lane_type = LANE_TYPE_VALUES[self._type_slider.value]
         start = self._start_compass.value
         end = self._end_compass.value
         old_start = (int(self._config.start_tile[0]), int(self._config.start_tile[1]))
         old_end = (int(self._config.end_tile[0]), int(self._config.end_tile[1]))
         if (
             self._config.speed_limit == speed
-            and self._config.lane_type == lane_type
             and old_start == start
             and old_end == end
         ):
             self._update_locked_axes()
             return
         self._config.speed_limit = speed
-        self._config.lane_type = lane_type
         self._update_locked_axes()
         self._config.start_tile = start
         self._config.end_tile = end

@@ -748,7 +748,6 @@ def test_yaw_cardinal_and_dir_remap() -> None:
     assert rotate_straight_axis("ew", 1) == "ns"
     assert rotate_straight_axis("ns", 2) == "ns"
     assert road_tile_key("N", 1) == "road_e"
-    assert road_tile_key("N", 1, passing=True) == "road_e_pass"
     assert display_dir_index(0, 1) == 2
     assert display_dir_index(0, 2) == 4
     assert display_dir_index(7, 1) == 1
@@ -1327,6 +1326,55 @@ def test_sister_geometry_staggered_and_corner() -> None:
     assert world.sister_lane(2) == 1
     assert world.oncoming_lane(1) is None
     assert world.oncoming_lane(2) is None
+    GameState()
+
+
+def test_lane_paint_roles_and_raster() -> None:
+    from render.lane_paint import (
+        PAVEMENT,
+        ROLE_CURB,
+        ROLE_ONCOMING,
+        ROLE_SISTER,
+        WHITE,
+        YELLOW,
+        lateral_roles,
+        raster_lane_ortho,
+        texture_phase,
+    )
+
+    places.set_route_hints([])
+    lanes = {
+        9: places.LaneConfig(start_tile=(64, 23), end_tile=(64, 70)),
+        10: places.LaneConfig(start_tile=(63, 70), end_tile=(63, 23)),
+        82: places.LaneConfig(start_tile=(65, 25), end_tile=(65, 67)),
+        83: places.LaneConfig(start_tile=(62, 67), end_tile=(62, 25)),
+    }
+    world.rebuild_world({}, {}, lanes)
+    assert world.lane_at_cell(64, 23) == 9
+    assert lateral_roles("N", 64, 23) == {"W": ROLE_ONCOMING, "E": ROLE_CURB}
+    assert lateral_roles("N", 64, 40) == {"W": ROLE_ONCOMING, "E": ROLE_SISTER}
+    assert lateral_roles("N", 65, 40) == {"W": ROLE_SISTER, "E": ROLE_CURB}
+    for gx, gy in world.get_lane_cells(82):
+        roles = lateral_roles("N", gx, gy)
+        assert ROLE_ONCOMING not in roles.values()
+
+    img_s = raster_lane_ortho("N", ROLE_SISTER, ROLE_CURB, 0)
+    assert img_s is not None
+    assert img_s.getpixel((0, 31))[:3] == WHITE
+    assert img_s.getpixel((0, 30))[:3] == PAVEMENT
+    img_c = raster_lane_ortho("N", ROLE_CURB, ROLE_CURB, 0)
+    assert img_c.getpixel((0, 31))[:3] == PAVEMENT
+    assert img_c.getpixel((0, 30))[:3] == PAVEMENT
+    assert img_c.getpixel((0, 28))[:3] == WHITE
+    img_o = raster_lane_ortho("N", ROLE_ONCOMING, ROLE_CURB, 0)
+    assert img_o.getpixel((0, 31))[:3] == PAVEMENT
+    assert img_o.getpixel((0, 28))[:3] == YELLOW
+
+    phase = texture_phase(ROLE_ONCOMING, ROLE_SISTER, 40)
+    img9 = raster_lane_ortho("N", ROLE_ONCOMING, ROLE_SISTER, phase)
+    img82 = raster_lane_ortho("N", ROLE_SISTER, ROLE_CURB, phase)
+    for x in range(32):
+        assert img9.getpixel((x, 0))[:3] == img82.getpixel((x, 31))[:3]
     GameState()
 
 
@@ -2008,6 +2056,7 @@ def main() -> None:
         test_building_catalog_natural_scale,
         test_rebuild_topology_tables,
         test_sister_geometry_staggered_and_corner,
+        test_lane_paint_roles_and_raster,
         test_path_cache_matches_live,
         test_occupancy_jam_and_lane_full,
         test_route_hinted_housing_park_via_bypass,

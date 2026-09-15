@@ -64,10 +64,19 @@ def draw_ghost_cells(host: ToolHost, tex_key: str, cells, center_x: float, cente
     tex = host.tile_set.get(tex_key)
     if tex is None:
         return
+    draw_ghost_textures(host, ((gx, gy, tex) for gx, gy in cells), center_x, center_y)
+
+
+def draw_ghost_textures(host: ToolHost, stamped, center_x: float, center_y: float) -> None:
+    if not host.mouse_in_window:
+        return
     lst = arcade.SpriteList()
-    for gx, gy in cells:
+    for gx, gy, tex in stamped:
+        if tex is None:
+            continue
         spr = arcade.Sprite(tex, scale=host.zoom_scale)
         spr.center_x, spr.center_y = host.to_screen(gx, gy, center_x, center_y)
         spr.alpha = 170
         lst.append(spr)
-    lst.draw(pixelated=True)
+    if lst:
+        lst.draw(pixelated=True)

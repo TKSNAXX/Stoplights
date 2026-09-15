@@ -134,10 +134,9 @@ def display_dir_index(world_dir_index: int, view_yaw_q: int = 0) -> int:
     return (int(world_dir_index) + 2 * normalize_yaw(view_yaw_q)) % 8
 
 
-def road_tile_key(world_dir: str, view_yaw_q: int = 0, passing: bool = False) -> str:
+def road_tile_key(world_dir: str, view_yaw_q: int = 0) -> str:
     disp = rotate_cardinal(world_dir, view_yaw_q)
-    base = _ROAD_FOR_CARDINAL[disp]
-    return base + "_pass" if passing else base
+    return _ROAD_FOR_CARDINAL[disp]
 
 
 def cardinal_label_anchors(world_cardinal: str, view_yaw_q: int = 0) -> tuple[str, str]:

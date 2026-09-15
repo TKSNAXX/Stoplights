@@ -52,6 +52,7 @@ class _WorldState:
         self.lane_graph: dict[str, set[str]] = {}
         self.attached: dict[str, frozenset[str]] = {}
         self.cell_to_intersections: dict[tuple[int, int], tuple[str, ...]] = {}
+        self.cell_to_lane: dict[tuple[int, int], int] = {}
         self.oncoming: dict[int, int | None] = {}
         self.sisters: dict[int, int | None] = {}
         self.best_next_hops: dict[tuple[str, str], frozenset[str]] = {}
@@ -313,6 +314,12 @@ def _refresh_topology() -> None:
     _state.oncoming = oncoming
     _state.sisters = sisters
 
+    cell_to_lane: dict[tuple[int, int], int] = {}
+    for i in ids:
+        for c in _state.lanes.get(i, ()):
+            cell_to_lane[c] = i
+    _state.cell_to_lane = cell_to_lane
+
     nodes: set[str] = set(_state.place_rects)
     nodes.update(_state.intersections)
     for src, dsts in graph.items():
@@ -467,6 +474,14 @@ def oncoming_lane(lane_index: int) -> int | None:
 
 def sister_lane(lane_index: int) -> int | None:
     return _state.sisters.get(lane_index)
+
+
+def lane_at_cell(gx: int, gy: int) -> int | None:
+    return _state.cell_to_lane.get((int(gx), int(gy)))
+
+
+def cell_occupancy() -> dict[tuple[int, int], int]:
+    return dict(_state.cell_to_lane)
 
 
 def best_next_hops(start: str, destination: str) -> frozenset[str]:

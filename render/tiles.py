@@ -15,6 +15,7 @@ except ImportError:
 from sim.constants import ORTHO_TILE_SIZE
 
 from render.corner_gen import make_corner, make_cross, make_straight_through, make_tee
+from render.lane_paint import STYLE_REV, raster_lane_ortho
 
 
 # Affine coeffs for inverse: iso dest (x,y) -> ortho source (a*x+b*y+c, d*x+e*y+f)
@@ -108,6 +109,7 @@ _corner_texture_cache: dict[tuple[int, int], arcade.Texture] = {}
 _straight_texture_cache: dict[tuple[int, str, int], arcade.Texture] = {}
 _tee_texture_cache: dict[tuple[int, str, str, int], arcade.Texture] = {}
 _cross_texture_cache: dict[tuple[int, int], arcade.Texture] = {}
+_lane_paint_cache: dict[tuple, arcade.Texture] = {}
 _STRAIGHT_TEX_REV = 11
 _TEE_TEX_REV = 7
 _CROSS_TEX_REV = 5
@@ -195,6 +197,32 @@ def generate_cross_texture(cells: int) -> arcade.Texture | None:
         iso_img = ortho_to_iso_large(ortho_img, cells=cells)
         tex = arcade.Texture(iso_img, name=f"cross_{cells}_r{_CROSS_TEX_REV}")
         _cross_texture_cache[key] = tex
+        return tex
+    except Exception:
+        return None
+
+
+def generate_lane_paint_texture(
+    display_dir: str,
+    role_a: str,
+    role_b: str,
+    phase: int = 0,
+) -> arcade.Texture | None:
+    """Iso lane tile for two lateral roles. Cached by display dir, roles, phase, style rev."""
+    if Image is None:
+        return None
+    d = display_dir if display_dir in ("N", "S", "E", "W") else "N"
+    key = (d, role_a, role_b, int(phase), STYLE_REV)
+    cached = _lane_paint_cache.get(key)
+    if cached is not None:
+        return cached
+    try:
+        ortho_img = raster_lane_ortho(d, role_a, role_b, int(phase))
+        if ortho_img is None:
+            return None
+        iso_img = ortho_to_iso(ortho_img)
+        tex = arcade.Texture(iso_img, name=f"lane_{d}_{role_a}_{role_b}_{phase}_r{STYLE_REV}")
+        _lane_paint_cache[key] = tex
         return tex
     except Exception:
         return None
