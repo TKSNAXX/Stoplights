@@ -197,7 +197,8 @@ def _direction_from_tiles(start: tuple[int, int], end: tuple[int, int]) -> str:
     return ""
 
 
-def _offset_for_direction(direction: str) -> tuple[int, int]:
+def offset_for_direction(direction: str) -> tuple[int, int]:
+    """Unit cell step for a cardinal heading. (0, 0) when not cardinal."""
     if direction == "N":
         return (0, 1)
     if direction == "S":
@@ -239,7 +240,7 @@ def derive_traffic(
     direction = _direction_from_tiles(start, end)
     if not direction:
         return ("", "", "")
-    dx, dy = _offset_for_direction(direction)
+    dx, dy = offset_for_direction(direction)
     sx, sy = start
     ex, ey = end
     in_cell = (sx - dx, sy - dy)

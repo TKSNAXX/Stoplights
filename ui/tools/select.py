@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import arcade
 
+from render.selection import grid_rect_screen_quad, mouth_half_rect, sister_seam_rect
 from sim import world
 from sim.cars import car_grid_pose
 from sim.constants import TILE_H, TILE_W
@@ -13,6 +14,7 @@ from ui.dialogs.place import PlaceVarsDialog
 from ui.theme import (
     CAR_HOVER_RING,
     CAR_SELECT_RING,
+    ISOLATE_TINT_BLUE,
     ISOLATE_TINT_GREEN,
     ISOLATE_TINT_RED,
     SELECT_MODE_CARS,
@@ -87,13 +89,10 @@ class SelectTool(Tool):
         zoom = self.host.zoom_scale
         hw = TILE_W * zoom
         hh = TILE_H * zoom
+        seams_drawn: set[frozenset[int]] = set()
         for dlg in self.host.dialogs.iter_open():
             if isinstance(dlg, LaneVarsDialog):
-                start, end = world.lane_start_end_cells(dlg.lane_index)
-                if start is not None:
-                    self._tint_cell(start, ISOLATE_TINT_GREEN, center_x, center_y, hw, hh)
-                if end is not None:
-                    self._tint_cell(end, ISOLATE_TINT_RED, center_x, center_y, hw, hh)
+                self._tint_lane(dlg.lane_index, seams_drawn, center_x, center_y, hw, hh)
             elif isinstance(dlg, PlaceVarsDialog):
                 self._tint_node(dlg.place, center_x, center_y, hw, hh)
             elif isinstance(dlg, IntersectionVarsDialog):
@@ -235,6 +234,77 @@ class SelectTool(Tool):
                     closer(dlg)
                 else:
                     self.host.dialogs.close(dlg)
+
+    def _tint_lane(
+        self,
+        lane_index: int,
+        seams_drawn: set[frozenset[int]],
+        center_x: float,
+        center_y: float,
+        hw: float,
+        hh: float,
+    ) -> None:
+        """Mouths green/red, half-length on a little sister, plus the blue seam."""
+        kind = world.sister_kind(lane_index)
+        direction = world.lane_direction(lane_index)
+        start, end = world.lane_start_end_cells(lane_index)
+        for cell, color, at_exit in (
+            (start, ISOLATE_TINT_GREEN, False),
+            (end, ISOLATE_TINT_RED, True),
+        ):
+            if cell is None:
+                continue
+            rect = (
+                mouth_half_rect(cell, direction, at_exit)
+                if kind == world.SISTER_LITTLE
+                else None
+            )
+            if rect is None:
+                self._tint_cell(cell, color, center_x, center_y, hw, hh)
+            else:
+                self._tint_rect(rect, color, center_x, center_y)
+
+        sister = world.sister_lane(lane_index)
+        if kind is None or sister is None:
+            return
+        pair = frozenset({lane_index, sister})
+        if pair in seams_drawn:
+            return
+        seams_drawn.add(pair)
+        self._tint_seam(lane_index, sister, kind, center_x, center_y)
+
+    def _tint_seam(
+        self,
+        lane_index: int,
+        sister: int,
+        kind: str,
+        center_x: float,
+        center_y: float,
+    ) -> None:
+        little, big = (
+            (lane_index, sister) if kind == world.SISTER_LITTLE else (sister, lane_index)
+        )
+        cells = world.get_lane_cells(little)
+        big_cells = world.get_lane_cells(big)
+        direction = world.lane_direction(little)
+        if not cells or not big_cells or not direction:
+            return
+        other_perp = big_cells[0][0] if direction in ("N", "S") else big_cells[0][1]
+        rect = sister_seam_rect(cells[0], cells[-1], direction, other_perp)
+        if rect is not None:
+            self._tint_rect(rect, ISOLATE_TINT_BLUE, center_x, center_y)
+
+    def _tint_rect(
+        self,
+        rect: tuple[float, float, float, float],
+        color: tuple[int, int, int, int],
+        center_x: float,
+        center_y: float,
+    ) -> None:
+        pts = grid_rect_screen_quad(
+            rect, lambda gx, gy: self.host.to_screen(gx, gy, center_x, center_y)
+        )
+        arcade.draw_polygon_filled(pts, color)
 
     def _tint_node(self, node: str, center_x: float, center_y: float, hw: float, hh: float) -> None:
         entrances, exits = world.node_entrance_exit_cells(node)

@@ -2,15 +2,19 @@
 Infrastructure selection rims: iso AABB silhouette and edge-contrast bands.
 
 Arcade-free. Occupancy is a grid AABB (places, intersections, cardinal lanes).
+Sub-cell overlay rects live here too; cell (gx, gy) spans [gx-0.5, gx+0.5].
 """
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
 from sim.constants import TILE_H, TILE_W
+from sim.map_data import offset_for_direction
 
 Point = tuple[float, float]
 Quad = tuple[list[Point], tuple[int, int, int, int]]
+GridRect = tuple[float, float, float, float]
+SEAM_WIDTH_CELLS = 0.5
 
 RIM_DISTANCES = (1.5, 3.0, 4.5, 6.0, 8.0)
 # Multiply factors (255 = unchanged). Edge is strongest darken.
@@ -177,3 +181,61 @@ def rim_quads(poly: Sequence[Point]) -> tuple[list[Quad], list[Quad]]:
             _quads_between(insets[i + 1], insets[i], (lift, lift, lift, 255), sw)
         )
     return (shadows, highlights)
+
+
+def grid_rect_screen_quad(
+    rect: GridRect,
+    to_screen: Callable[[float, float], Point],
+) -> list[Point]:
+    """Screen quad for an axis-aligned grid rect (x_lo, y_lo, x_hi, y_hi)."""
+    x_lo, y_lo, x_hi, y_hi = rect
+    corners = ((x_lo, y_lo), (x_hi, y_lo), (x_hi, y_hi), (x_lo, y_hi))
+    return ensure_ccw([to_screen(gx, gy) for gx, gy in corners])
+
+
+def mouth_half_rect(
+    cell: tuple[int, int],
+    direction: str,
+    at_exit: bool = False,
+) -> GridRect | None:
+    """
+    Half-cell rect at a lane mouth, full lane width: the entry half of a start
+    cell, or the exit half of an end cell.
+    """
+    dx, dy = offset_for_direction(direction)
+    if (dx, dy) == (0, 0):
+        return None
+    cx, cy = float(cell[0]), float(cell[1])
+    step = 0.5 if at_exit else -0.5
+    ox, oy = cx + dx * step, cy + dy * step
+    perp_x, perp_y = abs(dy) * 0.5, abs(dx) * 0.5
+    return (
+        min(cx, ox) - perp_x,
+        min(cy, oy) - perp_y,
+        max(cx, ox) + perp_x,
+        max(cy, oy) + perp_y,
+    )
+
+
+def sister_seam_rect(
+    first_cell: tuple[int, int],
+    last_cell: tuple[int, int],
+    direction: str,
+    other_perp: int,
+    width: float = SEAM_WIDTH_CELLS,
+) -> GridRect | None:
+    """
+    Ribbon centred on the edge shared with a sister, running mouth centre to
+    mouth centre so it stops at the inner edge of the half-cell mouths.
+    """
+    dx, dy = offset_for_direction(direction)
+    if (dx, dy) == (0, 0):
+        return None
+    half = width * 0.5
+    if dx == 0:
+        edge = (first_cell[0] + other_perp) / 2.0
+        lo, hi = sorted((float(first_cell[1]), float(last_cell[1])))
+        return (edge - half, lo, edge + half, hi)
+    edge = (first_cell[1] + other_perp) / 2.0
+    lo, hi = sorted((float(first_cell[0]), float(last_cell[0])))
+    return (lo, edge - half, hi, edge + half)

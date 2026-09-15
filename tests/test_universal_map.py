@@ -1298,6 +1298,28 @@ def test_sister_geometry_staggered_and_corner() -> None:
     assert world.oncoming_lane(82) is None
     assert world.oncoming_lane(83) is None
 
+    # The short inner lanes start and stop inside their sister's interior.
+    assert world.sister_kind(82) == world.SISTER_LITTLE
+    assert world.sister_kind(83) == world.SISTER_LITTLE
+    assert world.sister_kind(9) == world.SISTER_BIG
+    assert world.sister_kind(10) == world.SISTER_BIG
+    # Northbound 9 merges right into 82; 82 merges left into 9.
+    assert world.cell_merge(64, 40) == world.MERGE_RIGHT
+    assert world.cell_merge(65, 40) == world.MERGE_LEFT
+    # Southbound sisters sit at lower x, so the sides flip with the heading.
+    assert world.cell_merge(63, 40) == world.MERGE_RIGHT
+    assert world.cell_merge(62, 40) == world.MERGE_LEFT
+    # A little sister's own mouths still pass; the big sister's do not.
+    assert world.cell_merge(65, 25) == world.MERGE_LEFT
+    assert world.cell_merge(65, 67) == world.MERGE_LEFT
+    assert world.cell_merge(64, 23) == world.MERGE_NEITHER
+    assert world.cell_merge(64, 70) == world.MERGE_NEITHER
+    assert world.cell_merge(0, 0) == world.MERGE_NEITHER
+    assert world.cell_is_passing(64, 40)
+    assert not world.cell_is_passing(64, 23)
+    assert len(world.lane_merge_cells(9)) == 43
+    assert len(world.lane_merge_cells(82)) == len(world.get_lane_cells(82))
+
     corner = {
         1: places.LaneConfig(start_tile=(0, 10), end_tile=(5, 10)),
         2: places.LaneConfig(start_tile=(6, 11), end_tile=(10, 11)),
@@ -1326,7 +1348,87 @@ def test_sister_geometry_staggered_and_corner() -> None:
     assert world.sister_lane(2) == 1
     assert world.oncoming_lane(1) is None
     assert world.oncoming_lane(2) is None
+    # Equal length and aligned: sisters, but neither contains the other.
+    assert world.sister_kind(1) is None
+    assert world.sister_kind(2) is None
+    assert not world.lane_merge_cells(1)
+    assert not world.lane_merge_cells(2)
+
+    eastbound = {
+        1: places.LaneConfig(start_tile=(0, 10), end_tile=(40, 10)),
+        2: places.LaneConfig(start_tile=(5, 11), end_tile=(35, 11)),
+    }
+    world.rebuild_world({}, {}, eastbound)
+    assert world.sister_kind(2) == world.SISTER_LITTLE
+    assert world.sister_kind(1) == world.SISTER_BIG
+    # Eastbound driver's left is +y, the mirror of the northbound case.
+    assert world.cell_merge(20, 10) == world.MERGE_LEFT
+    assert world.cell_merge(20, 11) == world.MERGE_RIGHT
+    assert world.cell_merge(0, 10) == world.MERGE_NEITHER
+
+    three_abreast = {
+        1: places.LaneConfig(start_tile=(10, 0), end_tile=(10, 40)),
+        2: places.LaneConfig(start_tile=(11, 5), end_tile=(11, 35)),
+        3: places.LaneConfig(start_tile=(12, 0), end_tile=(12, 40)),
+    }
+    world.rebuild_world({}, {}, three_abreast)
+    # Merge sides come from neighbour occupancy, so the middle lane passes both
+    # ways even though 1:1 pairing can only name one sister.
+    assert world.cell_merge(11, 20) == world.MERGE_BOTH
+    assert world.cell_merge(10, 20) == world.MERGE_RIGHT
+    assert world.cell_merge(12, 20) == world.MERGE_LEFT
+    assert world.sister_lane(3) is None
+    assert world.sister_kind(3) is None
+
+    facing = {
+        1: places.LaneConfig(start_tile=(0, 10), end_tile=(0, 20)),
+        2: places.LaneConfig(start_tile=(1, 20), end_tile=(1, 10)),
+    }
+    world.rebuild_world({}, {}, facing)
+    assert world.oncoming_lane(1) == 2
+    # Crossing the yellow is not a merge.
+    assert world.cell_merge(0, 15) == world.MERGE_NEITHER
+    assert world.cell_merge(1, 15) == world.MERGE_NEITHER
     GameState()
+
+
+def test_sister_overlay_rects() -> None:
+    """Half-cell mouths and the half-cell seam meet without overlapping."""
+    from render.camera import grid_to_screen
+    from render.selection import (
+        grid_rect_screen_quad,
+        mouth_half_rect,
+        sister_seam_rect,
+    )
+    from sim.constants import TILE_H, TILE_W
+
+    green = mouth_half_rect((65, 25), "N")
+    red = mouth_half_rect((65, 67), "N", at_exit=True)
+    assert green == (64.5, 24.5, 65.5, 25.0)
+    assert red == (64.5, 67.0, 65.5, 67.5)
+    # Southbound mouths take the other half of their cell.
+    assert mouth_half_rect((62, 67), "S") == (61.5, 67.0, 62.5, 67.5)
+    assert mouth_half_rect((62, 25), "S", at_exit=True) == (61.5, 24.5, 62.5, 25.0)
+    assert mouth_half_rect((5, 11), "E") == (4.5, 10.5, 5.0, 11.5)
+    assert mouth_half_rect((5, 5), "") is None
+
+    seam = sister_seam_rect((65, 25), (65, 67), "N", 64)
+    assert seam == (64.25, 25.0, 64.75, 67.0)
+    # Blue starts where green ends and stops where red begins.
+    assert seam[1] == green[3] and seam[3] == red[1]
+    assert sister_seam_rect((5, 11), (35, 11), "E", 10) == (5.0, 10.25, 35.0, 10.75)
+
+    bounds = (0, 0, 16, 16)
+
+    def to_screen(gx: float, gy: float) -> tuple[float, float]:
+        return grid_to_screen(gx, gy, 400.0, 300.0, *bounds, zoom_scale=1.0)
+
+    # A full-cell rect is the same diamond the isolate tint already draws.
+    quad = grid_rect_screen_quad((4.5, 4.5, 5.5, 5.5), to_screen)
+    cx, cy = to_screen(5.0, 5.0)
+    assert sorted(quad) == sorted(
+        [(cx, cy + TILE_H), (cx + TILE_W, cy), (cx, cy - TILE_H), (cx - TILE_W, cy)]
+    )
 
 
 def test_lane_paint_roles_and_raster() -> None:
@@ -2056,6 +2158,7 @@ def main() -> None:
         test_building_catalog_natural_scale,
         test_rebuild_topology_tables,
         test_sister_geometry_staggered_and_corner,
+        test_sister_overlay_rects,
         test_lane_paint_roles_and_raster,
         test_path_cache_matches_live,
         test_occupancy_jam_and_lane_full,

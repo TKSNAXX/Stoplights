@@ -15,7 +15,7 @@ from sim.junction import (
     overlay_type_for_sides,
     tee_layout_for_sides,
 )
-from sim.map_data import _offset_for_direction
+from sim.map_data import offset_for_direction
 
 
 def _bounds_from_cells(cells: list[tuple[int, int]]) -> tuple[int, int, int, int]:
@@ -91,7 +91,7 @@ def _crossings_for_lane(
     if not lane:
         return []
     d = world.lane_direction(i)
-    dx, dy = _offset_for_direction(d)
+    dx, dy = offset_for_direction(d)
     out: list[tuple[Cardinal, str, int, int]] = []
 
     for j in range(len(lane) - 1):

@@ -55,6 +55,8 @@ class _WorldState:
         self.cell_to_lane: dict[tuple[int, int], int] = {}
         self.oncoming: dict[int, int | None] = {}
         self.sisters: dict[int, int | None] = {}
+        self.sister_kinds: dict[int, str | None] = {}
+        self.merge_sides: dict[tuple[int, int], str] = {}
         self.best_next_hops: dict[tuple[str, str], frozenset[str]] = {}
 
 
@@ -198,6 +200,100 @@ def _are_oncoming(
     return _adjacent_overlap(cells_a, dir_a, cells_b)
 
 
+SISTER_LITTLE = "little"
+SISTER_BIG = "big"
+
+MERGE_NEITHER = "neither"
+MERGE_LEFT = "left"
+MERGE_RIGHT = "right"
+MERGE_BOTH = "both"
+
+_MERGE_FOR_SIDES = {
+    (False, False): MERGE_NEITHER,
+    (True, False): MERGE_LEFT,
+    (False, True): MERGE_RIGHT,
+    (True, True): MERGE_BOTH,
+}
+
+
+def _travel_range(cells: tuple[tuple[int, int], ...], direction: str) -> tuple[int, int]:
+    """Inclusive travel-axis extent of a lane: y for N/S, x for E/W."""
+    x0, x1, y0, y1 = _lane_span(cells)
+    return (y0, y1) if direction in ("N", "S") else (x0, x1)
+
+
+def _is_little_of(
+    cells_a: tuple[tuple[int, int], ...],
+    dir_a: str,
+    cells_b: tuple[tuple[int, int], ...],
+    dir_b: str,
+) -> bool:
+    """
+    True when a is the little sister of b: sisters, and both of a's mouths lie
+    strictly inside b's non-entrance range (b's own mouths excluded).
+    """
+    if not _are_sisters(cells_a, dir_a, cells_b, dir_b):
+        return False
+    a_lo, a_hi = _travel_range(cells_a, dir_a)
+    b_lo, b_hi = _travel_range(cells_b, dir_b)
+    return b_lo < a_lo and a_hi < b_hi
+
+
+def _lateral_offsets(direction: str) -> tuple[tuple[int, int], tuple[int, int]]:
+    """Driver's left and right cell steps for a travel heading."""
+    from sim.junction import LEFT_OF, RIGHT_OF
+
+    left = map_data.offset_for_direction(LEFT_OF.get(direction, ""))
+    right = map_data.offset_for_direction(RIGHT_OF.get(direction, ""))
+    return (left, right)
+
+
+def _compute_merge_sides(
+    ids: list[int],
+    cell_to_lane: dict[tuple[int, int], int],
+) -> dict[tuple[int, int], str]:
+    """
+    Per-cell merge side toward a little/big sister, driver-relative.
+
+    Tagged from perpendicular neighbour occupancy rather than the 1:1 sister
+    pairing, so a lane flanked on both sides reports "both". Cells with no
+    little/big neighbour are absent and read as "neither".
+    """
+    sides: dict[tuple[int, int], str] = {}
+    pair_cache: dict[tuple[int, int], bool] = {}
+
+    def is_little_big(a: int, b: int) -> bool:
+        key = (a, b) if a < b else (b, a)
+        cached = pair_cache.get(key)
+        if cached is not None:
+            return cached
+        cells_a, dir_a = _state.lanes.get(a, ()), lane_direction(a)
+        cells_b, dir_b = _state.lanes.get(b, ()), lane_direction(b)
+        result = _is_little_of(cells_a, dir_a, cells_b, dir_b) or _is_little_of(
+            cells_b, dir_b, cells_a, dir_a
+        )
+        pair_cache[key] = result
+        return result
+
+    for i in ids:
+        direction = lane_direction(i)
+        cells = _state.lanes.get(i, ())
+        if not direction or not cells:
+            continue
+        (lx, ly), (rx, ry) = _lateral_offsets(direction)
+        for cx, cy in cells:
+            flags = []
+            for dx, dy in ((lx, ly), (rx, ry)):
+                other = cell_to_lane.get((cx + dx, cy + dy))
+                flags.append(
+                    other is not None and other != i and is_little_big(i, other)
+                )
+            side = _MERGE_FOR_SIDES[(flags[0], flags[1])]
+            if side != MERGE_NEITHER:
+                sides[(cx, cy)] = side
+    return sides
+
+
 def _bfs_distance(start: str, destination: str, graph: dict[str, set[str]]) -> int | None:
     if start == destination:
         return 0
@@ -314,11 +410,25 @@ def _refresh_topology() -> None:
     _state.oncoming = oncoming
     _state.sisters = sisters
 
+    kinds: dict[int, str | None] = {i: None for i in ids}
+    for a in ids:
+        b = sisters.get(a)
+        if b is None or kinds[a] is not None:
+            continue
+        if _is_little_of(
+            _state.lanes.get(a, ()), lane_direction(a),
+            _state.lanes.get(b, ()), lane_direction(b),
+        ):
+            kinds[a] = SISTER_LITTLE
+            kinds[b] = SISTER_BIG
+    _state.sister_kinds = kinds
+
     cell_to_lane: dict[tuple[int, int], int] = {}
     for i in ids:
         for c in _state.lanes.get(i, ()):
             cell_to_lane[c] = i
     _state.cell_to_lane = cell_to_lane
+    _state.merge_sides = _compute_merge_sides(ids, cell_to_lane)
 
     nodes: set[str] = set(_state.place_rects)
     nodes.update(_state.intersections)
@@ -474,6 +584,30 @@ def oncoming_lane(lane_index: int) -> int | None:
 
 def sister_lane(lane_index: int) -> int | None:
     return _state.sisters.get(lane_index)
+
+
+def sister_kind(lane_index: int) -> str | None:
+    """Sister shape of this lane: little, big, or None (unpaired or unnamed)."""
+    return _state.sister_kinds.get(lane_index)
+
+
+def cell_merge(gx: int, gy: int) -> str:
+    """Merge side acceptable from this cell: left, right, both, or neither."""
+    return _state.merge_sides.get((int(gx), int(gy)), MERGE_NEITHER)
+
+
+def cell_is_passing(gx: int, gy: int) -> bool:
+    return cell_merge(gx, gy) != MERGE_NEITHER
+
+
+def lane_merge_cells(lane_index: int) -> dict[tuple[int, int], str]:
+    """Merge sides for this lane's cells, omitting "neither"."""
+    out: dict[tuple[int, int], str] = {}
+    for c in get_lane_cells(lane_index):
+        side = _state.merge_sides.get(c)
+        if side is not None:
+            out[c] = side
+    return out
 
 
 def lane_at_cell(gx: int, gy: int) -> int | None:
