@@ -73,6 +73,25 @@ class GameState:
         self.cars = [c for c in self.cars if c.lane_index != lane_idx]
         self.rebuild_world_from_config()
 
+    def delete_place(self, place_key: str) -> None:
+        if place_key not in self.places:
+            return
+        del self.places[place_key]
+        self.spawn_enabled.pop(place_key, None)
+        self.spawn_timers.pop(place_key, None)
+        self.origin_spawn_counts.pop(place_key, None)
+        self.lane_spawn_counts = {
+            k: v for k, v in self.lane_spawn_counts.items() if k[0] != place_key
+        }
+        self.route_hints = [
+            (a, b, c) for (a, b, c) in self.route_hints if a != place_key and b != place_key
+        ]
+        self.cars = [
+            c for c in self.cars if c.origin != place_key and c.destination != place_key
+        ]
+        places.set_route_hints(self.route_hints)
+        self.rebuild_world_from_config()
+
     def get_max_impasse_timer(self) -> float | None:
         if not self._impasse_timers:
             return None
@@ -197,8 +216,7 @@ class GameState:
         return cfg is not None and not getattr(cfg, "protected", False)
 
     def can_remove_place(self, place_key: str) -> bool:
-        g = self.places.get(place_key)
-        return g is not None and not getattr(g, "protected", False)
+        return place_key in self.places
 
     def can_remove_intersection(self, intersection_key: str) -> bool:
         cfg = self.intersections.get(intersection_key)

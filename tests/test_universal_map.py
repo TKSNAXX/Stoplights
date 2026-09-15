@@ -619,6 +619,7 @@ def test_reset_loads_default() -> None:
     assert set(g.places) == {"Housing", "Office", "Park", "Shopping"}
     assert g.can_remove_lane(0) is False
     assert g.can_remove_intersection("main") is False
+    assert g.can_remove_place("Housing") is True
 
 
 def test_stable_lane_ids_survive_gap() -> None:

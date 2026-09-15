@@ -131,7 +131,7 @@ class NewPlaceDialog(Dialog):
 
 
 class PlaceVarsDialog(Dialog):
-    """Dialog for editing place spawn, attract, and geometry. Changes apply live. Remove for extra places only."""
+    """Dialog for editing place spawn, attract, and geometry. Changes apply live."""
 
     def __init__(
         self,
@@ -148,7 +148,7 @@ class PlaceVarsDialog(Dialog):
         from sim.places import BUILDING_KIND_VALUES, clamp_building_kind
         can_remove = bool(game is not None and hasattr(game, "can_remove_place") and game.can_remove_place(place))
         super().__init__(
-            x, y, DIALOG_WIDTH, dialog_height(7 if can_remove else 6), place,
+            x, y, DIALOG_WIDTH, dialog_height(7), place,
             kind="Place", title_editable=True,
         )
         self.place = place
@@ -185,13 +185,13 @@ class PlaceVarsDialog(Dialog):
         )
         self._shuffle_btn = ShuffleButton(0, 0, on_click=self._do_shuffle)
         self._remove_btn = RemoveButton(0, 0, on_click=self._do_remove)
+        self._remove_btn.enabled = can_remove
 
         self.widgets = [
             self._spawn_slider, self._attract_slider, self._kind_dropdown,
             self._shuffle_btn, self._center_compass, self._w_box, self._l_box,
+            self._remove_btn,
         ]
-        if self._can_remove:
-            self.widgets.append(self._remove_btn)
         self._spawn_label = ParamLabel("Spawn")
         self._attract_label = ParamLabel("Attract")
         self._kind_label = ParamLabel("Buildings")
@@ -265,10 +265,9 @@ class PlaceVarsDialog(Dialog):
             self._on_change()
 
     def _do_remove(self) -> None:
-        if self._game is not None:
-            if self.place in self._game.places:
-                del self._game.places[self.place]
-            self._game.rebuild_world_from_config()
+        if self._game is None or not self._can_remove:
+            return
+        self._game.delete_place(self.place)
         if self._on_remove:
             self._on_remove()
 
@@ -313,9 +312,8 @@ class PlaceVarsDialog(Dialog):
         r5 = form_row(self, 5)
         self._l_label.place(r5.label_x, r5.label_y)
         self._l_box.rect = (r5.control_left, r5.control_bottom, r5.control_width, DATUM_HEIGHT)
-        if self._can_remove:
-            r6 = form_row(self, 6)
-            self._remove_btn.rect = (r6.control_left, r6.control_bottom, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE)
+        r6 = form_row(self, 6)
+        self._remove_btn.rect = (r6.control_left, r6.control_bottom, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE)
 
     def draw(self) -> None:
         self._spawn_datum.set_value(f"{PLACE_SPAWN_VALUES[self._spawn_slider.value]:.1f}s")
