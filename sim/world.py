@@ -135,28 +135,7 @@ def rebuild_world(
     rebuild_path_cache()
 
 
-def _axis(direction: str) -> str:
-    d = (direction or "").upper()
-    if d in ("N", "S"):
-        return "NS"
-    if d in ("E", "W"):
-        return "EW"
-    return d
-
-
-def _min_chebyshev(
-    cells_a: tuple[tuple[int, int], ...],
-    cells_b: tuple[tuple[int, int], ...],
-) -> int:
-    best = 10**9
-    for ax, ay in cells_a:
-        for bx, by in cells_b:
-            d = max(abs(ax - bx), abs(ay - by))
-            if d < best:
-                best = d
-                if best == 0:
-                    return 0
-    return best if best != 10**9 else 10**9
+_OPPOSITE_DIR = {"N": "S", "S": "N", "E": "W", "W": "E"}
 
 
 def _lane_span(cells: tuple[tuple[int, int], ...]) -> tuple[int, int, int, int]:
@@ -169,15 +148,12 @@ def _ranges_overlap(a0: int, a1: int, b0: int, b1: int) -> bool:
     return a0 <= b1 and b0 <= a1
 
 
-def _are_sisters(
+def _adjacent_overlap(
     cells_a: tuple[tuple[int, int], ...],
     dir_a: str,
     cells_b: tuple[tuple[int, int], ...],
-    dir_b: str,
 ) -> bool:
-    """Same heading, adjacent on the perpendicular, overlapping on the travel axis."""
-    if not cells_a or not cells_b or dir_a != dir_b:
-        return False
+    """Adjacent on the perpendicular axis, overlapping on the travel axis."""
     ax0, ax1, ay0, ay1 = _lane_span(cells_a)
     bx0, bx1, by0, by1 = _lane_span(cells_b)
     if dir_a in ("N", "S"):
@@ -195,6 +171,30 @@ def _are_sisters(
             and _ranges_overlap(ax0, ax1, bx0, bx1)
         )
     return False
+
+
+def _are_sisters(
+    cells_a: tuple[tuple[int, int], ...],
+    dir_a: str,
+    cells_b: tuple[tuple[int, int], ...],
+    dir_b: str,
+) -> bool:
+    """Same heading, adjacent on the perpendicular, overlapping on the travel axis."""
+    if not cells_a or not cells_b or dir_a != dir_b:
+        return False
+    return _adjacent_overlap(cells_a, dir_a, cells_b)
+
+
+def _are_oncoming(
+    cells_a: tuple[tuple[int, int], ...],
+    dir_a: str,
+    cells_b: tuple[tuple[int, int], ...],
+    dir_b: str,
+) -> bool:
+    """Opposite heading, same adjacency and travel-range overlap as a sister."""
+    if not cells_a or not cells_b or _OPPOSITE_DIR.get(dir_a) != dir_b:
+        return False
+    return _adjacent_overlap(cells_a, dir_a, cells_b)
 
 
 def _bfs_distance(start: str, destination: str, graph: dict[str, set[str]]) -> int | None:
@@ -291,9 +291,6 @@ def _refresh_topology() -> None:
         cells_a = _state.lanes.get(a, ())
         if not dir_a or not cells_a:
             continue
-        tin_a = lane_traffic_in(a)
-        tout_a = lane_traffic_out(a)
-        axis_a = _axis(dir_a)
         for b in ids[a_idx + 1 :]:
             dir_b = lane_direction(b)
             cells_b = _state.lanes.get(b, ())
@@ -306,16 +303,13 @@ def _refresh_topology() -> None:
             ):
                 sisters[a] = b
                 sisters[b] = a
-            tin_b = lane_traffic_in(b)
-            tout_b = lane_traffic_out(b)
-            if not tin_a or not tout_a or not tin_b or not tout_b:
-                continue
-            if _min_chebyshev(cells_a, cells_b) != 1:
-                continue
-            if tin_a == tout_b and tout_a == tin_b and axis_a == _axis(dir_b):
-                if oncoming[a] is None and oncoming[b] is None:
-                    oncoming[a] = b
-                    oncoming[b] = a
+            if (
+                oncoming[a] is None
+                and oncoming[b] is None
+                and _are_oncoming(cells_a, dir_a, cells_b, dir_b)
+            ):
+                oncoming[a] = b
+                oncoming[b] = a
     _state.oncoming = oncoming
     _state.sisters = sisters
 

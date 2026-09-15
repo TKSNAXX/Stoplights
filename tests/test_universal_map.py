@@ -1281,7 +1281,7 @@ def test_rebuild_topology_tables() -> None:
 
 
 def test_sister_geometry_staggered_and_corner() -> None:
-    """Sisters share heading, adjacency, and travel-range overlap; endpoints need not match."""
+    """Sisters share heading, oncoming the reverse; adjacency and overlap, not endpoints."""
     places.set_route_hints([])
     lanes = {
         9: places.LaneConfig(start_tile=(64, 23), end_tile=(64, 70)),
@@ -1294,6 +1294,10 @@ def test_sister_geometry_staggered_and_corner() -> None:
     assert world.sister_lane(82) == 9
     assert world.sister_lane(10) == 83
     assert world.sister_lane(83) == 10
+    assert world.oncoming_lane(9) == 10
+    assert world.oncoming_lane(10) == 9
+    assert world.oncoming_lane(82) is None
+    assert world.oncoming_lane(83) is None
 
     corner = {
         1: places.LaneConfig(start_tile=(0, 10), end_tile=(5, 10)),
@@ -1302,6 +1306,17 @@ def test_sister_geometry_staggered_and_corner() -> None:
     world.rebuild_world({}, {}, corner)
     assert world.sister_lane(1) is None
     assert world.sister_lane(2) is None
+    assert world.oncoming_lane(1) is None
+    assert world.oncoming_lane(2) is None
+
+    opposite_corner = {
+        1: places.LaneConfig(start_tile=(0, 10), end_tile=(5, 10)),
+        2: places.LaneConfig(start_tile=(10, 11), end_tile=(6, 11)),
+    }
+    world.rebuild_world({}, {}, opposite_corner)
+    assert world.sister_lane(1) is None
+    assert world.oncoming_lane(1) is None
+    assert world.oncoming_lane(2) is None
 
     shared = {
         1: places.LaneConfig(start_tile=(4, 10), end_tile=(12, 10)),
@@ -1310,6 +1325,8 @@ def test_sister_geometry_staggered_and_corner() -> None:
     world.rebuild_world({}, {}, shared)
     assert world.sister_lane(1) == 2
     assert world.sister_lane(2) == 1
+    assert world.oncoming_lane(1) is None
+    assert world.oncoming_lane(2) is None
     GameState()
 
 
