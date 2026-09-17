@@ -41,6 +41,9 @@ def load_config(game: "GameState", window=None) -> None:
             window._edge_pan_enabled = us["edge_pan_enabled"]
         if "grass_close_enabled" in us and isinstance(us["grass_close_enabled"], bool):
             window._grass_close_enabled = us["grass_close_enabled"]
+        if "police_enabled" in us and isinstance(us["police_enabled"], bool):
+            window._police_enabled = us["police_enabled"]
+            game.police_enabled = us["police_enabled"]
         if "color_hue" in us:
             window._color_hue = clamp_color_hue(us["color_hue"])
         if "color_sat" in us:

@@ -295,14 +295,18 @@ def _fit_path_curve(in_lane_index: int, out_lane_index: int) -> _PathCurve | Non
 
 
 def rebuild_path_cache() -> None:
-    """Fit and store curves for every in-lane/out-lane pair sharing an intersection."""
+    """Fit and store curves for every legal in-lane/out-lane pair sharing an intersection."""
     global _PATH_CACHE
+    from sim import places
+
     cache: dict[tuple[int, int], _PathCurve] = {}
     for in_lane in world.in_lane_ids():
         node = world.lane_traffic_out(in_lane)
         if not world.is_intersection(node):
             continue
         for out_lane in world.outgoing_lanes(node):
+            if not places.is_valid_intersection_path(in_lane, out_lane):
+                continue
             curve = _fit_path_curve(in_lane, out_lane)
             if curve is not None:
                 cache[(in_lane, out_lane)] = curve

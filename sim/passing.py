@@ -33,6 +33,8 @@ REASON_KEEP = "keep"
 REASON_PASS = "pass"
 REASON_EXIT = "exit"
 REASON_STEP = "step"
+# Not a lane change at all: a mother running straight on into her daughter.
+REASON_FLOW = "flow"
 
 
 def merge_choice(car, occupancy: Occupancy | None = None):
@@ -85,9 +87,15 @@ def merge_choice(car, occupancy: Occupancy | None = None):
 
 
 def hold_merge_speed(cars_list) -> None:
-    """Floor the speed of cars astride a seam so a lane change always completes."""
+    """
+    Floor the speed of cars astride a seam so a lane change always completes.
+
+    A flow onto a daughter crosses nothing, so it brakes like any other cell.
+    """
     for car in cars_list:
         if getattr(car, "motion_mode", "lane") != "merge":
+            continue
+        if getattr(car, "merge_reason", "") == REASON_FLOW:
             continue
         if car.speed_scale < MERGE_MIN_SCALE:
             car.speed_scale = MERGE_MIN_SCALE
@@ -99,6 +107,7 @@ def planned_step_lane(car) -> int | None:
 
     Only when the route's current step is the lane being driven, so a
     discretionary change onto a sister never mistakes the step for its own.
+    A daughter is the same road carried on, not a step, so it is not one.
     """
     route = getattr(car, "route", ()) or ()
     idx = int(getattr(car, "route_index", 0))
@@ -109,6 +118,8 @@ def planned_step_lane(car) -> int | None:
         return None
     nxt = routes.step_lane_after(route, idx)
     if nxt is None or nxt[0] == car.lane_index:
+        return None
+    if nxt[0] == world.lane_daughter(car.lane_index):
         return None
     return nxt[0]
 
@@ -135,7 +146,7 @@ def _step_choice(car, lane: int, pos: int, sides: str, occ: Occupancy, target_la
 
 def _must_exit(lane: int, pos: int, cells: tuple[tuple[int, int], ...]) -> bool:
     """True on a lane that leads nowhere and is about to run out."""
-    if world.lane_traffic_out(lane):
+    if world.lane_traffic_out(lane) or world.lane_daughter(lane) is not None:
         return False
     return (len(cells) - 1 - pos) <= MERGE_EXIT_LOOKAHEAD
 
@@ -158,7 +169,7 @@ def _exit_choice(car, lane: int, pos: int, sides: str, occ: Occupancy):
 
 def _side_leads_somewhere(lane: int, pos: int, side: str) -> bool:
     found = world.merge_target(lane, pos, side, MERGE_FORWARD_CELLS)
-    return bool(found and world.lane_traffic_out(found[0]))
+    return bool(found and world.lane_exit_node(found[0]))
 
 
 def _first_clear_target(

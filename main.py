@@ -25,12 +25,13 @@ from render.lane_paint import paint_spec
 from render.intersection_topology import (
     classify_intersection_sides,
     corner_quadrant_for_sides,
-    overlay_type_for_sides,
+    overlay_type_for_intersection,
     straight_axis_for_intersection,
     tee_layout_for_sides,
 )
 from render.tiles import (
     TileSet,
+    generate_big_texture,
     generate_corner_texture,
     generate_cross_texture,
     generate_lane_paint_texture,
@@ -116,10 +117,12 @@ class StoplightsWindow(arcade.Window):
         self.game = GameState()
         self._edge_pan_enabled = True
         self._grass_close_enabled = True
+        self._police_enabled = True
         self._color_hue = 0
         self._color_sat = 1.0
         self._color_grade = WorldColorGrade(self.ctx)
         persistence.load_config(self.game, window=self)
+        self.game.police_enabled = self._police_enabled
         set_ui_grade(self._color_hue, self._color_sat)
         self.game.rebuild_world_from_config()
         self._tick_accumulator = 0.0
@@ -658,10 +661,12 @@ class StoplightsWindow(arcade.Window):
             active, _, _ = classify_intersection_sides(key, cells)
             yaw = self._camera.view_yaw_q
             display_active = rotate_sides(active, yaw)
-            itype = overlay_type_for_sides(display_active)
+            itype = overlay_type_for_intersection(key, display_active)
             centered_tex: arcade.Texture | None = None
             if itype == places.INTERSECTION_TYPE_NONE:
                 pass
+            elif itype == places.INTERSECTION_TYPE_BIG:
+                centered_tex = generate_big_texture(size_cells)
             elif itype == places.INTERSECTION_TYPE_CROSS:
                 centered_tex = generate_cross_texture(size_cells)
             elif itype == places.INTERSECTION_TYPE_CORNER:
@@ -1134,6 +1139,7 @@ class StoplightsWindow(arcade.Window):
                     grass_close_enabled=self._grass_close_enabled,
                     color_hue=self._color_hue,
                     color_sat=self._color_sat,
+                    police_enabled=self._police_enabled,
                     on_edge_pan_change=lambda v: (
                         setattr(self, "_edge_pan_enabled", v),
                         persistence.request_debounced_save(),
@@ -1142,7 +1148,13 @@ class StoplightsWindow(arcade.Window):
                         setattr(self, "_grass_close_enabled", v),
                         persistence.request_debounced_save(),
                     ),
+                    on_police_change=lambda v: (
+                        setattr(self, "_police_enabled", v),
+                        self.game.set_police_enabled(v),
+                        persistence.request_debounced_save(),
+                    ),
                     on_color_change=self._on_color_grade_change,
+                    on_clear_cars=self.game.clear_cars,
                 )
                 dlg.set_on_close(lambda d: self._dialog_manager.close(d))
                 self._dialog_manager.open(dlg)

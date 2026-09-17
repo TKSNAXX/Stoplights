@@ -180,13 +180,22 @@ def _queue_ahead_cars(car, occupancy: Occupancy) -> list:
     for other in occupancy.cars_on_lane(lane_idx):
         if other is not car and getattr(other, "position_in_lane", -1) > pos:
             out.append(other)
-    node = world.lane_traffic_out(lane_idx)
-    if not world.is_intersection(node):
-        return out
     lane = world.get_lane_cells(lane_idx)
     if not lane:
         return out
     approaching = pos >= max(0, len(lane) - INBOUND_TAIL_CELLS)
+    daughter = world.lane_daughter(lane_idx)
+    if daughter is not None:
+        # One continuous road: the head of the daughter is simply the queue ahead.
+        if approaching:
+            reach = INBOUND_TAIL_CELLS - (len(lane) - pos)
+            for other in occupancy.cars_on_lane(daughter):
+                if other is not car and getattr(other, "position_in_lane", 0) <= reach:
+                    out.append(other)
+        return out
+    node = world.lane_traffic_out(lane_idx)
+    if not world.is_intersection(node):
+        return out
     if not approaching:
         return out
     seen_ids = {id(c) for c in out}

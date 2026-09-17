@@ -82,12 +82,14 @@ INTERSECTION_TYPE_X = "x"  # load alias for cross
 INTERSECTION_TYPE_CORNER = "corner"
 INTERSECTION_TYPE_STRAIGHT = "straight"
 INTERSECTION_TYPE_TEE = "tee"
+INTERSECTION_TYPE_BIG = "big"
 INTERSECTION_TYPES = (
     INTERSECTION_TYPE_NONE,
     INTERSECTION_TYPE_CROSS,
     INTERSECTION_TYPE_CORNER,
     INTERSECTION_TYPE_STRAIGHT,
     INTERSECTION_TYPE_TEE,
+    INTERSECTION_TYPE_BIG,
 )
 
 INTERSECTION_SIZE_MIN = 2
@@ -178,7 +180,35 @@ def is_uturn_transition(in_lane_index: int, out_lane_index: int) -> bool:
 
 
 def is_valid_intersection_path(in_lane_index: int, out_lane_index: int) -> bool:
-    return not is_uturn_transition(in_lane_index, out_lane_index)
+    """
+    True when this in→out pair is a legal crossing of a shared intersection.
+
+    U-turns stay illegal. Twin dests: keep-side on the straight, inside (tight)
+    on a turn — never the far lane of the new heading. Twin-to-single: both
+    inbounds may use that one outbound.
+    """
+    if is_uturn_transition(in_lane_index, out_lane_index):
+        return False
+    node = world.lane_traffic_out(in_lane_index)
+    if not world.is_intersection(node):
+        return False
+    if world.lane_traffic_in(out_lane_index) != node:
+        return False
+    in_group = world.mouth_group(in_lane_index, node, inbound=True)
+    out_group = world.mouth_group(out_lane_index, node, inbound=False)
+    if len(in_group) >= 2 and len(out_group) <= 1:
+        return True
+    if len(out_group) >= 2:
+        from sim.paths import is_straight_path
+
+        if is_straight_path(in_lane_index, out_lane_index):
+            if len(in_group) >= 2:
+                in_left = world.left_lane_of(in_group)
+                out_left = world.left_lane_of(out_group)
+                return (in_lane_index == in_left) == (out_lane_index == out_left)
+            return world.mouths_aligned(in_lane_index, out_lane_index)
+        return out_lane_index == world.nearer_to_entry_edge(in_lane_index, out_group)
+    return True
 
 
 def is_turn_at_intersection(in_lane_index: int, out_lane_index: int) -> bool:
@@ -279,6 +309,9 @@ def destination_reachable_from_node(start_node: str, destination: str) -> bool:
 def _candidates_without_uturn(inbound_lane_index: int | None, candidates: list[int]) -> list[int]:
     if inbound_lane_index is None or not candidates:
         return candidates
+    node = world.lane_traffic_out(inbound_lane_index)
+    if world.is_intersection(node):
+        return [c for c in candidates if is_valid_intersection_path(inbound_lane_index, c)]
     good = [c for c in candidates if not is_uturn_transition(inbound_lane_index, c)]
     return good if good else candidates
 

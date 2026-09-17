@@ -115,6 +115,7 @@ def start_merge_segment(
     side: str,
     reason: str,
     occupancy=None,
+    pace: float = passing.MERGE_SPEED_KEEP,
 ) -> bool:
     """
     Begin a lane change onto target_lane.
@@ -140,7 +141,7 @@ def start_merge_segment(
     car.segment_start_time = start_time
     # Pace is set on the curve's own length, so the car holds its road speed
     # rather than trading pace for the extra distance the jog costs.
-    travel = speed * min(1.0, max(0.05, passing.MERGE_SPEED_KEEP))
+    travel = speed * min(1.0, max(0.05, pace))
     car.segment_duration = length / travel if travel > 0 else 0.2
     car.segment_start_pos = None
     car.segment_end_pos = None
@@ -148,6 +149,24 @@ def start_merge_segment(
     car.segment_scale_reference = max(0.0, getattr(car, "speed_scale", 1.0))
     if occupancy is not None:
         occupancy.add(car)
+    return True
+
+
+def start_flow_segment(car: cars.Car, start_time: float, speed: float, occupancy=None) -> bool:
+    """
+    Roll off the end of a mother lane into her daughter as if the road never broke.
+
+    The cells abut on one heading, so the lane-change curve is a straight cell of
+    road: full pace, no lean, and no side to report, since nothing is crossed.
+    """
+    daughter = world.lane_daughter(car.lane_index)
+    if daughter is None:
+        return False
+    if not start_merge_segment(
+        car, start_time, speed, daughter, 0, "", passing.REASON_FLOW, occupancy, pace=1.0
+    ):
+        return False
+    _advance_route_step(car, daughter)
     return True
 
 
@@ -196,6 +215,8 @@ def start_segment_for_current_state(
             return False
         if car.position_in_lane + 1 < len(lane):
             return start_lane_segment(car, start_time, speed, car.position_in_lane)
+        if world.lane_daughter(car.lane_index) is not None:
+            return start_flow_segment(car, start_time, speed, occupancy)
         if car.lane_index in places.in_lane_indices():
             return start_path_segment(car, start_time, speed)
         if not _hop_through_place(car, occupancy):
@@ -351,6 +372,11 @@ def advance_car(
                     continue
             if car.position_in_lane + 1 < len(lane):
                 if not start_lane_segment(car, segment_end_time, speed, car.position_in_lane):
+                    to_remove.append(car)
+                    return
+                continue
+            if world.lane_daughter(car.lane_index) is not None:
+                if not start_flow_segment(car, segment_end_time, speed, occupancy):
                     to_remove.append(car)
                     return
                 continue

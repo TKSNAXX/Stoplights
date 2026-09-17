@@ -247,15 +247,19 @@ class SelectTool(Tool):
         """Mouths green/red, half-length where the lane meets no node, plus seams."""
         direction = world.lane_direction(lane_index)
         start, end = world.lane_start_end_cells(lane_index)
-        for cell, color, at_exit, node in (
-            (start, ISOLATE_TINT_GREEN, False, world.lane_traffic_in(lane_index)),
-            (end, ISOLATE_TINT_RED, True, world.lane_traffic_out(lane_index)),
+        at_node_in = bool(world.lane_traffic_in(lane_index))
+        at_node_out = bool(world.lane_traffic_out(lane_index))
+        has_mother = world.lane_mother(lane_index) is not None
+        has_daughter = world.lane_daughter(lane_index) is not None
+        for cell, color, at_exit, joint in (
+            (start, ISOLATE_TINT_GREEN, False, at_node_in or has_mother),
+            (end, ISOLATE_TINT_RED, True, at_node_out or has_daughter),
         ):
             if cell is None:
                 continue
-            # A mouth onto open road is half a cell; one at a place or
-            # intersection keeps the full diamond.
-            rect = None if node else mouth_half_rect(cell, direction, at_exit)
+            # A mouth onto open road is half a cell; one at a place, an
+            # intersection, or a mother/daughter joint keeps the full diamond.
+            rect = None if joint else mouth_half_rect(cell, direction, at_exit)
             if rect is None:
                 self._tint_cell(cell, color, center_x, center_y, hw, hh)
             else:

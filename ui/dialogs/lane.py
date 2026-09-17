@@ -273,12 +273,18 @@ class LaneVarsDialog(Dialog):
     def draw(self) -> None:
         self._speed_datum.set_value(f"{LANE_SPEED_VALUES[self._speed_slider.value]:g}x")
         direction = world.lane_direction(self.lane_index)
-        traffic_in = world.lane_traffic_in(self.lane_index) or "—"
-        traffic_out = world.lane_traffic_out(self.lane_index) or "—"
         direction_map = {"N": "Northbound", "S": "Southbound", "E": "Eastbound", "W": "Westbound"}
         self._dir_datum.set_value(direction_map.get(direction, "—"))
-        self._in_datum.set_value(str(traffic_in))
-        self._out_datum.set_value(str(traffic_out))
+        self._in_datum.set_value(
+            self._end_text(
+                world.lane_traffic_in(self.lane_index), world.lane_mother(self.lane_index)
+            )
+        )
+        self._out_datum.set_value(
+            self._end_text(
+                world.lane_traffic_out(self.lane_index), world.lane_daughter(self.lane_index)
+            )
+        )
         oncoming = world.oncoming_lane(self.lane_index)
         self._oncoming_datum.set_value("—" if oncoming is None else str(oncoming))
         self._sister_datum.set_value(self._sister_text())
@@ -289,6 +295,12 @@ class LaneVarsDialog(Dialog):
         self._out_datum.draw()
         self._oncoming_datum.draw()
         self._sister_datum.draw()
+
+    def _end_text(self, node: str, kin: int | None) -> str:
+        """The node this end meets, or the lane it runs straight into."""
+        if node:
+            return str(node)
+        return "—" if kin is None else f"lane {kin}"
 
     def _sister_text(self) -> str:
         """Every sister, in the order a driver meets them, with its own kind."""

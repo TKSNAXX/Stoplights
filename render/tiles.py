@@ -14,7 +14,7 @@ except ImportError:
 
 from sim.constants import ORTHO_TILE_SIZE
 
-from render.corner_gen import make_corner, make_cross, make_straight_through, make_tee
+from render.corner_gen import make_big, make_corner, make_cross, make_straight_through, make_tee
 from render.lane_paint import STYLE_REV, raster_lane_ortho
 
 
@@ -109,10 +109,12 @@ _corner_texture_cache: dict[tuple[int, int], arcade.Texture] = {}
 _straight_texture_cache: dict[tuple[int, str, int], arcade.Texture] = {}
 _tee_texture_cache: dict[tuple[int, str, str, int], arcade.Texture] = {}
 _cross_texture_cache: dict[tuple[int, int], arcade.Texture] = {}
+_big_texture_cache: dict[tuple[int, int], arcade.Texture] = {}
 _lane_paint_cache: dict[tuple, arcade.Texture] = {}
 _STRAIGHT_TEX_REV = 11
 _TEE_TEX_REV = 7
 _CROSS_TEX_REV = 5
+_BIG_TEX_REV = 1
 
 
 def generate_corner_texture(cells: int, quadrant: int = 0) -> arcade.Texture | None:
@@ -197,6 +199,26 @@ def generate_cross_texture(cells: int) -> arcade.Texture | None:
         iso_img = ortho_to_iso_large(ortho_img, cells=cells)
         tex = arcade.Texture(iso_img, name=f"cross_{cells}_r{_CROSS_TEX_REV}")
         _cross_texture_cache[key] = tex
+        return tex
+    except Exception:
+        return None
+
+
+def generate_big_texture(cells: int) -> arcade.Texture | None:
+    """Solid grey plaza. Cached by cell count."""
+    if Image is None:
+        return None
+    cells = max(2, min(12, cells))
+    if cells % 2 != 0:
+        cells = (cells // 2) * 2
+    key = (cells, _BIG_TEX_REV)
+    if key in _big_texture_cache:
+        return _big_texture_cache[key]
+    try:
+        ortho_img = make_big(cells)
+        iso_img = ortho_to_iso_large(ortho_img, cells=cells)
+        tex = arcade.Texture(iso_img, name=f"big_{cells}_r{_BIG_TEX_REV}")
+        _big_texture_cache[key] = tex
         return tex
     except Exception:
         return None

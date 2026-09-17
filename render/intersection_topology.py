@@ -263,3 +263,14 @@ def straight_cross_cap_cells(cells: list[tuple[int, int]], axis: StraightAxis) -
             caps.add((x, y_lo - 1))
             caps.add((x, y_hi))
     return caps
+
+
+def overlay_type_for_intersection(intersection_key: str, active: frozenset[str]) -> str:
+    """
+    Stamp kind for this node: Big when any incident lane is a twin, else side-count.
+    """
+    from sim import places
+
+    if world.intersection_has_twins(intersection_key):
+        return places.INTERSECTION_TYPE_BIG
+    return overlay_type_for_sides(active)

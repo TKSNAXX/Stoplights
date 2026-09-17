@@ -44,6 +44,7 @@ class GameState:
         self.movement_every_n_ticks: int = MOVEMENT_EVERY_N_TICKS
         self._impasse_timers: dict[tuple[int, int], float] = {}
         self.police_list: list[cop.PoliceCar] = []
+        self.police_enabled: bool = True
         self._spatial_buckets: dict[tuple[int, int], list[int]] = {}
         self._perf_stats: dict[str, float | int] = {
             "cars": 0,
@@ -62,6 +63,14 @@ class GameState:
             self.spawn_enabled[p] = True
         places.set_route_hints(self.route_hints)
         self.rebuild_world_from_config()
+
+    def set_police_enabled(self, enabled: bool) -> None:
+        self.police_enabled = bool(enabled)
+        if not self.police_enabled:
+            self.police_list.clear()
+
+    def clear_cars(self) -> None:
+        self.cars.clear()
 
     def next_lane_index(self) -> int:
         return next_lane_index(self.lanes)
@@ -369,6 +378,9 @@ class GameState:
 
     def _update_police(self, dt: float, occupancy: Occupancy | None = None) -> None:
         """Spawn on occupancy 10/20; linger then divert or home; drop despawned."""
+        if not self.police_enabled:
+            self.police_list.clear()
+            return
         occ = occupancy if occupancy is not None else Occupancy.from_cars(self.cars)
         keys = world.get_intersection_keys()
         jam = {key: cop.intersection_jam_score(occ, key) for key in keys}

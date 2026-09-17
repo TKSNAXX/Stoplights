@@ -465,6 +465,7 @@ def game_to_scenario(game: "GameState", window=None) -> dict:
         user_settings = {
             "edge_pan_enabled": getattr(window, "_edge_pan_enabled", True),
             "grass_close_enabled": getattr(window, "_grass_close_enabled", True),
+            "police_enabled": getattr(window, "_police_enabled", True),
             "color_hue": clamp_color_hue(getattr(window, "_color_hue", 0)),
             "color_sat": clamp_color_sat(getattr(window, "_color_sat", 1.0)),
         }

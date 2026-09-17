@@ -13,16 +13,18 @@ from ui.theme import (
     DATUM_WIDTH,
     DIALOG_WIDTH,
     FORM_GAP,
+    ICON_BUTTON_SIZE,
     SLIDER_THUMB,
     SLIDER_TRACK,
 )
+from ui.widgets.buttons import RemoveButton
 from ui.widgets.slider import Slider
 from ui.widgets.switch import Switch
 from ui.widgets.text import DatumBox
 
 
 class SettingsDialog(Dialog):
-    """Dialog for global settings. Edge pan, grass-click dismiss, world colour grade."""
+    """Dialog for global settings. Edge pan, grass-click dismiss, police, cars, colour grade."""
 
     def __init__(
         self,
@@ -32,16 +34,22 @@ class SettingsDialog(Dialog):
         grass_close_enabled: bool,
         color_hue: int = 0,
         color_sat: float = 1.0,
+        police_enabled: bool = True,
         on_edge_pan_change: Callable[[bool], None] | None = None,
         on_grass_close_change: Callable[[bool], None] | None = None,
+        on_police_change: Callable[[bool], None] | None = None,
         on_color_change: Callable[[int, float], None] | None = None,
+        on_clear_cars: Callable[[], None] | None = None,
     ):
-        super().__init__(x, y, DIALOG_WIDTH, dialog_height(4), "Settings")
+        super().__init__(x, y, DIALOG_WIDTH, dialog_height(6), "Settings")
         self._on_edge_pan_change = on_edge_pan_change
         self._on_grass_close_change = on_grass_close_change
+        self._on_police_change = on_police_change
         self._on_color_change = on_color_change
         self._switch = Switch(0, 0, 50, DATUM_HEIGHT, initial_value=edge_pan_enabled)
         self._grass_switch = Switch(0, 0, 50, DATUM_HEIGHT, initial_value=grass_close_enabled)
+        self._police_switch = Switch(0, 0, 50, DATUM_HEIGHT, initial_value=police_enabled)
+        self._clear_cars_btn = RemoveButton(0, 0, on_click=on_clear_cars)
         hue_step = min(COLOR_HUE_NUM_STEPS - 1, clamp_color_hue(color_hue) // 10)
         sat_step = max(0, min(COLOR_SAT_NUM_STEPS - 1, int(clamp_color_sat(color_sat) * 10.0 + 0.5)))
         self._hue_slider = Slider(0, 0, 160, DATUM_HEIGHT, COLOR_HUE_NUM_STEPS, hue_step, SLIDER_TRACK, SLIDER_THUMB)
@@ -50,10 +58,26 @@ class SettingsDialog(Dialog):
         self._sat_datum = DatumBox()
         self._label = ParamLabel("Edge Pan")
         self._grass_label = ParamLabel("Grass Close")
+        self._police_label = ParamLabel("Police")
+        self._clear_label = ParamLabel("Clear Cars")
         self._hue_label = ParamLabel("Hue")
         self._sat_label = ParamLabel("Sat")
-        self.widgets = [self._switch, self._grass_switch, self._hue_slider, self._sat_slider]
-        self.labels = [self._label, self._grass_label, self._hue_label, self._sat_label]
+        self.widgets = [
+            self._switch,
+            self._grass_switch,
+            self._police_switch,
+            self._clear_cars_btn,
+            self._hue_slider,
+            self._sat_slider,
+        ]
+        self.labels = [
+            self._label,
+            self._grass_label,
+            self._police_label,
+            self._clear_label,
+            self._hue_label,
+            self._sat_label,
+        ]
         self._last_hue = self._hue_degrees()
         self._last_sat = self._sat_value()
 
@@ -80,17 +104,23 @@ class SettingsDialog(Dialog):
         self._grass_label.place(r1.label_x, r1.label_y)
         self._grass_switch.rect = (r1.control_left, r1.control_bottom, 50, DATUM_HEIGHT)
         r2 = form_row(self, 2)
-        self._hue_label.place(r2.label_x, r2.label_y)
-        self._hue_datum.rect = (r2.control_left, r2.control_bottom, DATUM_WIDTH, DATUM_HEIGHT)
-        hs = r2.control_left + DATUM_WIDTH + FORM_GAP
-        hw = max(24, r2.control_width - DATUM_WIDTH - FORM_GAP)
-        self._hue_slider.rect = (hs, r2.control_bottom, hw, DATUM_HEIGHT)
+        self._police_label.place(r2.label_x, r2.label_y)
+        self._police_switch.rect = (r2.control_left, r2.control_bottom, 50, DATUM_HEIGHT)
         r3 = form_row(self, 3)
-        self._sat_label.place(r3.label_x, r3.label_y)
-        self._sat_datum.rect = (r3.control_left, r3.control_bottom, DATUM_WIDTH, DATUM_HEIGHT)
-        ss = r3.control_left + DATUM_WIDTH + FORM_GAP
-        sw = max(24, r3.control_width - DATUM_WIDTH - FORM_GAP)
-        self._sat_slider.rect = (ss, r3.control_bottom, sw, DATUM_HEIGHT)
+        self._clear_label.place(r3.label_x, r3.label_y)
+        self._clear_cars_btn.rect = (r3.control_left, r3.control_bottom, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE)
+        r4 = form_row(self, 4)
+        self._hue_label.place(r4.label_x, r4.label_y)
+        self._hue_datum.rect = (r4.control_left, r4.control_bottom, DATUM_WIDTH, DATUM_HEIGHT)
+        hs = r4.control_left + DATUM_WIDTH + FORM_GAP
+        hw = max(24, r4.control_width - DATUM_WIDTH - FORM_GAP)
+        self._hue_slider.rect = (hs, r4.control_bottom, hw, DATUM_HEIGHT)
+        r5 = form_row(self, 5)
+        self._sat_label.place(r5.label_x, r5.label_y)
+        self._sat_datum.rect = (r5.control_left, r5.control_bottom, DATUM_WIDTH, DATUM_HEIGHT)
+        ss = r5.control_left + DATUM_WIDTH + FORM_GAP
+        sw = max(24, r5.control_width - DATUM_WIDTH - FORM_GAP)
+        self._sat_slider.rect = (ss, r5.control_bottom, sw, DATUM_HEIGHT)
 
     def draw(self) -> None:
         hue_disp = self._hue_slider.value * 10
@@ -107,6 +137,8 @@ class SettingsDialog(Dialog):
             self._on_edge_pan_change(self._switch.value)
         if self._grass_switch.contains(x, y) and self._on_grass_close_change:
             self._on_grass_close_change(self._grass_switch.value)
+        if self._police_switch.contains(x, y) and self._on_police_change:
+            self._on_police_change(self._police_switch.value)
         self._emit_colors()
         return result
 

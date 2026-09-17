@@ -32,7 +32,9 @@ def turn_side(in_dir: str, out_dir: str) -> str | None:
 
 
 def classify_step(lane_index: int, target_lane: int) -> str:
-    """Label for a stepsister crossing, e.g. step right."""
+    """Label for the next lane of a corridor: a crossing, or a road carried on."""
+    if world.lane_daughter(lane_index) == target_lane:
+        return f"continue lane {target_lane}"
     step = world.stepsister_step(lane_index)
     if step is not None and step[0] == target_lane:
         return f"step {step[1]}"

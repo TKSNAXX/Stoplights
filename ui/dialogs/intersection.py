@@ -78,12 +78,15 @@ class IntersectionVarsDialog(Dialog):
 
     def _inferred_type(self) -> str:
         from sim import world
-        from render.intersection_topology import classify_intersection_sides, overlay_type_for_sides
+        from render.intersection_topology import (
+            classify_intersection_sides,
+            overlay_type_for_intersection,
+        )
 
         cells_map = world.get_intersection_cells_map()
         cells = cells_map.get(self.intersection_key, [])
         active, _, _ = classify_intersection_sides(self.intersection_key, cells)
-        raw = overlay_type_for_sides(active)
+        raw = overlay_type_for_intersection(self.intersection_key, active)
         return (raw or "none").replace("_", " ").title()
 
     def _apply_config(self) -> None:

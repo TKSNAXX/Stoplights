@@ -332,6 +332,17 @@ def make_cross(cells: int = 4):
     return img
 
 
+def make_big(cells: int = 4):
+    """Unfilleted grey plaza for an intersection that has twin mouths."""
+    if Image is None:
+        raise RuntimeError("Pillow required for big generation: pip install Pillow")
+    cells = max(2, min(12, cells))
+    if cells % 2 != 0:
+        cells = (cells // 2) * 2
+    size = cells * ORTHO_TILE_SIZE
+    return Image.new("RGBA", (size, size), (*ROAD_GREY, 255))
+
+
 def make_tee(cells: int = 4, axis: str = "ns", stem: str = "E"):
     """
     Through dual-lane lines plus two stem-side corner fillets.

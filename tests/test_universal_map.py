@@ -349,6 +349,35 @@ def test_police_on_demand() -> None:
     assert g.police_list[0].state == "holding"
 
 
+def test_police_disabled_and_clear_cars() -> None:
+    g = GameState()
+    g.cars = [_make_test_car()]
+    g.clear_cars()
+    assert g.cars == []
+
+    inbound = next(i for i in world.lane_ids() if world.lane_traffic_out(i) == "main")
+    lane_cells = world.get_lane_cells(inbound)
+    jam = [
+        _make_test_car(
+            lane_index=inbound,
+            position=len(lane_cells) - 1 - (i % INBOUND_TAIL_CELLS),
+            vis="red",
+        )
+        for i in range(JAM_TRIGGER)
+    ]
+    g.cars = jam
+    g.set_police_enabled(False)
+    g._update_police(0.0)
+    assert g.police_list == []
+
+    g.set_police_enabled(True)
+    g._update_police(0.0)
+    assert len(g.police_list) == 1
+
+    g.set_police_enabled(False)
+    assert g.police_list == []
+
+
 def test_police_holding_helps_jam() -> None:
     from sim.constants import POLICE_PRIORITY_SCALE, VIS_ZONE_WIDTH_CELLS
     from sim.cop import _home_at_lane_start, _intersection_center
@@ -1011,6 +1040,7 @@ def test_color_settings_clamp_roundtrip() -> None:
     class Win:
         _edge_pan_enabled = True
         _grass_close_enabled = False
+        _police_enabled = False
         _color_hue = 360
         _color_sat = 1.94
 
@@ -1019,6 +1049,7 @@ def test_color_settings_clamp_roundtrip() -> None:
     assert data["user_settings"]["color_hue"] == 0
     assert data["user_settings"]["color_sat"] == 1.9
     assert data["user_settings"]["grass_close_enabled"] is False
+    assert data["user_settings"]["police_enabled"] is False
 
     migrated = migrate_to_schema_4(
         {
@@ -1350,11 +1381,11 @@ def test_sister_geometry_staggered_and_corner() -> None:
     assert world.sister_lane(2) == 1
     assert world.oncoming_lane(1) is None
     assert world.oncoming_lane(2) is None
-    # Equal length and aligned: sisters, but neither contains the other.
-    assert world.sister_relation(1, 2) is None
-    assert world.sister_relation(2, 1) is None
-    assert not world.lane_merge_cells(1)
-    assert not world.lane_merge_cells(2)
+    # Equal length and aligned: identical twins, merge along the whole run.
+    assert world.sister_relation(1, 2) == world.SISTER_TWIN
+    assert world.sister_relation(2, 1) == world.SISTER_TWIN
+    assert world.cell_merge(8, 10) == world.MERGE_LEFT
+    assert world.cell_merge(8, 11) == world.MERGE_RIGHT
 
     eastbound = {
         1: places.LaneConfig(start_tile=(0, 10), end_tile=(40, 10)),
@@ -1549,6 +1580,411 @@ def test_stepsister_step_survives_a_blocked_seam() -> None:
     assert not to_remove
     assert car.lane_index == 2
     assert car.route_index == first + 1
+    GameState()
+
+
+def _mother_daughter_chain() -> None:
+    """
+    Southbound road of three lanes in one column between two places.
+
+    Each lane's last cell abuts the next lane's first, so the three make one
+    continuous road with no node anywhere between North and South.
+    """
+    places_by_id = {
+        "North": places.Place(center_x=10, center_y=52, width=3, length=3),
+        "South": places.Place(center_x=10, center_y=8, width=3, length=3),
+    }
+    lanes = {
+        1: places.LaneConfig(start_tile=(10, 50), end_tile=(10, 36)),
+        2: places.LaneConfig(start_tile=(10, 35), end_tile=(10, 24)),
+        3: places.LaneConfig(start_tile=(10, 23), end_tile=(10, 10)),
+    }
+    places.set_route_hints([])
+    world.rebuild_world(place_rects_from_places(places_by_id), {}, lanes)
+
+
+def test_mother_daughter_chain_is_one_road() -> None:
+    """Lanes joined end into start make a corridor without a seam to cross."""
+    _mother_daughter_chain()
+    assert world.lane_traffic_in(1) == "North" and world.lane_traffic_out(1) == ""
+    assert world.lane_traffic_in(2) == "" and world.lane_traffic_out(2) == ""
+    assert world.lane_traffic_in(3) == "" and world.lane_traffic_out(3) == "South"
+
+    assert world.lane_daughter(1) == 2 and world.lane_mother(2) == 1
+    assert world.lane_daughter(2) == 3 and world.lane_mother(3) == 2
+    assert world.lane_mother(1) is None and world.lane_daughter(3) is None
+    assert world.kin_relation(1, 2) == world.KIN_DAUGHTER
+    assert world.kin_relation(2, 1) == world.KIN_MOTHER
+    assert world.kin_relation(1, 3) is None
+
+    # End to end is not side by side: no sisters, no seam, nothing to merge across.
+    assert world.sister_links(1) == () and world.sister_links(2) == ()
+    assert not world.lane_merge_cells(1)
+    assert world.cell_merge(10, 40) == world.MERGE_NEITHER
+    assert world.stepsister_step(1) is None
+
+    assert world.corridor_link(1) == (2, world.KIN_DAUGHTER)
+    assert world.corridor_link(3) is None
+    assert world.corridor_after(1) == (1, 2, 3)
+    assert world.corridor_after(2) == (2, 3)
+    assert world.corridor_before(3) == (1, 2, 3)
+    for lane in (1, 2, 3):
+        assert world.lane_exit_node(lane) == "South"
+        assert world.lane_entry_node(lane) == "North"
+    assert world.destination_reachable("North", "South")
+
+    # Meeting the middle of a lane, or its nose head on, is no kin at all.
+    head_on = {
+        1: places.LaneConfig(start_tile=(10, 50), end_tile=(10, 36)),
+        2: places.LaneConfig(start_tile=(10, 20), end_tile=(10, 34)),
+    }
+    world.rebuild_world({}, {}, head_on)
+    assert world.lane_daughter(1) is None
+    assert world.lane_mother(2) is None
+    GameState()
+
+
+def test_mother_daughter_route_and_seamless_drive() -> None:
+    """The itinerary lists every lane, and the car rolls across each joint."""
+    from sim import passing, routes
+    from sim.movement import advance_car
+    from sim.occupancy import Occupancy
+    from sim.situation import UNKNOWN, refresh_situations
+
+    _mother_daughter_chain()
+    route = routes.plan_route("North", "South")
+    assert route is not None
+    assert [(s.kind, s.ref) for s in route] == [
+        ("place", "North"),
+        ("lane", 1),
+        ("lane", 2),
+        ("lane", 3),
+        ("place", "South"),
+    ]
+    first = routes.first_lane_step_index(route)
+    car = Car(
+        origin="North",
+        destination="South",
+        color=(220, 60, 60),
+        base_speed_multiplier=1.0,
+        lane_index=1,
+        position_in_lane=0,
+        route=route,
+        route_index=first,
+    )
+    # The road carried on is not a step, so no lane change is ever planned.
+    assert passing.planned_step_lane(car) is None
+
+    to_remove: list = []
+    t = 0.0
+    seen: list[tuple[int, int]] = []
+    poses: list[float] = []
+    features: set[str] = set()
+    for _ in range(4000):
+        t += 1.0 / 60.0
+        occ = Occupancy.from_cars([car])
+        advance_car(car, t, 8.0, to_remove, occ)
+        refresh_situations([car], occ)
+        if car.motion_mode == "merge":
+            assert car.merge_reason == passing.REASON_FLOW
+            assert car.merge_side == ""
+            # Nothing is crossed, so the car dialog reports no lane change.
+            assert car.merge_state == UNKNOWN
+        if car.lane_index == 1:
+            features.add(car.next_feature)
+        key = (car.lane_index, car.route_index)
+        if not seen or seen[-1] != key:
+            seen.append(key)
+        poses.append(car.pose_gy)
+        if to_remove:
+            break
+
+    # Each joint carries the itinerary onto the lane the car now occupies.
+    assert seen == [(1, first), (2, first + 1), (3, first + 2)]
+    assert features == {"continue lane 2"}
+    assert car.lane_index == 3
+    assert car.position_in_lane == len(world.get_lane_cells(3)) - 1
+
+    # Southbound down one column: never back up, never skip a cell of road.
+    assert poses[0] == 50.0 and poses[-1] == 10.0
+    assert all(b <= a for a, b in zip(poses, poses[1:]))
+    assert max(a - b for a, b in zip(poses, poses[1:])) < 1.0
+    # The joint itself is driven, not jumped: poses land inside the gap.
+    assert any(35.0 < gy < 36.0 for gy in poses)
+    assert any(23.0 < gy < 24.0 for gy in poses)
+    GameState()
+
+
+def test_mother_lane_is_never_forced_off_its_own_road() -> None:
+    """A mother with a little sister alongside carries on instead of exiting."""
+    from sim import passing
+    from sim.occupancy import Occupancy
+
+    places_by_id = {
+        "North": places.Place(center_x=10, center_y=52, width=3, length=3),
+        "South": places.Place(center_x=10, center_y=8, width=3, length=3),
+    }
+    lanes = {
+        1: places.LaneConfig(start_tile=(10, 50), end_tile=(10, 36)),
+        2: places.LaneConfig(start_tile=(10, 35), end_tile=(10, 10)),
+        3: places.LaneConfig(start_tile=(9, 48), end_tile=(9, 37)),
+    }
+    places.set_route_hints([])
+    world.rebuild_world(place_rects_from_places(places_by_id), {}, lanes)
+    assert world.lane_daughter(1) == 2
+    assert world.sister_relation(1, 3) == world.SISTER_LITTLE
+    assert world.cell_merge(10, 37) == world.MERGE_RIGHT
+
+    cells_1 = world.get_lane_cells(1)
+    tail = len(cells_1) - 2  # the cell at y=37, one shy of the end
+    assert cells_1[tail] == (10, 37)
+    # The little sister must still bail out; the mother has a road to follow.
+    assert passing._must_exit(3, len(world.get_lane_cells(3)) - 1, world.get_lane_cells(3))
+    assert not passing._must_exit(1, tail, cells_1)
+
+    car = _make_test_car(lane_index=1, position=tail)
+    assert passing.merge_choice(car, Occupancy.from_cars([car])) is None
+    GameState()
+
+
+def _twin_cross() -> None:
+    """
+    8-wide hub with eastbound twin inbounds and twin outbounds on three headings.
+
+    Hub bounds x[16,24) y[16,24). Eastbound left is +y; northbound left is -x;
+    southbound left is +x.
+    """
+    places_by_id = {
+        "West": places.Place(center_x=10, center_y=19, width=5, length=5),
+        "East": places.Place(center_x=30, center_y=19, width=5, length=5),
+        "North": places.Place(center_x=20, center_y=32, width=5, length=5),
+        "South": places.Place(center_x=20, center_y=8, width=5, length=5),
+    }
+    intersections = {
+        "hub": places.IntersectionConfig(size_cells=8, center_x=20, center_y=20),
+    }
+    lanes = {
+        1: places.LaneConfig(start_tile=(13, 19), end_tile=(15, 19)),
+        2: places.LaneConfig(start_tile=(13, 18), end_tile=(15, 18)),
+        3: places.LaneConfig(start_tile=(24, 19), end_tile=(27, 19)),
+        4: places.LaneConfig(start_tile=(24, 18), end_tile=(27, 18)),
+        5: places.LaneConfig(start_tile=(18, 24), end_tile=(18, 29)),
+        6: places.LaneConfig(start_tile=(19, 24), end_tile=(19, 29)),
+        7: places.LaneConfig(start_tile=(19, 15), end_tile=(19, 12)),
+        8: places.LaneConfig(start_tile=(18, 15), end_tile=(18, 12)),
+    }
+    places.set_route_hints([])
+    world.rebuild_world(place_rects_from_places(places_by_id), intersections, lanes)
+
+
+def test_identical_and_fraternal_twins() -> None:
+    """Twins are named after shared mouths; merge sides follow the shared run."""
+    identical = {
+        1: places.LaneConfig(start_tile=(4, 10), end_tile=(12, 10)),
+        2: places.LaneConfig(start_tile=(4, 11), end_tile=(12, 11)),
+    }
+    world.rebuild_world({}, {}, identical)
+    assert world.sister_relation(1, 2) == world.SISTER_TWIN
+    assert world.cell_merge(8, 10) == world.MERGE_LEFT
+    assert world.cell_merge(8, 11) == world.MERGE_RIGHT
+
+    frat_start = {
+        1: places.LaneConfig(start_tile=(0, 10), end_tile=(20, 10)),
+        2: places.LaneConfig(start_tile=(0, 11), end_tile=(12, 11)),
+    }
+    world.rebuild_world({}, {}, frat_start)
+    assert world.sister_relation(1, 2) == world.SISTER_TWIN_START
+    assert world.sister_relation(2, 1) == world.SISTER_TWIN_START
+    assert world.cell_merge(6, 10) == world.MERGE_LEFT
+    assert world.cell_merge(16, 10) == world.MERGE_NEITHER
+
+    frat_end = {
+        1: places.LaneConfig(start_tile=(0, 10), end_tile=(20, 10)),
+        2: places.LaneConfig(start_tile=(8, 11), end_tile=(20, 11)),
+    }
+    world.rebuild_world({}, {}, frat_end)
+    assert world.sister_relation(1, 2) == world.SISTER_TWIN_END
+    assert world.cell_merge(14, 10) == world.MERGE_LEFT
+    assert world.cell_merge(2, 10) == world.MERGE_NEITHER
+
+    nested = {
+        1: places.LaneConfig(start_tile=(0, 10), end_tile=(40, 10)),
+        2: places.LaneConfig(start_tile=(5, 11), end_tile=(35, 11)),
+    }
+    world.rebuild_world({}, {}, nested)
+    assert world.sister_relation(1, 2) == world.SISTER_LITTLE
+    GameState()
+
+
+def test_twin_intersection_paths_and_big_stamp() -> None:
+    """Keep-side straight, inside turns; far-lane rights are not cached; stamp is Big."""
+    from render.intersection_topology import (
+        classify_intersection_sides,
+        overlay_type_for_intersection,
+        overlay_type_for_sides,
+    )
+    from sim import paths
+
+    _twin_cross()
+    assert world.sister_relation(1, 2) == world.SISTER_TWIN
+    assert world.lane_traffic_out(1) == "hub" and world.lane_traffic_in(3) == "hub"
+    assert world.left_lane_of((1, 2)) == 1
+    assert world.left_lane_of((5, 6)) == 5
+    assert world.left_lane_of((7, 8)) == 7
+
+    legal = {
+        (1, 5),
+        (1, 3),
+        (1, 8),
+        (2, 5),
+        (2, 4),
+        (2, 8),
+    }
+    weaves = {
+        (1, 6),
+        (1, 4),
+        (1, 7),
+        (2, 6),
+        (2, 3),
+        (2, 7),
+    }
+    for pair in legal:
+        assert places.is_valid_intersection_path(*pair), pair
+        assert pair in paths._PATH_CACHE, pair
+    for pair in weaves:
+        assert not places.is_valid_intersection_path(*pair), pair
+        assert pair not in paths._PATH_CACHE, pair
+
+    cells = world.get_intersection_cells_by_key("hub")
+    active, _, _ = classify_intersection_sides("hub", cells)
+    assert overlay_type_for_sides(active) == places.INTERSECTION_TYPE_CROSS
+    assert overlay_type_for_intersection("hub", active) == places.INTERSECTION_TYPE_BIG
+    assert world.intersection_has_twins("hub")
+
+    places_by_id = {
+        "West": places.Place(center_x=10, center_y=19, width=5, length=5),
+        "East": places.Place(center_x=30, center_y=19, width=5, length=5),
+        "North": places.Place(center_x=20, center_y=32, width=5, length=5),
+        "South": places.Place(center_x=20, center_y=8, width=5, length=5),
+    }
+    intersections = {
+        "hub": places.IntersectionConfig(size_cells=8, center_x=20, center_y=20),
+    }
+    single_in = {
+        1: places.LaneConfig(start_tile=(13, 19), end_tile=(15, 19)),
+        3: places.LaneConfig(start_tile=(24, 19), end_tile=(27, 19)),
+        4: places.LaneConfig(start_tile=(24, 18), end_tile=(27, 18)),
+        5: places.LaneConfig(start_tile=(18, 24), end_tile=(18, 29)),
+        6: places.LaneConfig(start_tile=(19, 24), end_tile=(19, 29)),
+        7: places.LaneConfig(start_tile=(19, 15), end_tile=(19, 12)),
+        8: places.LaneConfig(start_tile=(18, 15), end_tile=(18, 12)),
+    }
+    world.rebuild_world(place_rects_from_places(places_by_id), intersections, single_in)
+    assert places.is_valid_intersection_path(1, 5)
+    assert not places.is_valid_intersection_path(1, 6)
+    assert places.is_valid_intersection_path(1, 8)
+    assert not places.is_valid_intersection_path(1, 7)
+    assert places.is_valid_intersection_path(1, 3)
+    assert not places.is_valid_intersection_path(1, 4)
+
+    double_to_single = {
+        1: places.LaneConfig(start_tile=(13, 19), end_tile=(15, 19)),
+        2: places.LaneConfig(start_tile=(13, 18), end_tile=(15, 18)),
+        3: places.LaneConfig(start_tile=(24, 19), end_tile=(27, 19)),
+        5: places.LaneConfig(start_tile=(18, 24), end_tile=(18, 29)),
+        6: places.LaneConfig(start_tile=(19, 24), end_tile=(19, 29)),
+    }
+    world.rebuild_world(place_rects_from_places(places_by_id), intersections, double_to_single)
+    assert places.is_valid_intersection_path(1, 3)
+    assert places.is_valid_intersection_path(2, 3)
+    GameState()
+
+
+def test_twin_keep_side_drive() -> None:
+    """A car on the left twin goes through on the left outbound, not the weave."""
+    from sim import routes
+    from sim.movement import advance_car
+    from sim.occupancy import Occupancy
+
+    _twin_cross()
+    route = routes.plan_route("West", "East")
+    assert route is not None
+    lanes = [int(s.ref) for s in route if s.kind == "lane"]
+    assert lanes[0] in (1, 2)
+    if lanes[0] == 1:
+        assert 3 in lanes
+        assert 4 not in lanes
+    else:
+        assert 4 in lanes
+        assert 3 not in lanes
+
+    first = routes.first_lane_step_index(route)
+    car = Car(
+        origin="West",
+        destination="East",
+        color=(220, 60, 60),
+        base_speed_multiplier=1.0,
+        lane_index=int(route[first].ref),
+        position_in_lane=0,
+        route=route,
+        route_index=first,
+    )
+    to_remove: list = []
+    t = 0.0
+    seen: list[int] = []
+    for _ in range(4000):
+        t += 1.0 / 60.0
+        occ = Occupancy.from_cars([car])
+        advance_car(car, t, 8.0, to_remove, occ)
+        if not seen or seen[-1] != car.lane_index:
+            seen.append(car.lane_index)
+        if to_remove:
+            break
+    assert seen[0] in (1, 2)
+    if seen[0] == 1:
+        assert 3 in seen and 4 not in seen
+    else:
+        assert 4 in seen and 3 not in seen
+    assert car.destination == "East"
+    GameState()
+
+
+def test_twin_right_takes_the_inside_lane() -> None:
+    """A right from either eastbound twin lands on the right outbound, not the far left."""
+    _twin_cross()
+    assert world.nearer_to_entry_edge(1, (7, 8)) == 8
+    assert not places.is_valid_intersection_path(1, 7)
+    assert places.is_valid_intersection_path(1, 8)
+    assert places.is_valid_intersection_path(2, 8)
+    GameState()
+
+
+def test_fraternal_drop_lane_exits_onto_the_longer_twin() -> None:
+    """A short twin-start with no node at its end steps onto the longer twin."""
+    from sim import passing
+    from sim.occupancy import Occupancy
+
+    places_by_id = {
+        "North": places.Place(center_x=10, center_y=40, width=3, length=3),
+        "South": places.Place(center_x=10, center_y=8, width=3, length=3),
+    }
+    lanes = {
+        1: places.LaneConfig(start_tile=(10, 38), end_tile=(10, 10)),
+        2: places.LaneConfig(start_tile=(11, 38), end_tile=(11, 20)),
+    }
+    places.set_route_hints([])
+    world.rebuild_world(place_rects_from_places(places_by_id), {}, lanes)
+    assert world.sister_relation(1, 2) == world.SISTER_TWIN_START
+    assert world.lane_traffic_out(1) == "South"
+    assert world.lane_traffic_out(2) == ""
+    cells_2 = world.get_lane_cells(2)
+    tail = len(cells_2) - 1
+    assert passing._must_exit(2, tail, cells_2)
+    car = _make_test_car(lane_index=2, position=tail)
+    choice = passing.merge_choice(car, Occupancy.from_cars([car]))
+    assert choice is not None
+    assert choice[0] == 1
+    assert choice[3] == passing.REASON_EXIT
     GameState()
 
 
@@ -2567,6 +3003,7 @@ def main() -> None:
         test_unnamed_intersections_occupancy,
         test_default_map_hints_and_police_homes,
         test_police_on_demand,
+        test_police_disabled_and_clear_cars,
         test_police_holding_helps_jam,
         test_police_linger_and_divert,
         test_spawn_skips_full_lane,
@@ -2606,6 +3043,14 @@ def main() -> None:
         test_stepsister_chain_and_corridor,
         test_stepsister_route_steps_and_drive,
         test_stepsister_step_survives_a_blocked_seam,
+        test_mother_daughter_chain_is_one_road,
+        test_mother_daughter_route_and_seamless_drive,
+        test_mother_lane_is_never_forced_off_its_own_road,
+        test_identical_and_fraternal_twins,
+        test_twin_intersection_paths_and_big_stamp,
+        test_twin_keep_side_drive,
+        test_twin_right_takes_the_inside_lane,
+        test_fraternal_drop_lane_exits_onto_the_longer_twin,
         test_sister_overlay_rects,
         test_lane_paint_roles_and_raster,
         test_path_cache_matches_live,
