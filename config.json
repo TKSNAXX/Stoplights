@@ -405,7 +405,7 @@
       ],
       "end_tile": [
         63,
-        23
+        56
       ],
       "speed_limit": 0.5,
       "lane_type": "normal",
@@ -1310,12 +1310,12 @@
     },
     "83": {
       "start_tile": [
-        62,
-        67
+        63,
+        55
       ],
       "end_tile": [
-        62,
-        25
+        63,
+        44
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -1329,6 +1329,19 @@
       "end_tile": [
         55,
         35
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "85": {
+      "start_tile": [
+        63,
+        43
+      ],
+      "end_tile": [
+        63,
+        23
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",

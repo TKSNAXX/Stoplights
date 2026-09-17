@@ -52,6 +52,17 @@ def out_lane_after(route: tuple[RouteStep, ...], lane_step_index: int) -> tuple[
     return (int(route[ix + 1].ref), ix + 1)
 
 
+def step_lane_after(route: tuple[RouteStep, ...], lane_step_index: int) -> tuple[int, int] | None:
+    """
+    After the current lane step: another lane, reached by stepping across a
+    seam rather than through a node. Returns (lane, step_index).
+    """
+    nx = lane_step_index + 1
+    if nx >= len(route) or route[nx].kind != KIND_LANE:
+        return None
+    return (int(route[nx].ref), nx)
+
+
 def next_lane_after_place(route: tuple[RouteStep, ...], lane_step_index: int) -> tuple[int, int] | None:
     """After the current lane step: a place, then the next lane. Returns (lane, step_index)."""
     px = lane_step_index + 1
@@ -110,7 +121,7 @@ def route_is_live(route: tuple[RouteStep, ...]) -> bool:
 def _outgoing_neighbours(from_node: str) -> list[str]:
     seen: list[str] = []
     for i in world.outgoing_lanes(from_node):
-        n = world.lane_traffic_out(i)
+        n = world.lane_exit_node(i)
         if n and n not in seen:
             seen.append(n)
     return seen
@@ -134,7 +145,7 @@ def _hops_with_non_uturn(
         return list(hops)
     usable: list[str] = []
     for n in hops:
-        outgoing = [i for i in world.outgoing_lanes(from_node) if world.lane_traffic_out(i) == n]
+        outgoing = [i for i in world.outgoing_lanes(from_node) if world.lane_exit_node(i) == n]
         if any(not places.is_uturn_transition(inbound, i) for i in outgoing):
             usable.append(n)
     return usable if usable else list(hops)
@@ -196,7 +207,7 @@ def _pick_lane(
     lane_usage_counts: dict[tuple[str, int], int] | None = None,
     out_lane_balance_coeff: float = 0.0,
 ) -> int | None:
-    outgoing = [i for i in world.outgoing_lanes(from_node) if world.lane_traffic_out(i) == next_node]
+    outgoing = [i for i in world.outgoing_lanes(from_node) if world.lane_exit_node(i) == next_node]
     candidates = places._candidates_without_uturn(inbound_lane_index, outgoing)
     if not candidates:
         return None
@@ -243,12 +254,16 @@ def plan_route(
         )
         if lane is None:
             return None
-        steps.append(RouteStep(KIND_LANE, lane))
+        # A dangling lane reaches its node only by stepping onto a stepsister,
+        # so every lane of the corridor gets its own step.
+        corridor = world.corridor_after(lane)
+        for leg in corridor:
+            steps.append(RouteStep(KIND_LANE, leg))
         if world.is_intersection(nxt):
             steps.append(RouteStep(KIND_INTERSECTION, nxt))
         else:
             steps.append(RouteStep(KIND_PLACE, nxt))
-        inbound = lane
+        inbound = corridor[-1]
         current = nxt
     return None
 
@@ -256,7 +271,7 @@ def plan_route(
 def current_node(car) -> str:
     if getattr(car, "motion_mode", "lane") == "path":
         return world.lane_traffic_out(car.lane_index)
-    return world.lane_traffic_in(car.lane_index)
+    return world.lane_entry_node(car.lane_index)
 
 
 def lane_step_index(route: tuple[RouteStep, ...], lane_index: int, after: int = -1) -> int | None:

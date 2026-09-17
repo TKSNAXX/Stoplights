@@ -221,18 +221,18 @@ def spawn_lanes_for_place(place: str, destination: str | None = None) -> list[in
     if destination is None or not outgoing:
         return outgoing
 
-    direct = [i for i in outgoing if world.lane_traffic_out(i) == destination]
+    direct = [i for i in outgoing if world.lane_exit_node(i) == destination]
     if direct:
         return direct
 
     next_hops = world.best_next_hops(place, destination)
     via = _hint_via(place, destination)
     if via is not None and via in next_hops:
-        hinted = [i for i in outgoing if world.lane_traffic_out(i) == via]
+        hinted = [i for i in outgoing if world.lane_exit_node(i) == via]
         if hinted:
             return hinted
     if next_hops:
-        routed = [i for i in outgoing if world.lane_traffic_out(i) in next_hops]
+        routed = [i for i in outgoing if world.lane_exit_node(i) in next_hops]
         if routed:
             return routed
     return outgoing
@@ -292,7 +292,7 @@ def choose_next_lane_from_node(
     if not outgoing:
         return None
 
-    direct = [i for i in outgoing if world.lane_traffic_out(i) == destination]
+    direct = [i for i in outgoing if world.lane_exit_node(i) == destination]
     direct_pick = _candidates_without_uturn(inbound_lane_index, direct)
     if direct_pick:
         return random.choice(direct_pick)
@@ -300,12 +300,12 @@ def choose_next_lane_from_node(
     next_hops = world.best_next_hops(from_node, destination)
     via = _hint_via(from_node, destination)
     if via is not None and via in next_hops:
-        hinted = [i for i in outgoing if world.lane_traffic_out(i) == via]
+        hinted = [i for i in outgoing if world.lane_exit_node(i) == via]
         hinted_pick = _candidates_without_uturn(inbound_lane_index, hinted)
         if hinted_pick:
             return random.choice(hinted_pick)
     if next_hops:
-        routed = [i for i in outgoing if world.lane_traffic_out(i) in next_hops]
+        routed = [i for i in outgoing if world.lane_exit_node(i) in next_hops]
         routed_pick = _candidates_without_uturn(inbound_lane_index, routed)
         if routed_pick:
             return random.choice(routed_pick)

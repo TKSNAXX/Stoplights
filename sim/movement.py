@@ -233,27 +233,40 @@ def _place_on_lane(
     return True
 
 
+def _advance_route_step(car: cars.Car, target_lane: int) -> None:
+    """Move the itinerary onto the stepsister the car has just committed to."""
+    nxt = routes.step_lane_after(car.route, car.route_index) if car.route else None
+    if nxt is not None and nxt[0] == target_lane:
+        car.route_index = nxt[1]
+
+
 def _snap_to_sister(car: cars.Car, occupancy) -> bool:
     """
     Last resort at the end of a lane that leads nowhere: step straight onto the
-    sister. The exit rule in sim.passing should merge well before this, so the
-    abrupt sidestep is preferred only to vanishing.
+    sister. The step and exit rules in sim.passing should merge well before
+    this, so the abrupt sidestep is preferred only to vanishing.
     """
     cells = world.get_lane_cells(car.lane_index)
     if not cells or car.position_in_lane < 0 or car.position_in_lane >= len(cells):
         return False
     sides = world.cell_merge(*cells[car.position_in_lane])
+    planned = passing.planned_step_lane(car)
+    found_sides = []
     for side in (world.MERGE_LEFT, world.MERGE_RIGHT):
         if sides not in (side, world.MERGE_BOTH):
             continue
         found = world.merge_target(car.lane_index, car.position_in_lane, side, 1)
-        if found is None:
-            continue
-        car.lane_index, car.position_in_lane = found
+        if found is not None:
+            found_sides.append(found)
+    # The itinerary's own step first; any sister beats vanishing.
+    found_sides.sort(key=lambda f: 0 if f[0] == planned else 1)
+    for target_lane, target_pos in found_sides:
+        car.lane_index, car.position_in_lane = target_lane, target_pos
         car.intersection_cell = None
         car.pending_out_lane_index = None
         _clear_merge(car)
         _clear_segment(car)
+        _advance_route_step(car, target_lane)
         if occupancy is not None:
             occupancy.add(car)
         return True
@@ -333,6 +346,8 @@ def advance_car(
                 if start_merge_segment(
                     car, segment_end_time, speed, target_lane, target_pos, side, reason, occupancy
                 ):
+                    if reason == passing.REASON_STEP:
+                        _advance_route_step(car, target_lane)
                     continue
             if car.position_in_lane + 1 < len(lane):
                 if not start_lane_segment(car, segment_end_time, speed, car.position_in_lane):

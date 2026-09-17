@@ -280,9 +280,8 @@ class LaneVarsDialog(Dialog):
         self._in_datum.set_value(str(traffic_in))
         self._out_datum.set_value(str(traffic_out))
         oncoming = world.oncoming_lane(self.lane_index)
-        sister = world.sister_lane(self.lane_index)
         self._oncoming_datum.set_value("—" if oncoming is None else str(oncoming))
-        self._sister_datum.set_value(self._sister_text(sister))
+        self._sister_datum.set_value(self._sister_text())
         super().draw()
         self._speed_datum.draw()
         self._dir_datum.draw()
@@ -291,12 +290,14 @@ class LaneVarsDialog(Dialog):
         self._oncoming_datum.draw()
         self._sister_datum.draw()
 
-    def _sister_text(self, sister: int | None) -> str:
-        """Partner id, with this lane's own sister shape when it has one."""
-        if sister is None:
+    def _sister_text(self) -> str:
+        """Every sister, in the order a driver meets them, with its own kind."""
+        links = world.sister_links(self.lane_index)
+        if not links:
             return "—"
-        kind = world.sister_kind(self.lane_index)
-        return str(sister) if kind is None else f"{sister} ({kind})"
+        return ", ".join(
+            str(partner) if not kind else f"{partner} ({kind})" for partner, kind in links
+        )
 
     def on_mouse_press(self, x: float, y: float) -> bool:
         self._layout_widgets()

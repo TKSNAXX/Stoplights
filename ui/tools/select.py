@@ -244,53 +244,44 @@ class SelectTool(Tool):
         hw: float,
         hh: float,
     ) -> None:
-        """Mouths green/red, half-length on a little sister, plus the blue seam."""
-        kind = world.sister_kind(lane_index)
+        """Mouths green/red, half-length where the lane meets no node, plus seams."""
         direction = world.lane_direction(lane_index)
         start, end = world.lane_start_end_cells(lane_index)
-        for cell, color, at_exit in (
-            (start, ISOLATE_TINT_GREEN, False),
-            (end, ISOLATE_TINT_RED, True),
+        for cell, color, at_exit, node in (
+            (start, ISOLATE_TINT_GREEN, False, world.lane_traffic_in(lane_index)),
+            (end, ISOLATE_TINT_RED, True, world.lane_traffic_out(lane_index)),
         ):
             if cell is None:
                 continue
-            rect = (
-                mouth_half_rect(cell, direction, at_exit)
-                if kind == world.SISTER_LITTLE
-                else None
-            )
+            # A mouth onto open road is half a cell; one at a place or
+            # intersection keeps the full diamond.
+            rect = None if node else mouth_half_rect(cell, direction, at_exit)
             if rect is None:
                 self._tint_cell(cell, color, center_x, center_y, hw, hh)
             else:
                 self._tint_rect(rect, color, center_x, center_y)
 
-        sister = world.sister_lane(lane_index)
-        if kind is None or sister is None:
-            return
-        pair = frozenset({lane_index, sister})
-        if pair in seams_drawn:
-            return
-        seams_drawn.add(pair)
-        self._tint_seam(lane_index, sister, kind, center_x, center_y)
+        for sister, _kind in world.sister_links(lane_index):
+            pair = frozenset({lane_index, sister})
+            if pair in seams_drawn:
+                continue
+            seams_drawn.add(pair)
+            self._tint_seam(lane_index, sister, center_x, center_y)
 
     def _tint_seam(
         self,
         lane_index: int,
         sister: int,
-        kind: str,
         center_x: float,
         center_y: float,
     ) -> None:
-        little, big = (
-            (lane_index, sister) if kind == world.SISTER_LITTLE else (sister, lane_index)
-        )
-        cells = world.get_lane_cells(little)
-        big_cells = world.get_lane_cells(big)
-        direction = world.lane_direction(little)
-        if not cells or not big_cells or not direction:
+        shared = world.sister_overlap_cells(lane_index, sister)
+        sister_cells = world.get_lane_cells(sister)
+        direction = world.lane_direction(lane_index)
+        if shared is None or not sister_cells or not direction:
             return
-        other_perp = big_cells[0][0] if direction in ("N", "S") else big_cells[0][1]
-        rect = sister_seam_rect(cells[0], cells[-1], direction, other_perp)
+        other_perp = sister_cells[0][0] if direction in ("N", "S") else sister_cells[0][1]
+        rect = sister_seam_rect(shared[0], shared[1], direction, other_perp)
         if rect is not None:
             self._tint_rect(rect, ISOLATE_TINT_BLUE, center_x, center_y)
 

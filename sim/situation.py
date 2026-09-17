@@ -31,6 +31,14 @@ def turn_side(in_dir: str, out_dir: str) -> str | None:
     return None
 
 
+def classify_step(lane_index: int, target_lane: int) -> str:
+    """Label for a stepsister crossing, e.g. step right."""
+    step = world.stepsister_step(lane_index)
+    if step is not None and step[0] == target_lane:
+        return f"step {step[1]}"
+    return f"step lane {target_lane}"
+
+
 def classify_place(place_id: str, destination: str) -> str:
     if place_id == destination:
         return "place destination"
@@ -156,6 +164,9 @@ def _next_feature(car) -> str:
         place = routes.place_after_lane(route, idx)
         if place is not None:
             return classify_place(place, getattr(car, "destination", ""))
+        step = routes.step_lane_after(route, idx)
+        if step is not None:
+            return classify_step(car.lane_index, step[0])
         pair = routes.out_lane_after(route, idx)
         if pair is not None:
             return classify_maneuver(car.lane_index, pair[0])

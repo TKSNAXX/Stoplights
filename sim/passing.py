@@ -6,7 +6,7 @@ sim.movement. Police keep their own motion and are not considered here.
 """
 from __future__ import annotations
 
-from sim import map_data, world
+from sim import map_data, routes, world
 from sim.occupancy import Occupancy, occupancy_from
 
 # One lateral cell per this many forward cells; shortened when the runway is short.
@@ -32,6 +32,7 @@ MERGE_SPEED_KEEP = 1.0
 REASON_KEEP = "keep"
 REASON_PASS = "pass"
 REASON_EXIT = "exit"
+REASON_STEP = "step"
 
 
 def merge_choice(car, occupancy: Occupancy | None = None):
@@ -39,7 +40,8 @@ def merge_choice(car, occupancy: Occupancy | None = None):
     Lane change for this car as (target_lane, target_pos, side, reason), or None.
 
     Called when a lane segment completes, so changes always begin on a cell
-    boundary. Priority: forced exit, then passing, then keeping right.
+    boundary. Priority: the itinerary's own step, then forced exit, then
+    passing, then keeping right.
     """
     if getattr(car, "motion_mode", "lane") != "lane":
         return None
@@ -58,12 +60,18 @@ def merge_choice(car, occupancy: Occupancy | None = None):
         return None
 
     occ = occupancy_from(occupancy)
+    planned = planned_step_lane(car)
+    if planned is not None:
+        return _step_choice(car, lane, pos, sides, occ, planned)
     if _must_exit(lane, pos, cells):
         return _exit_choice(car, lane, pos, sides, occ)
     left_ok = sides in (world.MERGE_LEFT, world.MERGE_BOTH)
     right_ok = sides in (world.MERGE_RIGHT, world.MERGE_BOTH)
     if left_ok and _blocked_by_slower(car, lane, pos, occ):
-        found = _first_clear_target(car, lane, pos, world.MERGE_LEFT, occ, strict=True)
+        found = _first_clear_target(
+            car, lane, pos, world.MERGE_LEFT, occ, strict=True,
+            min_runway=MERGE_EXIT_LOOKAHEAD + 1,
+        )
         if found is not None:
             return (found[0], found[1], world.MERGE_LEFT, REASON_PASS)
         return None
@@ -83,6 +91,46 @@ def hold_merge_speed(cars_list) -> None:
             continue
         if car.speed_scale < MERGE_MIN_SCALE:
             car.speed_scale = MERGE_MIN_SCALE
+
+
+def planned_step_lane(car) -> int | None:
+    """
+    The stepsister the itinerary says to cross onto next, or None.
+
+    Only when the route's current step is the lane being driven, so a
+    discretionary change onto a sister never mistakes the step for its own.
+    """
+    route = getattr(car, "route", ()) or ()
+    idx = int(getattr(car, "route_index", 0))
+    if not route or idx >= len(route):
+        return None
+    step = route[idx]
+    if step.kind != routes.KIND_LANE or int(step.ref) != car.lane_index:
+        return None
+    nxt = routes.step_lane_after(route, idx)
+    if nxt is None or nxt[0] == car.lane_index:
+        return None
+    return nxt[0]
+
+
+def _step_choice(car, lane: int, pos: int, sides: str, occ: Occupancy, target_lane: int):
+    """
+    Cross onto the lane the itinerary names, anywhere along the shared run.
+
+    Insists on a clear window while there is runway left, then yields only to
+    cars ahead once the lane is about to end, as a forced exit does.
+    """
+    cells = world.get_lane_cells(lane)
+    strict = (len(cells) - 1 - pos) > MERGE_EXIT_LOOKAHEAD
+    for side in (world.MERGE_LEFT, world.MERGE_RIGHT):
+        if sides not in (side, world.MERGE_BOTH):
+            continue
+        found = _first_clear_target(
+            car, lane, pos, side, occ, strict=strict, only_lane=target_lane
+        )
+        if found is not None:
+            return (found[0], found[1], side, REASON_STEP)
+    return None
 
 
 def _must_exit(lane: int, pos: int, cells: tuple[tuple[int, int], ...]) -> bool:
@@ -121,6 +169,7 @@ def _first_clear_target(
     occ: Occupancy,
     strict: bool,
     min_runway: int = 0,
+    only_lane: int | None = None,
 ):
     """Longest runway whose landing cell is usable, shortening toward one cell."""
     for forward in range(MERGE_FORWARD_CELLS, 0, -1):
@@ -128,6 +177,8 @@ def _first_clear_target(
         if found is None:
             continue
         target_lane, target_pos = found
+        if only_lane is not None and target_lane != only_lane:
+            continue
         if min_runway:
             remaining = len(world.get_lane_cells(target_lane)) - 1 - target_pos
             if remaining < min_runway:

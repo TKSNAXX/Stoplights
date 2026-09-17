@@ -55,8 +55,7 @@ class _WorldState:
         self.cell_to_lane: dict[tuple[int, int], int] = {}
         self.cell_to_lane_pos: dict[tuple[int, int], tuple[int, int]] = {}
         self.oncoming: dict[int, int | None] = {}
-        self.sisters: dict[int, int | None] = {}
-        self.sister_kinds: dict[int, str | None] = {}
+        self.sister_links: dict[int, tuple[tuple[int, str], ...]] = {}
         self.merge_sides: dict[tuple[int, int], str] = {}
         self.best_next_hops: dict[tuple[str, str], frozenset[str]] = {}
 
@@ -203,11 +202,16 @@ def _are_oncoming(
 
 SISTER_LITTLE = "little"
 SISTER_BIG = "big"
+SISTER_ELDER = "elder"
+SISTER_STEP = "step"
 
 MERGE_NEITHER = "neither"
 MERGE_LEFT = "left"
 MERGE_RIGHT = "right"
 MERGE_BOTH = "both"
+
+# Stepsister crossings one corridor may chain before we call it a loop.
+MAX_CORRIDOR_LANES = 8
 
 _MERGE_FOR_SIDES = {
     (False, False): MERGE_NEITHER,
@@ -221,6 +225,17 @@ def _travel_range(cells: tuple[tuple[int, int], ...], direction: str) -> tuple[i
     """Inclusive travel-axis extent of a lane: y for N/S, x for E/W."""
     x0, x1, y0, y1 = _lane_span(cells)
     return (y0, y1) if direction in ("N", "S") else (x0, x1)
+
+
+def _travel_coord(cell: tuple[int, int], direction: str) -> int:
+    """This cell's coordinate along the travel axis."""
+    return cell[1] if direction in ("N", "S") else cell[0]
+
+
+def _inside_interior(coord: int, cells: tuple[tuple[int, int], ...], direction: str) -> bool:
+    """True when coord lies in a lane's non-entrance range (both mouths excluded)."""
+    lo, hi = _travel_range(cells, direction)
+    return lo < coord < hi
 
 
 def _is_little_of(
@@ -240,6 +255,64 @@ def _is_little_of(
     return b_lo < a_lo and a_hi < b_hi
 
 
+def _is_elder_of(
+    cells_a: tuple[tuple[int, int], ...],
+    dir_a: str,
+    cells_b: tuple[tuple[int, int], ...],
+    dir_b: str,
+) -> bool:
+    """
+    True when a is the elder stepsister of b: sisters that begin and end inside
+    each other, so a runs out mid-b and a driver must step across to carry on.
+    """
+    if not _are_sisters(cells_a, dir_a, cells_b, dir_b):
+        return False
+    return _inside_interior(
+        _travel_coord(cells_a[-1], dir_a), cells_b, dir_b
+    ) and _inside_interior(_travel_coord(cells_b[0], dir_b), cells_a, dir_a)
+
+
+def sister_relation_between(a: int, b: int) -> str | None:
+    """
+    How b relates to a: little, big, elder, step, or None when not a named pair.
+    Geometry only; does not consult the cached links.
+    """
+    cells_a, dir_a = _state.lanes.get(a, ()), lane_direction(a)
+    cells_b, dir_b = _state.lanes.get(b, ()), lane_direction(b)
+    if a == b or not cells_a or not cells_b:
+        return None
+    if _is_little_of(cells_b, dir_b, cells_a, dir_a):
+        return SISTER_LITTLE
+    if _is_little_of(cells_a, dir_a, cells_b, dir_b):
+        return SISTER_BIG
+    if _is_elder_of(cells_b, dir_b, cells_a, dir_a):
+        return SISTER_ELDER
+    if _is_elder_of(cells_a, dir_a, cells_b, dir_b):
+        return SISTER_STEP
+    return None
+
+
+def _travel_overlap(a: int, b: int) -> tuple[int, int] | None:
+    """Inclusive travel-axis range shared by two lanes, in ascending order."""
+    cells_a, dir_a = _state.lanes.get(a, ()), lane_direction(a)
+    cells_b, dir_b = _state.lanes.get(b, ()), lane_direction(b)
+    if not cells_a or not cells_b or not dir_a:
+        return None
+    a_lo, a_hi = _travel_range(cells_a, dir_a)
+    b_lo, b_hi = _travel_range(cells_b, dir_b)
+    lo, hi = max(a_lo, b_lo), min(a_hi, b_hi)
+    return (lo, hi) if lo <= hi else None
+
+
+def _link_order_key(lane_index: int, partner: int) -> float:
+    """Sort sisters the way a driver meets them: by shared run, along travel."""
+    overlap = _travel_overlap(lane_index, partner)
+    if overlap is None:
+        return float(partner)
+    sign = 1.0 if lane_direction(lane_index) in ("N", "E") else -1.0
+    return sign * (overlap[0] + overlap[1]) / 2.0
+
+
 def _lateral_offsets(direction: str) -> tuple[tuple[int, int], tuple[int, int]]:
     """Driver's left and right cell steps for a travel heading."""
     from sim.junction import LEFT_OF, RIGHT_OF
@@ -254,25 +327,21 @@ def _compute_merge_sides(
     cell_to_lane: dict[tuple[int, int], int],
 ) -> dict[tuple[int, int], str]:
     """
-    Per-cell merge side toward a little/big sister, driver-relative.
+    Per-cell merge side toward a mergeable sister, driver-relative.
 
     Tagged from perpendicular neighbour occupancy rather than the 1:1 sister
     pairing, so a lane flanked on both sides reports "both". Cells with no
-    little/big neighbour are absent and read as "neither".
+    little/big or stepsister neighbour are absent and read as "neither".
     """
     sides: dict[tuple[int, int], str] = {}
     pair_cache: dict[tuple[int, int], bool] = {}
 
-    def is_little_big(a: int, b: int) -> bool:
+    def is_mergeable(a: int, b: int) -> bool:
         key = (a, b) if a < b else (b, a)
         cached = pair_cache.get(key)
         if cached is not None:
             return cached
-        cells_a, dir_a = _state.lanes.get(a, ()), lane_direction(a)
-        cells_b, dir_b = _state.lanes.get(b, ()), lane_direction(b)
-        result = _is_little_of(cells_a, dir_a, cells_b, dir_b) or _is_little_of(
-            cells_b, dir_b, cells_a, dir_a
-        )
+        result = sister_relation_between(a, b) is not None
         pair_cache[key] = result
         return result
 
@@ -287,7 +356,7 @@ def _compute_merge_sides(
             for dx, dy in ((lx, ly), (rx, ry)):
                 other = cell_to_lane.get((cx + dx, cy + dy))
                 flags.append(
-                    other is not None and other != i and is_little_big(i, other)
+                    other is not None and other != i and is_mergeable(i, other)
                 )
             side = _MERGE_FOR_SIDES[(flags[0], flags[1])]
             if side != MERGE_NEITHER:
@@ -383,7 +452,7 @@ def _refresh_topology() -> None:
 
     ids = sorted(_state.lanes.keys())
     oncoming: dict[int, int | None] = {i: None for i in ids}
-    sisters: dict[int, int | None] = {i: None for i in ids}
+    links: dict[int, list[tuple[int, str]]] = {i: [] for i in ids}
     for a_idx, a in enumerate(ids):
         dir_a = lane_direction(a)
         cells_a = _state.lanes.get(a, ())
@@ -394,13 +463,9 @@ def _refresh_topology() -> None:
             cells_b = _state.lanes.get(b, ())
             if not dir_b or not cells_b:
                 continue
-            if (
-                sisters[a] is None
-                and sisters[b] is None
-                and _are_sisters(cells_a, dir_a, cells_b, dir_b)
-            ):
-                sisters[a] = b
-                sisters[b] = a
+            if _are_sisters(cells_a, dir_a, cells_b, dir_b):
+                links[a].append((b, sister_relation_between(a, b) or ""))
+                links[b].append((a, sister_relation_between(b, a) or ""))
             if (
                 oncoming[a] is None
                 and oncoming[b] is None
@@ -409,20 +474,10 @@ def _refresh_topology() -> None:
                 oncoming[a] = b
                 oncoming[b] = a
     _state.oncoming = oncoming
-    _state.sisters = sisters
-
-    kinds: dict[int, str | None] = {i: None for i in ids}
-    for a in ids:
-        b = sisters.get(a)
-        if b is None or kinds[a] is not None:
-            continue
-        if _is_little_of(
-            _state.lanes.get(a, ()), lane_direction(a),
-            _state.lanes.get(b, ()), lane_direction(b),
-        ):
-            kinds[a] = SISTER_LITTLE
-            kinds[b] = SISTER_BIG
-    _state.sister_kinds = kinds
+    _state.sister_links = {
+        i: tuple(sorted(pairs, key=lambda link: _link_order_key(i, link[0])))
+        for i, pairs in links.items()
+    }
 
     cell_to_lane: dict[tuple[int, int], int] = {}
     cell_to_lane_pos: dict[tuple[int, int], tuple[int, int]] = {}
@@ -433,6 +488,12 @@ def _refresh_topology() -> None:
     _state.cell_to_lane = cell_to_lane
     _state.cell_to_lane_pos = cell_to_lane_pos
     _state.merge_sides = _compute_merge_sides(ids, cell_to_lane)
+
+    for i in ids:
+        src = lane_traffic_in(i)
+        dst = lane_exit_node(i)
+        if src and dst and dst != lane_traffic_out(i):
+            graph.setdefault(src, set()).add(dst)
 
     nodes: set[str] = set(_state.place_rects)
     nodes.update(_state.intersections)
@@ -586,13 +647,129 @@ def oncoming_lane(lane_index: int) -> int | None:
     return _state.oncoming.get(lane_index)
 
 
+def sister_links(lane_index: int) -> tuple[tuple[int, str], ...]:
+    """Every sister of this lane as (partner, partner's role), in travel order."""
+    return _state.sister_links.get(lane_index, ())
+
+
+def sister_lanes(lane_index: int) -> tuple[int, ...]:
+    return tuple(partner for partner, _kind in sister_links(lane_index))
+
+
 def sister_lane(lane_index: int) -> int | None:
-    return _state.sisters.get(lane_index)
+    """First sister a driver meets on this lane, or None."""
+    links = sister_links(lane_index)
+    return links[0][0] if links else None
 
 
-def sister_kind(lane_index: int) -> str | None:
-    """Sister shape of this lane: little, big, or None (unpaired or unnamed)."""
-    return _state.sister_kinds.get(lane_index)
+def sister_relation(lane_index: int, partner: int) -> str | None:
+    """Cached role of partner as seen from lane_index; None when not sisters."""
+    for other, kind in sister_links(lane_index):
+        if other == partner:
+            return kind or None
+    return None
+
+
+def sister_overlap_cells(
+    lane_index: int,
+    partner: int,
+) -> tuple[tuple[int, int], tuple[int, int]] | None:
+    """This lane's first and last cells along the run it shares with a sister."""
+    overlap = _travel_overlap(lane_index, partner)
+    if overlap is None:
+        return None
+    direction = lane_direction(lane_index)
+    shared = [
+        c
+        for c in get_lane_cells(lane_index)
+        if overlap[0] <= _travel_coord(c, direction) <= overlap[1]
+    ]
+    if not shared:
+        return None
+    return (shared[0], shared[-1])
+
+
+def stepsister_step(lane_index: int) -> tuple[int, str] | None:
+    """
+    The sister a car must step into to carry on past this lane, with the side.
+
+    Only for a lane that leads nowhere on its own and ends inside a sister.
+    """
+    if lane_traffic_out(lane_index):
+        return None
+    cells = get_lane_cells(lane_index)
+    if not cells:
+        return None
+    side = cell_merge(*cells[-1])
+    candidates: list[tuple[int, str]] = []
+    for partner, kind in sister_links(lane_index):
+        if kind != SISTER_STEP:
+            continue
+        for one_side in (MERGE_LEFT, MERGE_RIGHT):
+            if side not in (one_side, MERGE_BOTH):
+                continue
+            found = merge_target(lane_index, len(cells) - 1, one_side, 1)
+            if found is not None and found[0] == partner:
+                candidates.append((partner, one_side))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda c: (0 if lane_traffic_out(c[0]) else 1, c[0]))
+    return candidates[0]
+
+
+def corridor_after(lane_index: int) -> tuple[int, ...]:
+    """
+    This lane and every stepsister a car must cross into to reach a traffic node.
+
+    Ends at the first lane with a real traffic_out, or where the chain runs out.
+    """
+    chain = [lane_index]
+    seen = {lane_index}
+    for _ in range(MAX_CORRIDOR_LANES):
+        step = stepsister_step(chain[-1])
+        if step is None or step[0] in seen:
+            break
+        chain.append(step[0])
+        seen.add(step[0])
+    return tuple(chain)
+
+
+def corridor_before(lane_index: int) -> tuple[int, ...]:
+    """Every lane that steps into this one, earliest first, then this lane."""
+    chain = [lane_index]
+    seen = {lane_index}
+    for _ in range(MAX_CORRIDOR_LANES):
+        prev = next(
+            (
+                partner
+                for partner, kind in sister_links(chain[0])
+                if kind == SISTER_ELDER
+                and partner not in seen
+                and (stepsister_step(partner) or (None,))[0] == chain[0]
+            ),
+            None,
+        )
+        if prev is None:
+            break
+        chain.insert(0, prev)
+        seen.add(prev)
+    return tuple(chain)
+
+
+def lane_exit_node(lane_index: int) -> str:
+    """Traffic node this lane leads to, following stepsister crossings."""
+    direct = lane_traffic_out(lane_index)
+    if direct:
+        return direct
+    return lane_traffic_out(corridor_after(lane_index)[-1])
+
+
+def lane_entry_node(lane_index: int) -> str:
+    """Traffic node a car on this lane came from, following stepsister crossings."""
+    direct = lane_traffic_in(lane_index)
+    if direct:
+        return direct
+    return lane_traffic_in(corridor_before(lane_index)[0])
 
 
 def cell_merge(gx: int, gy: int) -> str:

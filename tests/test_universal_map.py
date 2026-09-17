@@ -1298,11 +1298,13 @@ def test_sister_geometry_staggered_and_corner() -> None:
     assert world.oncoming_lane(82) is None
     assert world.oncoming_lane(83) is None
 
-    # The short inner lanes start and stop inside their sister's interior.
-    assert world.sister_kind(82) == world.SISTER_LITTLE
-    assert world.sister_kind(83) == world.SISTER_LITTLE
-    assert world.sister_kind(9) == world.SISTER_BIG
-    assert world.sister_kind(10) == world.SISTER_BIG
+    # The short inner lanes start and stop inside their sister's interior. Each
+    # lane names the role its partner plays, so the pair reads both ways.
+    assert world.sister_relation(9, 82) == world.SISTER_LITTLE
+    assert world.sister_relation(82, 9) == world.SISTER_BIG
+    assert world.sister_relation(10, 83) == world.SISTER_LITTLE
+    assert world.sister_relation(83, 10) == world.SISTER_BIG
+    assert world.sister_links(9) == ((82, world.SISTER_LITTLE),)
     # Northbound 9 merges right into 82; 82 merges left into 9.
     assert world.cell_merge(64, 40) == world.MERGE_RIGHT
     assert world.cell_merge(65, 40) == world.MERGE_LEFT
@@ -1349,8 +1351,8 @@ def test_sister_geometry_staggered_and_corner() -> None:
     assert world.oncoming_lane(1) is None
     assert world.oncoming_lane(2) is None
     # Equal length and aligned: sisters, but neither contains the other.
-    assert world.sister_kind(1) is None
-    assert world.sister_kind(2) is None
+    assert world.sister_relation(1, 2) is None
+    assert world.sister_relation(2, 1) is None
     assert not world.lane_merge_cells(1)
     assert not world.lane_merge_cells(2)
 
@@ -1359,8 +1361,8 @@ def test_sister_geometry_staggered_and_corner() -> None:
         2: places.LaneConfig(start_tile=(5, 11), end_tile=(35, 11)),
     }
     world.rebuild_world({}, {}, eastbound)
-    assert world.sister_kind(2) == world.SISTER_LITTLE
-    assert world.sister_kind(1) == world.SISTER_BIG
+    assert world.sister_relation(1, 2) == world.SISTER_LITTLE
+    assert world.sister_relation(2, 1) == world.SISTER_BIG
     # Eastbound driver's left is +y, the mirror of the northbound case.
     assert world.cell_merge(20, 10) == world.MERGE_LEFT
     assert world.cell_merge(20, 11) == world.MERGE_RIGHT
@@ -1372,13 +1374,13 @@ def test_sister_geometry_staggered_and_corner() -> None:
         3: places.LaneConfig(start_tile=(12, 0), end_tile=(12, 40)),
     }
     world.rebuild_world({}, {}, three_abreast)
-    # Merge sides come from neighbour occupancy, so the middle lane passes both
-    # ways even though 1:1 pairing can only name one sister.
+    # Merge sides come from neighbour occupancy, and a lane keeps every sister,
+    # so the middle lane is flanked and passes both ways.
     assert world.cell_merge(11, 20) == world.MERGE_BOTH
     assert world.cell_merge(10, 20) == world.MERGE_RIGHT
     assert world.cell_merge(12, 20) == world.MERGE_LEFT
-    assert world.sister_lane(3) is None
-    assert world.sister_kind(3) is None
+    assert world.sister_lanes(2) == (1, 3)
+    assert world.sister_relation(3, 2) == world.SISTER_LITTLE
 
     facing = {
         1: places.LaneConfig(start_tile=(0, 10), end_tile=(0, 20)),
@@ -1389,6 +1391,164 @@ def test_sister_geometry_staggered_and_corner() -> None:
     # Crossing the yellow is not a merge.
     assert world.cell_merge(0, 15) == world.MERGE_NEITHER
     assert world.cell_merge(1, 15) == world.MERGE_NEITHER
+    GameState()
+
+
+def _stepsister_chain() -> None:
+    """
+    Southbound corridor of three staggered lanes between two places.
+
+    Each lane runs out inside the next, so a driver must step right, then left,
+    to get from North to South. x10 for the outer legs, x9 for the middle.
+    """
+    places_by_id = {
+        "North": places.Place(center_x=10, center_y=52, width=3, length=3),
+        "South": places.Place(center_x=10, center_y=8, width=3, length=3),
+    }
+    lanes = {
+        1: places.LaneConfig(start_tile=(10, 50), end_tile=(10, 36)),
+        2: places.LaneConfig(start_tile=(9, 42), end_tile=(9, 15)),
+        3: places.LaneConfig(start_tile=(10, 23), end_tile=(10, 10)),
+    }
+    places.set_route_hints([])
+    world.rebuild_world(place_rects_from_places(places_by_id), {}, lanes)
+
+
+def test_stepsister_chain_and_corridor() -> None:
+    """Lanes that begin and end inside each other force a step across the seam."""
+    _stepsister_chain()
+    assert world.lane_traffic_in(1) == "North" and world.lane_traffic_out(1) == ""
+    assert world.lane_traffic_in(2) == "" and world.lane_traffic_out(2) == ""
+    assert world.lane_traffic_in(3) == "" and world.lane_traffic_out(3) == "South"
+
+    assert world.sister_relation(1, 2) == world.SISTER_STEP
+    assert world.sister_relation(2, 1) == world.SISTER_ELDER
+    assert world.sister_relation(2, 3) == world.SISTER_STEP
+    assert world.sister_relation(3, 2) == world.SISTER_ELDER
+    # The middle lane holds both roles, in the order a driver meets them.
+    assert world.sister_links(2) == (
+        (1, world.SISTER_ELDER),
+        (3, world.SISTER_STEP),
+    )
+    # The outer legs share a column, so they are not sisters at all.
+    assert world.sister_relation(1, 3) is None
+
+    # Southbound driver's left is +x: right onto the middle lane, then left off it.
+    assert world.cell_merge(10, 40) == world.MERGE_RIGHT
+    assert world.cell_merge(9, 40) == world.MERGE_LEFT
+    assert world.cell_merge(9, 20) == world.MERGE_LEFT
+    assert world.cell_merge(10, 20) == world.MERGE_RIGHT
+    # Between the two shared runs the middle lane has no one alongside.
+    assert world.cell_merge(9, 30) == world.MERGE_NEITHER
+
+    assert world.stepsister_step(1) == (2, world.MERGE_RIGHT)
+    assert world.stepsister_step(2) == (3, world.MERGE_LEFT)
+    assert world.stepsister_step(3) is None  # it reaches South on its own
+    assert world.corridor_after(1) == (1, 2, 3)
+    assert world.corridor_after(2) == (2, 3)
+    assert world.corridor_before(3) == (1, 2, 3)
+
+    # Routing reads the whole corridor as one hop from North to South.
+    for lane in (1, 2, 3):
+        assert world.lane_exit_node(lane) == "South"
+        assert world.lane_entry_node(lane) == "North"
+    assert world.destination_reachable("North", "South")
+    GameState()
+
+
+def test_stepsister_route_steps_and_drive() -> None:
+    """A planned corridor lists every lane, and a car steps its way through."""
+    from sim import passing, routes
+    from sim.movement import advance_car
+    from sim.occupancy import Occupancy
+    from sim.situation import refresh_situations
+
+    _stepsister_chain()
+    route = routes.plan_route("North", "South")
+    assert route is not None
+    assert [(s.kind, s.ref) for s in route] == [
+        ("place", "North"),
+        ("lane", 1),
+        ("lane", 2),
+        ("lane", 3),
+        ("place", "South"),
+    ]
+    assert routes.format_route_nodes(route) == "North > South"
+    first = routes.first_lane_step_index(route)
+    assert routes.step_lane_after(route, first) == (2, first + 1)
+    assert routes.out_lane_after(route, first) is None
+
+    car = Car(
+        origin="North",
+        destination="South",
+        color=(220, 60, 60),
+        base_speed_multiplier=1.0,
+        lane_index=1,
+        position_in_lane=0,
+        route=route,
+        route_index=first,
+    )
+    assert passing.planned_step_lane(car) == 2
+
+    to_remove: list = []
+    t = 0.0
+    seen: list[tuple[int, int]] = []
+    sides: list[str] = []
+    for _ in range(4000):
+        t += 1.0 / 60.0
+        occ = Occupancy.from_cars([car])
+        advance_car(car, t, 8.0, to_remove, occ)
+        refresh_situations([car], occ)
+        if car.motion_mode == "merge":
+            assert car.merge_reason == passing.REASON_STEP
+            if not sides or sides[-1] != car.merge_side:
+                sides.append(car.merge_side)
+        key = (car.lane_index, car.route_index)
+        if not seen or seen[-1] != key:
+            seen.append(key)
+        if to_remove:
+            break
+
+    # Each crossing carries the itinerary onto the lane the car now occupies.
+    assert seen == [(1, first), (2, first + 1), (3, first + 2)]
+    assert sides == [world.MERGE_RIGHT, world.MERGE_LEFT]
+    # It ran to the end of the corridor and arrived, rather than despawning mid-road.
+    assert car.lane_index == 3
+    assert car.position_in_lane == len(world.get_lane_cells(3)) - 1
+    GameState()
+
+
+def test_stepsister_step_survives_a_blocked_seam() -> None:
+    """With the seam packed the whole way, the car still lands on the step lane."""
+    from sim import routes
+    from sim.movement import advance_car
+    from sim.occupancy import Occupancy
+
+    _stepsister_chain()
+    route = routes.plan_route("North", "South")
+    assert route is not None
+    first = routes.first_lane_step_index(route)
+    cells_1 = world.get_lane_cells(1)
+    car = Car(
+        origin="North",
+        destination="South",
+        color=(220, 60, 60),
+        base_speed_multiplier=1.0,
+        lane_index=1,
+        position_in_lane=len(cells_1) - 1,
+        route=route,
+        route_index=first,
+    )
+    # Fill the middle lane alongside so no gap is ever usable.
+    blockers = [
+        _make_test_car(lane_index=2, position=pos)
+        for pos in range(0, len(world.get_lane_cells(2)))
+    ]
+    to_remove: list = []
+    advance_car(car, 0.0, 8.0, to_remove, Occupancy.from_cars([car, *blockers]))
+    assert not to_remove
+    assert car.lane_index == 2
+    assert car.route_index == first + 1
     GameState()
 
 
@@ -2443,6 +2603,9 @@ def main() -> None:
         test_building_catalog_natural_scale,
         test_rebuild_topology_tables,
         test_sister_geometry_staggered_and_corner,
+        test_stepsister_chain_and_corridor,
+        test_stepsister_route_steps_and_drive,
+        test_stepsister_step_survives_a_blocked_seam,
         test_sister_overlay_rects,
         test_lane_paint_roles_and_raster,
         test_path_cache_matches_live,
