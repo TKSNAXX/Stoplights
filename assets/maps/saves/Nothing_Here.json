@@ -1,0 +1,131 @@
+{
+  "schema_version": 4,
+  "places": {},
+  "intersections": {
+    "intersection_2": {
+      "center_x": 36,
+      "center_y": 48,
+      "size_cells": 4,
+      "protected": false
+    }
+  },
+  "lanes": {
+    "0": {
+      "start_tile": [
+        36,
+        5
+      ],
+      "end_tile": [
+        36,
+        45
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": true
+    },
+    "1": {
+      "start_tile": [
+        36,
+        50
+      ],
+      "end_tile": [
+        36,
+        81
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": true
+    },
+    "2": {
+      "start_tile": [
+        35,
+        81
+      ],
+      "end_tile": [
+        35,
+        50
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": true
+    },
+    "3": {
+      "start_tile": [
+        35,
+        45
+      ],
+      "end_tile": [
+        35,
+        5
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": true
+    },
+    "4": {
+      "start_tile": [
+        61,
+        48
+      ],
+      "end_tile": [
+        38,
+        48
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "passing",
+      "protected": true
+    },
+    "5": {
+      "start_tile": [
+        38,
+        47
+      ],
+      "end_tile": [
+        61,
+        47
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": true
+    },
+    "6": {
+      "start_tile": [
+        5,
+        47
+      ],
+      "end_tile": [
+        33,
+        47
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": true
+    },
+    "7": {
+      "start_tile": [
+        33,
+        48
+      ],
+      "end_tile": [
+        5,
+        48
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "passing",
+      "protected": true
+    }
+  },
+  "police": [],
+  "route_hints": [],
+  "spawn_balance": {
+    "origin_spawn_balance_coeff": 1.0,
+    "out_lane_balance_coeff": 1.0
+  },
+  "user_settings": {
+    "edge_pan_enabled": false,
+    "grass_close_enabled": true,
+    "police_enabled": false,
+    "color_hue": 320,
+    "color_sat": 0.9
+  }
+}

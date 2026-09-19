@@ -142,9 +142,8 @@ class LaneVarsDialog(Dialog):
         on_remove: Callable[[], None] | None = None,
     ):
         self._game = game
-        self._can_remove = bool(game is not None and hasattr(game, "can_remove_lane") and game.can_remove_lane(lane_index))
         super().__init__(
-            x, y, DIALOG_WIDTH, dialog_height(9 if self._can_remove else 8),
+            x, y, DIALOG_WIDTH, dialog_height(9),
             str(lane_index), kind="Lane",
         )
         self.lane_index = lane_index
@@ -171,15 +170,15 @@ class LaneVarsDialog(Dialog):
         self._out_datum = DatumBox()
         self._oncoming_datum = DatumBox()
         self._sister_datum = DatumBox()
+        self._remove_btn = RemoveButton(0, 0, on_click=self._do_remove)
+        self._on_delete = self._do_remove
 
         self.widgets = [
             self._speed_slider,
             self._start_compass,
             self._end_compass,
+            self._remove_btn,
         ]
-        self._remove_btn = RemoveButton(0, 0, on_click=self._do_remove)
-        if self._can_remove:
-            self.widgets.append(self._remove_btn)
         self._speed_label = ParamLabel("Speed")
         self._start_label = ParamLabel("Start")
         self._end_label = ParamLabel("End")
@@ -188,10 +187,11 @@ class LaneVarsDialog(Dialog):
         self._out_label = ParamLabel("Traffic Out")
         self._oncoming_label = ParamLabel("Oncoming")
         self._sister_label = ParamLabel("Sister")
+        self._delete_label = ParamLabel("Delete")
         self.labels = [
             self._speed_label, self._start_label, self._end_label,
             self._dir_label, self._in_label, self._out_label,
-            self._oncoming_label, self._sister_label,
+            self._oncoming_label, self._sister_label, self._delete_label,
         ]
 
     def _update_locked_axes(self) -> None:
@@ -266,9 +266,9 @@ class LaneVarsDialog(Dialog):
         r7 = form_row(self, 7)
         self._sister_label.place(r7.label_x, r7.label_y)
         self._sister_datum.rect = (r7.control_left, r7.control_bottom, r7.control_width, DATUM_HEIGHT)
-        if self._can_remove:
-            r8 = form_row(self, 8)
-            self._remove_btn.rect = (r8.control_left, r8.control_bottom, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE)
+        r8 = form_row(self, 8)
+        self._delete_label.place(r8.label_x, r8.label_y)
+        self._remove_btn.rect = (r8.control_left, r8.control_bottom, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE)
 
     def draw(self) -> None:
         self._speed_datum.set_value(f"{LANE_SPEED_VALUES[self._speed_slider.value]:g}x")

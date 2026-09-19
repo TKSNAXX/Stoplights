@@ -67,6 +67,16 @@ class Dropdown:
             if self._on_change:
                 self._on_change(self.value)
 
+    def set_options(self, options: list[str], index: int = 0) -> None:
+        self.options = options if options else [""]
+        self.value = max(0, min(index, len(self.options) - 1))
+        self._open = False
+
+    def selected(self) -> str:
+        if not self.options:
+            return ""
+        return self.options[self.value]
+
     def draw(self) -> None:
         left, bottom, width, height = self.rect
         left, bottom, width, height = ipx(left), ipx(bottom), ipx(width), ipx(height)

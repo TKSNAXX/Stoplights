@@ -77,10 +77,16 @@ class GameState:
 
     def delete_lane(self, lane_idx: int) -> None:
         cfg = self.lanes.get(lane_idx)
-        if cfg is None or getattr(cfg, "protected", False):
+        if cfg is None:
             return
         del self.lanes[lane_idx]
         self.cars = [c for c in self.cars if c.lane_index != lane_idx]
+        self.rebuild_world_from_config()
+
+    def delete_intersection(self, intersection_key: str) -> None:
+        if intersection_key not in self.intersections:
+            return
+        del self.intersections[intersection_key]
         self.rebuild_world_from_config()
 
     def delete_place(self, place_key: str) -> None:
@@ -222,15 +228,13 @@ class GameState:
         }
 
     def can_remove_lane(self, lane_index: int) -> bool:
-        cfg = self.lanes.get(lane_index)
-        return cfg is not None and not getattr(cfg, "protected", False)
+        return lane_index in self.lanes
 
     def can_remove_place(self, place_key: str) -> bool:
         return place_key in self.places
 
     def can_remove_intersection(self, intersection_key: str) -> bool:
-        cfg = self.intersections.get(intersection_key)
-        return cfg is not None and not getattr(cfg, "protected", False)
+        return intersection_key in self.intersections
 
     def rename_place(self, old: str, new: str) -> str:
         """Rename a place id. Returns the name actually used (old if refused)."""

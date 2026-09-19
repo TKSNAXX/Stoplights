@@ -186,6 +186,7 @@ class PlaceVarsDialog(Dialog):
         self._shuffle_btn = ShuffleButton(0, 0, on_click=self._do_shuffle)
         self._remove_btn = RemoveButton(0, 0, on_click=self._do_remove)
         self._remove_btn.enabled = can_remove
+        self._on_delete = self._do_remove
 
         self.widgets = [
             self._spawn_slider, self._attract_slider, self._kind_dropdown,
@@ -198,9 +199,10 @@ class PlaceVarsDialog(Dialog):
         self._center_label = ParamLabel("Center")
         self._w_label = ParamLabel("Width")
         self._l_label = ParamLabel("Length")
+        self._delete_label = ParamLabel("Delete")
         self.labels = [
             self._spawn_label, self._attract_label, self._kind_label,
-            self._center_label, self._w_label, self._l_label,
+            self._center_label, self._w_label, self._l_label, self._delete_label,
         ]
 
     def _commit_name(self) -> None:
@@ -313,6 +315,7 @@ class PlaceVarsDialog(Dialog):
         self._l_label.place(r5.label_x, r5.label_y)
         self._l_box.rect = (r5.control_left, r5.control_bottom, r5.control_width, DATUM_HEIGHT)
         r6 = form_row(self, 6)
+        self._delete_label.place(r6.label_x, r6.label_y)
         self._remove_btn.rect = (r6.control_left, r6.control_bottom, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE)
 
     def draw(self) -> None:

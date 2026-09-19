@@ -1,0 +1,399 @@
+{
+  "schema_version": 4,
+  "places": {},
+  "intersections": {
+    "intersection_2": {
+      "center_x": 18,
+      "center_y": 18,
+      "size_cells": 4,
+      "protected": false
+    },
+    "intersection_3": {
+      "center_x": 6,
+      "center_y": 6,
+      "size_cells": 2,
+      "protected": false
+    },
+    "intersection_4": {
+      "center_x": 92,
+      "center_y": 107,
+      "size_cells": 2,
+      "protected": false
+    },
+    "intersection_5": {
+      "center_x": 29,
+      "center_y": 18,
+      "size_cells": 4,
+      "protected": false
+    },
+    "intersection_6": {
+      "center_x": 18,
+      "center_y": 29,
+      "size_cells": 4,
+      "protected": false
+    },
+    "intersection_7": {
+      "center_x": 29,
+      "center_y": 29,
+      "size_cells": 4,
+      "protected": false
+    },
+    "intersection_8": {
+      "center_x": 37,
+      "center_y": 18,
+      "size_cells": 4,
+      "protected": false
+    },
+    "intersection_9": {
+      "center_x": 37,
+      "center_y": 29,
+      "size_cells": 4,
+      "protected": false
+    },
+    "intersection_10": {
+      "center_x": 29,
+      "center_y": 37,
+      "size_cells": 4,
+      "protected": false
+    },
+    "intersection_11": {
+      "center_x": 37,
+      "center_y": 37,
+      "size_cells": 4,
+      "protected": false
+    },
+    "intersection_12": {
+      "center_x": 18,
+      "center_y": 37,
+      "size_cells": 4,
+      "protected": false
+    }
+  },
+  "lanes": {
+    "0": {
+      "start_tile": [
+        20,
+        17
+      ],
+      "end_tile": [
+        26,
+        17
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "2": {
+      "start_tile": [
+        18,
+        20
+      ],
+      "end_tile": [
+        18,
+        26
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "3": {
+      "start_tile": [
+        17,
+        26
+      ],
+      "end_tile": [
+        17,
+        20
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "4": {
+      "start_tile": [
+        26,
+        18
+      ],
+      "end_tile": [
+        20,
+        18
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "5": {
+      "start_tile": [
+        20,
+        28
+      ],
+      "end_tile": [
+        26,
+        28
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "6": {
+      "start_tile": [
+        26,
+        29
+      ],
+      "end_tile": [
+        20,
+        29
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "7": {
+      "start_tile": [
+        29,
+        20
+      ],
+      "end_tile": [
+        29,
+        26
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "8": {
+      "start_tile": [
+        28,
+        26
+      ],
+      "end_tile": [
+        28,
+        20
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "9": {
+      "start_tile": [
+        31,
+        17
+      ],
+      "end_tile": [
+        34,
+        17
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "10": {
+      "start_tile": [
+        34,
+        18
+      ],
+      "end_tile": [
+        31,
+        18
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "11": {
+      "start_tile": [
+        37,
+        20
+      ],
+      "end_tile": [
+        37,
+        26
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "12": {
+      "start_tile": [
+        36,
+        26
+      ],
+      "end_tile": [
+        36,
+        20
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "13": {
+      "start_tile": [
+        31,
+        28
+      ],
+      "end_tile": [
+        34,
+        28
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "14": {
+      "start_tile": [
+        34,
+        29
+      ],
+      "end_tile": [
+        31,
+        29
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "15": {
+      "start_tile": [
+        29,
+        31
+      ],
+      "end_tile": [
+        29,
+        34
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "16": {
+      "start_tile": [
+        28,
+        34
+      ],
+      "end_tile": [
+        28,
+        31
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "17": {
+      "start_tile": [
+        36,
+        34
+      ],
+      "end_tile": [
+        36,
+        31
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "18": {
+      "start_tile": [
+        37,
+        31
+      ],
+      "end_tile": [
+        37,
+        34
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "19": {
+      "start_tile": [
+        34,
+        37
+      ],
+      "end_tile": [
+        31,
+        37
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "20": {
+      "start_tile": [
+        31,
+        36
+      ],
+      "end_tile": [
+        34,
+        36
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "21": {
+      "start_tile": [
+        20,
+        36
+      ],
+      "end_tile": [
+        26,
+        36
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "22": {
+      "start_tile": [
+        26,
+        37
+      ],
+      "end_tile": [
+        20,
+        37
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "23": {
+      "start_tile": [
+        17,
+        34
+      ],
+      "end_tile": [
+        17,
+        31
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    },
+    "24": {
+      "start_tile": [
+        18,
+        31
+      ],
+      "end_tile": [
+        18,
+        34
+      ],
+      "speed_limit": 1.0,
+      "lane_type": "normal",
+      "protected": false
+    }
+  },
+  "police": [],
+  "route_hints": [],
+  "spawn_balance": {
+    "origin_spawn_balance_coeff": 1.0,
+    "out_lane_balance_coeff": 1.0
+  },
+  "user_settings": {
+    "edge_pan_enabled": false,
+    "grass_close_enabled": false,
+    "police_enabled": false,
+    "color_hue": 320,
+    "color_sat": 0.9
+  }
+}

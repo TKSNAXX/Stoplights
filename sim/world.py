@@ -808,11 +808,13 @@ def mouths_aligned(in_lane: int, out_lane: int) -> bool:
 
 
 def intersection_has_twins(key: str) -> bool:
-    """True when any lane that meets this node has an identical or fraternal twin."""
-    for i in (*incoming_lanes(key), *outgoing_lanes(key)):
-        for _partner, kind in sister_links(i):
-            if kind in TWIN_KINDS:
-                return True
+    """True when any mouth at this node is a twin group of two or more lanes."""
+    for i in incoming_lanes(key):
+        if len(mouth_group(i, key, inbound=True)) >= 2:
+            return True
+    for i in outgoing_lanes(key):
+        if len(mouth_group(i, key, inbound=False)) >= 2:
+            return True
     return False
 
 

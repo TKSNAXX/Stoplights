@@ -27,7 +27,7 @@ def next_intersection_key(configs: dict) -> str:
 
 
 class IntersectionVarsDialog(Dialog):
-    """Dialog for editing intersection center and size. Overlay type is inferred. Remove for extra intersections only."""
+    """Dialog for editing intersection center and size. Overlay type is inferred."""
 
     def __init__(
         self,
@@ -40,11 +40,8 @@ class IntersectionVarsDialog(Dialog):
         on_commit: Callable[[], None] | None = None,
         on_remove: Callable[[], None] | None = None,
     ):
-        self._can_remove = bool(
-            game is not None and hasattr(game, "can_remove_intersection") and game.can_remove_intersection(intersection_key)
-        )
         super().__init__(
-            x, y, DIALOG_WIDTH, dialog_height(4 if self._can_remove else 3),
+            x, y, DIALOG_WIDTH, dialog_height(4),
             intersection_key, kind="Intersection",
         )
         self.intersection_key = intersection_key
@@ -67,14 +64,14 @@ class IntersectionVarsDialog(Dialog):
             on_change=lambda _: self._apply_config(), on_unfocus=self._apply_config,
         )
         self._remove_btn = RemoveButton(0, 0, on_click=self._do_remove)
+        self._on_delete = self._do_remove
 
-        self.widgets = [self._center_compass, self._size_box]
-        if self._can_remove:
-            self.widgets.append(self._remove_btn)
+        self.widgets = [self._center_compass, self._size_box, self._remove_btn]
         self._type_label = ParamLabel("Type")
         self._center_label = ParamLabel("Center")
         self._size_label = ParamLabel("Size")
-        self.labels = [self._type_label, self._center_label, self._size_label]
+        self._delete_label = ParamLabel("Delete")
+        self.labels = [self._type_label, self._center_label, self._size_label, self._delete_label]
 
     def _inferred_type(self) -> str:
         from sim import world
@@ -106,9 +103,8 @@ class IntersectionVarsDialog(Dialog):
             self._on_commit()
 
     def _do_remove(self) -> None:
-        if self._game is not None and self.intersection_key in self._game.intersections:
-            del self._game.intersections[self.intersection_key]
-            self._game.rebuild_world_from_config()
+        if self._game is not None:
+            self._game.delete_intersection(self.intersection_key)
         if self._on_remove:
             self._on_remove()
 
@@ -122,9 +118,9 @@ class IntersectionVarsDialog(Dialog):
         r2 = form_row(self, 2)
         self._size_label.place(r2.label_x, r2.label_y)
         self._size_box.rect = (r2.control_left, r2.control_bottom, r2.control_width, DATUM_HEIGHT)
-        if self._can_remove:
-            r3 = form_row(self, 3)
-            self._remove_btn.rect = (r3.control_left, r3.control_bottom, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE)
+        r3 = form_row(self, 3)
+        self._delete_label.place(r3.label_x, r3.label_y)
+        self._remove_btn.rect = (r3.control_left, r3.control_bottom, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE)
 
     def draw(self) -> None:
         self._type_datum.set_value(self._inferred_type())

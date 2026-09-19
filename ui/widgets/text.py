@@ -214,8 +214,8 @@ class NumberBox:
             draw_icon(kind, l, b, s, ICON_BUTTON_FG)
 
 
-def _text_box_char_ok(ch: str) -> bool:
-    return ch.isalnum() or ch in " -"
+def _text_box_char_ok(ch: str, extra: str = "") -> bool:
+    return ch.isalnum() or ch in " -" or ch in extra
 
 
 class TextBox:
@@ -234,12 +234,14 @@ class TextBox:
         chrome: bool = True,
         font_size: int = FONT_DATUM,
         align: str = "left",
+        extra_ok: str = "",
     ):
         self.rect = (left, bottom, width, height)
         self.value = value
         self.max_len = max_len
         self.chrome = chrome
         self._align = align
+        self._extra_ok = extra_ok
         self._on_change = on_change
         self._on_unfocus = on_unfocus
         self._focused = False
@@ -306,7 +308,7 @@ class TextBox:
         if not self._focused:
             return
         for ch in text:
-            if not _text_box_char_ok(ch):
+            if not _text_box_char_ok(ch, self._extra_ok):
                 continue
             if len(self._text_buffer) >= self.max_len:
                 break

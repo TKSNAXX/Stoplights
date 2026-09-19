@@ -82,14 +82,29 @@ INTERSECTION_TYPE_X = "x"  # load alias for cross
 INTERSECTION_TYPE_CORNER = "corner"
 INTERSECTION_TYPE_STRAIGHT = "straight"
 INTERSECTION_TYPE_TEE = "tee"
-INTERSECTION_TYPE_BIG = "big"
+INTERSECTION_TYPE_DOUBLE = "double"  # load alias of double_cross
+INTERSECTION_TYPE_MIXED = "mixed"  # load alias of mixed_cross
+INTERSECTION_TYPE_BIG = "big"  # load alias of double_cross
+INTERSECTION_TYPE_DOUBLE_CROSS = "double_cross"
+INTERSECTION_TYPE_DOUBLE_TEE = "double_tee"
+INTERSECTION_TYPE_DOUBLE_CORNER = "double_corner"
+INTERSECTION_TYPE_MIXED_CROSS = "mixed_cross"
+INTERSECTION_TYPE_MIXED_TEE = "mixed_tee"
+INTERSECTION_TYPE_MIXED_CORNER = "mixed_corner"
+INTERSECTION_TYPE_MIXED_STRAIGHT = "mixed_straight"
 INTERSECTION_TYPES = (
     INTERSECTION_TYPE_NONE,
     INTERSECTION_TYPE_CROSS,
     INTERSECTION_TYPE_CORNER,
     INTERSECTION_TYPE_STRAIGHT,
     INTERSECTION_TYPE_TEE,
-    INTERSECTION_TYPE_BIG,
+    INTERSECTION_TYPE_DOUBLE_CROSS,
+    INTERSECTION_TYPE_DOUBLE_TEE,
+    INTERSECTION_TYPE_DOUBLE_CORNER,
+    INTERSECTION_TYPE_MIXED_CROSS,
+    INTERSECTION_TYPE_MIXED_TEE,
+    INTERSECTION_TYPE_MIXED_CORNER,
+    INTERSECTION_TYPE_MIXED_STRAIGHT,
 )
 
 INTERSECTION_SIZE_MIN = 2
@@ -99,12 +114,23 @@ INTERSECTION_SIZE_VALUES = (2, 4, 6, 8, 10, 12)
 
 
 def clamp_intersection_type(raw) -> str:
-    """Canonical overlay type. Legacy 'x' is cross."""
+    """Canonical overlay type. Legacy 'x' is cross; 'big'/'double' are double_cross."""
     if raw == INTERSECTION_TYPE_X:
         return INTERSECTION_TYPE_CROSS
+    if raw in (INTERSECTION_TYPE_BIG, INTERSECTION_TYPE_DOUBLE):
+        return INTERSECTION_TYPE_DOUBLE_CROSS
+    if raw == INTERSECTION_TYPE_MIXED:
+        return INTERSECTION_TYPE_MIXED_CROSS
     if raw in INTERSECTION_TYPES:
         return str(raw)
     return INTERSECTION_TYPE_CROSS
+
+
+def overlay_stamp_family(itype: str) -> str:
+    """cross/tee/corner/straight from a stamp name, including double_* and mixed_*."""
+    if itype.startswith("double_") or itype.startswith("mixed_"):
+        return itype.split("_", 1)[1]
+    return itype
 
 # Module-level route hints from the active scenario: (origin, dest, via_node).
 # dest or via may be HINT_WILDCARD ("*"): dest matches any destination; via means

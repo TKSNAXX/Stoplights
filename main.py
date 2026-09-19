@@ -25,16 +25,24 @@ from render.lane_paint import paint_spec
 from render.intersection_topology import (
     classify_intersection_sides,
     corner_quadrant_for_sides,
+    double_travel_xy,
+    mixed_corner_leftovers,
+    mouth_spans_by_edge,
+    mouth_spans_local,
     overlay_type_for_intersection,
+    overlay_type_for_sides,
     straight_axis_for_intersection,
     tee_layout_for_sides,
 )
 from render.tiles import (
     TileSet,
-    generate_big_texture,
     generate_corner_texture,
     generate_cross_texture,
+    generate_double_corner_texture,
+    generate_double_tee_texture,
+    generate_double_texture,
     generate_lane_paint_texture,
+    generate_mixed_texture,
     generate_straight_texture,
     generate_tee_texture,
 )
@@ -209,6 +217,31 @@ class StoplightsWindow(arcade.Window):
             self.game.rebuild_world_from_config()
         self._invalidate_draw_cache()
         persistence.request_debounced_save()
+
+    def _close_map_dialogs(self) -> None:
+        for dlg in list(self._dialog_manager.iter_open()):
+            if isinstance(dlg, SettingsDialog):
+                continue
+            dlg.dismiss()
+        self._place_dialogs.clear()
+        self._lane_dialogs.clear()
+        self._intersection_dialogs.clear()
+        self._place_texts.clear()
+
+    def _on_save_map(self, name: str) -> bool:
+        return persistence.save_named_map(self.game, name, window=self) is not None
+
+    def _on_load_map(self, name: str) -> bool:
+        if not persistence.load_named_map(self.game, name, window=self):
+            return False
+        self._close_map_dialogs()
+        self._on_config_change(rebuild_world=True)
+        return True
+
+    def _on_new_game(self) -> None:
+        persistence.new_game(self.game, window=self)
+        self._close_map_dialogs()
+        self._on_config_change(rebuild_world=True)
 
     def _on_place_renamed(self, old: str, new: str) -> None:
         """Rekey open dialog and map label after a place id change."""
@@ -665,8 +698,73 @@ class StoplightsWindow(arcade.Window):
             centered_tex: arcade.Texture | None = None
             if itype == places.INTERSECTION_TYPE_NONE:
                 pass
-            elif itype == places.INTERSECTION_TYPE_BIG:
-                centered_tex = generate_big_texture(size_cells)
+            elif itype in (
+                places.INTERSECTION_TYPE_DOUBLE,
+                places.INTERSECTION_TYPE_DOUBLE_CROSS,
+            ):
+                spans = mouth_spans_by_edge(key, cells)
+                local = mouth_spans_local(cells, spans)
+                travel_x, travel_y = double_travel_xy(local, size_cells)
+                centered_tex = generate_double_texture(
+                    size_cells, travel_x=travel_x, travel_y=travel_y
+                )
+            elif itype == places.INTERSECTION_TYPE_DOUBLE_TEE:
+                world_active, _, _ = classify_intersection_sides(
+                    key, cells, require_centre_two=False
+                )
+                spans = mouth_spans_by_edge(key, cells)
+                local = mouth_spans_local(cells, spans)
+                travel_x, travel_y = double_travel_xy(local, size_cells)
+                world_ax = straight_axis_for_intersection(key, cells, world_active)
+                axis, stem = tee_layout_for_sides(
+                    display_active, through_fallback=rotate_straight_axis(world_ax, yaw)
+                )
+                if stem in ("E", "W"):
+                    through_travel, stem_travel = travel_x, travel_y
+                else:
+                    through_travel, stem_travel = travel_y, travel_x
+                centered_tex = generate_double_tee_texture(
+                    size_cells,
+                    axis=axis,
+                    stem=stem,
+                    through_travel=through_travel,
+                    stem_travel=stem_travel,
+                )
+            elif itype == places.INTERSECTION_TYPE_DOUBLE_CORNER:
+                spans = mouth_spans_by_edge(key, cells)
+                local = mouth_spans_local(cells, spans)
+                travel_x, travel_y = double_travel_xy(local, size_cells)
+                q = corner_quadrant_for_sides(display_active)
+                centered_tex = generate_double_corner_texture(
+                    size_cells, quadrant=q, travel_x=travel_x, travel_y=travel_y
+                )
+            elif itype in (
+                places.INTERSECTION_TYPE_MIXED,
+                places.INTERSECTION_TYPE_MIXED_CROSS,
+                places.INTERSECTION_TYPE_MIXED_TEE,
+                places.INTERSECTION_TYPE_MIXED_CORNER,
+                places.INTERSECTION_TYPE_MIXED_STRAIGHT,
+            ) or str(itype).startswith("mixed_"):
+                spans = mouth_spans_by_edge(key, cells)
+                world_active, _, _ = classify_intersection_sides(
+                    key, cells, require_centre_two=False
+                )
+                family = places.overlay_stamp_family(itype)
+                if family not in ("cross", "tee", "corner", "straight"):
+                    family = overlay_type_for_sides(world_active)
+                world_ax = straight_axis_for_intersection(key, cells, world_active)
+                axis, stem = tee_layout_for_sides(world_active, through_fallback=world_ax)
+                leftovers = mixed_corner_leftovers(cells, spans, world_active)
+                local = mouth_spans_local(cells, spans)
+                centered_tex = generate_mixed_texture(
+                    size_cells,
+                    leftovers,
+                    family,
+                    axis=axis,
+                    stem=stem,
+                    yaw=yaw,
+                    spans=local,
+                )
             elif itype == places.INTERSECTION_TYPE_CROSS:
                 centered_tex = generate_cross_texture(size_cells)
             elif itype == places.INTERSECTION_TYPE_CORNER:
@@ -791,6 +889,11 @@ class StoplightsWindow(arcade.Window):
                 else:
                     label = active.toggle_overlay()
                 self._show_tool_hint("camera", label)
+            return
+        if hk.action == "dialog_delete":
+            if fw is not None:
+                return
+            self._dialog_manager.trigger_delete_top()
             return
         if hk.action == "cycle_tool":
             if fw is not None:
@@ -1155,6 +1258,9 @@ class StoplightsWindow(arcade.Window):
                     ),
                     on_color_change=self._on_color_grade_change,
                     on_clear_cars=self.game.clear_cars,
+                    on_save_map=self._on_save_map,
+                    on_load_map=self._on_load_map,
+                    on_new_game=self._on_new_game,
                 )
                 dlg.set_on_close(lambda d: self._dialog_manager.close(d))
                 self._dialog_manager.open(dlg)

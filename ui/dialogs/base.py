@@ -22,6 +22,7 @@ from ui.theme import (
     FONT_HOTKEY,
     FONT_TITLE,
     FONT_TYPE,
+    FORM_GAP,
     FORM_PAD,
     LABEL_COLOR,
     MUTED_COLOR,
@@ -31,9 +32,11 @@ from ui.widgets.dropdown import Dropdown
 from ui.widgets.protocols import ExpandedHitWidget, FocusableWidget
 from ui.widgets.text import TextBox
 
+_FOOTER_HINT_SLOT = 56
+
 
 class Dialog:
-    """Rounded-rect overlay: Esc close, typable title, Ctrl isolate chip. (x, y) is top-left."""
+    """Rounded-rect overlay: Esc close, typable title, Ctrl isolate and Del chips. (x, y) is top-left."""
 
     def __init__(
         self,
@@ -58,6 +61,7 @@ class Dialog:
         self._dragging = False
         self._drag_start: tuple[float, float] | None = None
         self._on_close: Callable | None = None
+        self._on_delete: Callable[[], None] | None = None
         self._dialog_manager: DialogManager | None = None
         self._kind_text = ui_text(
             kind, size=FONT_TYPE, color=MUTED_COLOR, anchor_x="center", anchor_y="center",
@@ -75,6 +79,14 @@ class Dialog:
         )
         self._isolate_hint = ui_text(
             "Isolate", size=FONT_HOTKEY, color=LABEL_COLOR,
+            anchor_x="left", anchor_y="center",
+        )
+        self._del_text = ui_text(
+            hint_for("dialog_delete", "Del"), size=FONT_HOTKEY, color=LABEL_COLOR,
+            anchor_x="center", anchor_y="center",
+        )
+        self._delete_hint = ui_text(
+            "Delete", size=FONT_HOTKEY, color=LABEL_COLOR,
             anchor_x="left", anchor_y="center",
         )
         self._title_box: TextBox | None = None
@@ -119,10 +131,23 @@ class Dialog:
         bottom = ipx(self.y - DIALOG_HEADER_H / 2 - CHIP_H / 2)
         return left, bottom, CHIP_W, CHIP_H
 
-    def _ctrl_rect(self) -> tuple[int, int, int, int]:
+    def _footer_chip_rect(self, index: int) -> tuple[int, int, int, int]:
         left = ipx(self.x) + FORM_PAD
         bottom = ipx(self._bottom() + DIALOG_FOOTER_H / 2 - CHIP_H / 2)
-        return left, bottom, CHIP_W, CHIP_H
+        stride = CHIP_W + TOOLBAR_HINT_GAP + _FOOTER_HINT_SLOT + FORM_GAP
+        return left + index * stride, bottom, CHIP_W, CHIP_H
+
+    def _ctrl_rect(self) -> tuple[int, int, int, int]:
+        return self._footer_chip_rect(0)
+
+    def _del_rect(self) -> tuple[int, int, int, int]:
+        return self._footer_chip_rect(1)
+
+    def trigger_delete(self) -> bool:
+        if self._on_delete is None:
+            return False
+        self._on_delete()
+        return True
 
     def _header_contains(self, x: float, y: float) -> bool:
         return self.x <= x <= self.x + self.width and self.y - DIALOG_HEADER_H <= y <= self.y
@@ -188,6 +213,11 @@ class Dialog:
         self._isolate_hint.x = cl + cw + TOOLBAR_HINT_GAP
         self._isolate_hint.y = cb + ch / 2
         self._isolate_hint.draw()
+        self._draw_chip(self._del_rect(), self._del_text, False)
+        dl, db, dw, dh = self._del_rect()
+        self._delete_hint.x = dl + dw + TOOLBAR_HINT_GAP
+        self._delete_hint.y = db + dh / 2
+        self._delete_hint.draw()
         cx = left + width / 2
         if self.kind:
             self._kind_text.value = self.kind
@@ -223,6 +253,9 @@ class Dialog:
         if self._chip_contains(self._ctrl_rect(), x, y):
             if self._dialog_manager and self._dialog_manager.on_isolate_toggle:
                 self._dialog_manager.on_isolate_toggle()
+            return True
+        if self._chip_contains(self._del_rect(), x, y):
+            self.trigger_delete()
             return True
         for w in self._iter_widgets():
             if w.on_press(x, y):
@@ -319,6 +352,14 @@ class DialogManager:
         if top in self._dialogs:
             self.close(top)
         return True
+
+    def trigger_delete_top(self) -> bool:
+        if not self._dialogs:
+            return False
+        top = self._dialogs[-1]
+        if not top.visible:
+            return False
+        return top.trigger_delete()
 
     def _notify_if_empty(self) -> None:
         if any(d.visible for d in self._dialogs):

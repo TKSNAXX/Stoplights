@@ -51,6 +51,9 @@ STYLES: dict[str, EdgeStyle] = {
     ROLE_ONCOMING: EdgeStyle(YELLOW, width=2, inset=2, dash_on=0, dash_off=0),
 }
 
+CURB_INSET = STYLES[ROLE_CURB].inset
+CURB_WIDTH = STYLES[ROLE_CURB].width
+
 
 def style_for_role(role: str) -> EdgeStyle:
     return STYLES.get(role, STYLES[ROLE_CURB])

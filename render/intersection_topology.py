@@ -265,12 +265,268 @@ def straight_cross_cap_cells(cells: list[tuple[int, int]], axis: StraightAxis) -
     return caps
 
 
-def overlay_type_for_intersection(intersection_key: str, active: frozenset[str]) -> str:
+def _raw_mouth_crossings(
+    intersection_key: str,
+    cells: list[tuple[int, int]],
+) -> list[tuple[int, Cardinal, str, int, int]]:
+    """Unfiltered (lane, edge, kind, gx, gy) mouths; includes outer twins."""
+    inside = frozenset(cells)
+    if not inside:
+        return []
+    out: list[tuple[int, Cardinal, str, int, int]] = []
+    for i in world.lane_ids():
+        for edge, kind, gx, gy in _crossings_for_lane(i, intersection_key, inside):
+            out.append((i, edge, kind, gx, gy))
+    return out
+
+
+def mouth_spans_by_edge(
+    intersection_key: str,
+    cells: list[tuple[int, int]],
+) -> dict[str, tuple[int, int]]:
+    """Per pierced edge, inclusive min/max perpendicular cell of unfiltered mouths."""
+    spans: dict[str, tuple[int, int]] = {}
+    for _i, edge, _kind, gx, gy in _raw_mouth_crossings(intersection_key, cells):
+        perp = gy if edge in ("W", "E") else gx
+        if edge not in spans:
+            spans[edge] = (perp, perp)
+        else:
+            lo, hi = spans[edge]
+            spans[edge] = (min(lo, perp), max(hi, perp))
+    return spans
+
+
+def mouth_spans_local(
+    cells: list[tuple[int, int]],
+    spans: dict[str, tuple[int, int]],
+) -> dict[str, tuple[int, int]]:
+    """Translate world mouth spans into AABB-local cell indices [0, n)."""
+    x_lo, _x_hi, y_lo, _y_hi = _bounds_from_cells(cells)
+    out: dict[str, tuple[int, int]] = {}
+    for edge, (a, b) in spans.items():
+        if edge in ("W", "E"):
+            out[edge] = (a - y_lo, b - y_lo)
+        else:
+            out[edge] = (a - x_lo, b - x_lo)
+    return out
+
+
+def twin_faces_for_intersection(
+    intersection_key: str,
+    cells: list[tuple[int, int]],
+) -> frozenset[str]:
+    """Edges whose unfiltered mouths include a twin group."""
+    faces: set[str] = set()
+    for i, edge, kind, _gx, _gy in _raw_mouth_crossings(intersection_key, cells):
+        group = world.mouth_group(i, intersection_key, inbound=(kind == "in"))
+        if len(group) >= 2:
+            faces.add(edge)
+    return frozenset(faces)
+
+
+_EDGE_INBOUND_DIR: dict[str, str] = {"W": "E", "E": "W", "N": "S", "S": "N"}
+_EDGE_OUTBOUND_DIR: dict[str, str] = {"W": "W", "E": "E", "N": "N", "S": "S"}
+_EDGE_INBOUND_LOWER_PERP = frozenset({"W", "N"})
+
+
+def _perp_on_edge(edge: str, gx: int, gy: int) -> int:
+    return gy if edge in ("W", "E") else gx
+
+
+def _consecutive_pair(perps: list[int]) -> bool:
+    return len(perps) == 2 and perps[1] == perps[0] + 1
+
+
+def _span_even_centered(lo: int, hi: int, aabb_lo: int, aabb_hi_excl: int) -> bool:
+    width = hi - lo + 1
+    if width < 2 or width % 2:
+        return False
+    return (lo + hi) == (aabb_lo + aabb_hi_excl - 1)
+
+
+def _face_closed_dual(
+    intersection_key: str,
+    edge: str,
+    crossings: list[tuple[int, Cardinal, str, int, int]],
+    x_lo: int,
+    x_hi: int,
+    y_lo: int,
+    y_hi: int,
+) -> bool:
+    """One inbound pair and one outbound pair, centred, RHT, no extra mouths."""
+    ins: dict[int, int] = {}
+    outs: dict[int, int] = {}
+    for i, e, kind, gx, gy in crossings:
+        if e != edge:
+            continue
+        perp = _perp_on_edge(e, gx, gy)
+        if kind == "in":
+            ins[i] = perp
+        else:
+            outs[i] = perp
+    if len(ins) != 2 or len(outs) != 2:
+        return False
+    in_lanes = tuple(sorted(ins))
+    out_lanes = tuple(sorted(outs))
+    in_group = tuple(sorted(world.mouth_group(in_lanes[0], intersection_key, inbound=True)))
+    out_group = tuple(sorted(world.mouth_group(out_lanes[0], intersection_key, inbound=False)))
+    if in_group != in_lanes or len(in_group) != 2:
+        return False
+    if out_group != out_lanes or len(out_group) != 2:
+        return False
+    want_in = _EDGE_INBOUND_DIR.get(edge)
+    want_out = _EDGE_OUTBOUND_DIR.get(edge)
+    if any(world.lane_direction(i) != want_in for i in in_lanes):
+        return False
+    if any(world.lane_direction(i) != want_out for i in out_lanes):
+        return False
+    in_perps = sorted(set(ins.values()))
+    out_perps = sorted(set(outs.values()))
+    if not _consecutive_pair(in_perps) or not _consecutive_pair(out_perps):
+        return False
+    if set(in_perps) & set(out_perps):
+        return False
+    lo = min(in_perps[0], out_perps[0])
+    hi = max(in_perps[1], out_perps[1])
+    if hi - lo != 3:
+        return False
+    aabb_lo, aabb_hi = (y_lo, y_hi) if edge in ("W", "E") else (x_lo, x_hi)
+    if not _span_even_centered(lo, hi, aabb_lo, aabb_hi):
+        return False
+    inbound_lower = in_perps[0] < out_perps[0]
+    if edge in _EDGE_INBOUND_LOWER_PERP:
+        return inbound_lower
+    return not inbound_lower
+
+
+def is_double_layout(
+    intersection_key: str,
+    cells: list[tuple[int, int]],
+    raw_active: frozenset[str],
+) -> bool:
     """
-    Stamp kind for this node: Big when any incident lane is a twin, else side-count.
+    Closed dual on every active face: two pairs in and out, even-centred, RHT.
+
+    Twin straights are never Double. A missing, extra, or off-centre lane fails.
     """
     from sim import places
 
-    if world.intersection_has_twins(intersection_key):
-        return places.INTERSECTION_TYPE_BIG
-    return overlay_type_for_sides(active)
+    family = overlay_type_for_sides(raw_active)
+    if family in (
+        places.INTERSECTION_TYPE_STRAIGHT,
+        places.INTERSECTION_TYPE_NONE,
+    ):
+        return False
+    if not raw_active:
+        return False
+    x_lo, x_hi, y_lo, y_hi = _bounds_from_cells(cells)
+    crossings = _raw_mouth_crossings(intersection_key, cells)
+    return all(
+        _face_closed_dual(
+            intersection_key, edge, crossings, x_lo, x_hi, y_lo, y_hi
+        )
+        for edge in raw_active
+    )
+
+
+def mixed_corner_leftovers(
+    cells: list[tuple[int, int]],
+    spans: dict[str, tuple[int, int]],
+    active: frozenset[str],
+) -> tuple[tuple[int, int, int], ...]:
+    """
+    (quadrant, leftover_x_cells, leftover_y_cells) for corners with two incident faces.
+
+    Quadrants match make_cross image corners (0 NW, 1 NE, 2 SE, 3 SW).
+    leftover_x is the east/west shoulder; leftover_y is the north/south shoulder.
+    """
+    x_lo, x_hi, y_lo, y_hi = _bounds_from_cells(cells)
+    out: list[tuple[int, int, int]] = []
+
+    def span(edge: str) -> tuple[int, int] | None:
+        return spans.get(edge)
+
+    if "W" in active and "N" in active and span("W") and span("N"):
+        lw = span("N")[0] - x_lo
+        ln = (y_hi - 1) - span("W")[1]
+        if lw > 0 and ln > 0:
+            out.append((0, lw, ln))
+    if "E" in active and "N" in active and span("E") and span("N"):
+        le = (x_hi - 1) - span("N")[1]
+        ln = (y_hi - 1) - span("E")[1]
+        if le > 0 and ln > 0:
+            out.append((1, le, ln))
+    if "E" in active and "S" in active and span("E") and span("S"):
+        le = (x_hi - 1) - span("S")[1]
+        ls = span("E")[0] - y_lo
+        if le > 0 and ls > 0:
+            out.append((2, le, ls))
+    if "W" in active and "S" in active and span("W") and span("S"):
+        lw = span("S")[0] - x_lo
+        ls = span("W")[0] - y_lo
+        if lw > 0 and ls > 0:
+            out.append((3, lw, ls))
+    return tuple(out)
+
+
+def even_travel_cells(
+    span: tuple[int, int] | None,
+    cells: int,
+    default: int = 4,
+) -> int:
+    """Even mouth width, clamped to the AABB. Doubles may assume this is centered."""
+    n = max(2, min(12, int(cells)))
+    if n % 2:
+        n -= 1
+    if span is None:
+        w = default
+    else:
+        w = span[1] - span[0] + 1
+    if w % 2:
+        w -= 1
+    w = max(2, min(n, w))
+    if w % 2:
+        w -= 1
+    return max(2, w)
+
+
+def double_travel_xy(
+    local_spans: dict[str, tuple[int, int]],
+    cells: int,
+) -> tuple[int, int]:
+    """Even travel along x (N/S mouths) and y (E/W mouths)."""
+    ns = local_spans.get("N") or local_spans.get("S")
+    ew = local_spans.get("E") or local_spans.get("W")
+    return even_travel_cells(ns, cells), even_travel_cells(ew, cells)
+
+
+def overlay_type_for_intersection(intersection_key: str, active: frozenset[str]) -> str:
+    """
+    Stamp kind: Double{Cross,Tee,Corner} only for a closed dual on every
+    active face (two centred in/out pairs, RHT). Other twin nodes are Mixed.
+    Twin straights stay Mixed through-band (no Double Straight).
+    """
+    from sim import places
+
+    if not world.intersection_has_twins(intersection_key):
+        return overlay_type_for_sides(active)
+    cells = list(world.get_intersection_cells_by_key(intersection_key) or [])
+    raw_active, _, _ = classify_intersection_sides(
+        intersection_key, cells, require_centre_two=False
+    )
+    family = overlay_type_for_sides(raw_active)
+    if family == places.INTERSECTION_TYPE_STRAIGHT:
+        return places.INTERSECTION_TYPE_MIXED_STRAIGHT
+    if family == places.INTERSECTION_TYPE_NONE:
+        return family
+    if is_double_layout(intersection_key, cells, raw_active):
+        return {
+            places.INTERSECTION_TYPE_CROSS: places.INTERSECTION_TYPE_DOUBLE_CROSS,
+            places.INTERSECTION_TYPE_TEE: places.INTERSECTION_TYPE_DOUBLE_TEE,
+            places.INTERSECTION_TYPE_CORNER: places.INTERSECTION_TYPE_DOUBLE_CORNER,
+        }.get(family, places.INTERSECTION_TYPE_DOUBLE_CROSS)
+    return {
+        places.INTERSECTION_TYPE_CROSS: places.INTERSECTION_TYPE_MIXED_CROSS,
+        places.INTERSECTION_TYPE_TEE: places.INTERSECTION_TYPE_MIXED_TEE,
+        places.INTERSECTION_TYPE_CORNER: places.INTERSECTION_TYPE_MIXED_CORNER,
+    }.get(family, places.INTERSECTION_TYPE_MIXED_CROSS)
