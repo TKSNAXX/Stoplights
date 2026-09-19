@@ -71,55 +71,55 @@
     "intersection_13": {
       "center_x": 49,
       "center_y": 18,
-      "size_cells": 6,
+      "size_cells": 4,
       "protected": false
     },
     "intersection_14": {
       "center_x": 60,
       "center_y": 18,
-      "size_cells": 6,
+      "size_cells": 4,
       "protected": false
     },
     "intersection_15": {
       "center_x": 49,
       "center_y": 29,
-      "size_cells": 6,
+      "size_cells": 4,
       "protected": false
     },
     "intersection_16": {
       "center_x": 60,
       "center_y": 29,
-      "size_cells": 6,
+      "size_cells": 4,
       "protected": false
     },
     "intersection_17": {
       "center_x": 68,
       "center_y": 18,
-      "size_cells": 6,
+      "size_cells": 4,
       "protected": false
     },
     "intersection_18": {
       "center_x": 68,
       "center_y": 29,
-      "size_cells": 6,
+      "size_cells": 4,
       "protected": false
     },
     "intersection_19": {
       "center_x": 60,
       "center_y": 37,
-      "size_cells": 6,
+      "size_cells": 4,
       "protected": false
     },
     "intersection_20": {
       "center_x": 68,
       "center_y": 37,
-      "size_cells": 6,
+      "size_cells": 4,
       "protected": false
     },
     "intersection_21": {
       "center_x": 49,
       "center_y": 37,
-      "size_cells": 6,
+      "size_cells": 4,
       "protected": false
     },
     "intersection_22": {
@@ -546,11 +546,11 @@
     },
     "25": {
       "start_tile": [
-        52,
+        51,
         17
       ],
       "end_tile": [
-        56,
+        57,
         17
       ],
       "speed_limit": 1.0,
@@ -560,11 +560,11 @@
     "26": {
       "start_tile": [
         49,
-        21
+        20
       ],
       "end_tile": [
         49,
-        25
+        26
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -573,11 +573,11 @@
     "27": {
       "start_tile": [
         48,
-        25
+        26
       ],
       "end_tile": [
         48,
-        21
+        20
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -585,11 +585,11 @@
     },
     "28": {
       "start_tile": [
-        56,
+        57,
         18
       ],
       "end_tile": [
-        52,
+        51,
         18
       ],
       "speed_limit": 1.0,
@@ -598,11 +598,11 @@
     },
     "29": {
       "start_tile": [
-        52,
+        51,
         28
       ],
       "end_tile": [
-        56,
+        57,
         28
       ],
       "speed_limit": 1.0,
@@ -611,11 +611,11 @@
     },
     "30": {
       "start_tile": [
-        56,
+        57,
         29
       ],
       "end_tile": [
-        52,
+        51,
         29
       ],
       "speed_limit": 1.0,
@@ -625,11 +625,11 @@
     "31": {
       "start_tile": [
         60,
-        21
+        20
       ],
       "end_tile": [
         60,
-        25
+        26
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -638,11 +638,11 @@
     "32": {
       "start_tile": [
         59,
-        25
+        26
       ],
       "end_tile": [
         59,
-        21
+        20
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -650,11 +650,11 @@
     },
     "33": {
       "start_tile": [
-        63,
+        62,
         17
       ],
       "end_tile": [
-        64,
+        65,
         17
       ],
       "speed_limit": 1.0,
@@ -663,11 +663,11 @@
     },
     "34": {
       "start_tile": [
-        64,
+        65,
         18
       ],
       "end_tile": [
-        63,
+        62,
         18
       ],
       "speed_limit": 1.0,
@@ -677,11 +677,11 @@
     "35": {
       "start_tile": [
         68,
-        21
+        20
       ],
       "end_tile": [
         68,
-        25
+        26
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -690,11 +690,11 @@
     "36": {
       "start_tile": [
         67,
-        25
+        26
       ],
       "end_tile": [
         67,
-        21
+        20
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -702,11 +702,11 @@
     },
     "37": {
       "start_tile": [
-        63,
+        62,
         28
       ],
       "end_tile": [
-        64,
+        65,
         28
       ],
       "speed_limit": 1.0,
@@ -715,11 +715,11 @@
     },
     "38": {
       "start_tile": [
-        64,
+        65,
         29
       ],
       "end_tile": [
-        63,
+        62,
         29
       ],
       "speed_limit": 1.0,
@@ -729,11 +729,11 @@
     "39": {
       "start_tile": [
         60,
-        32
+        31
       ],
       "end_tile": [
         60,
-        33
+        34
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -742,11 +742,11 @@
     "40": {
       "start_tile": [
         59,
-        33
+        34
       ],
       "end_tile": [
         59,
-        32
+        31
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -755,11 +755,11 @@
     "41": {
       "start_tile": [
         67,
-        33
+        34
       ],
       "end_tile": [
         67,
-        32
+        31
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -768,11 +768,11 @@
     "42": {
       "start_tile": [
         68,
-        32
+        31
       ],
       "end_tile": [
         68,
-        33
+        34
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -780,11 +780,11 @@
     },
     "43": {
       "start_tile": [
-        64,
+        65,
         37
       ],
       "end_tile": [
-        63,
+        62,
         37
       ],
       "speed_limit": 1.0,
@@ -793,11 +793,11 @@
     },
     "44": {
       "start_tile": [
-        63,
+        62,
         36
       ],
       "end_tile": [
-        64,
+        65,
         36
       ],
       "speed_limit": 1.0,
@@ -806,11 +806,11 @@
     },
     "45": {
       "start_tile": [
-        52,
+        51,
         36
       ],
       "end_tile": [
-        56,
+        57,
         36
       ],
       "speed_limit": 1.0,
@@ -819,11 +819,11 @@
     },
     "46": {
       "start_tile": [
-        56,
+        57,
         37
       ],
       "end_tile": [
-        52,
+        51,
         37
       ],
       "speed_limit": 1.0,
@@ -833,11 +833,11 @@
     "47": {
       "start_tile": [
         48,
-        33
+        34
       ],
       "end_tile": [
         48,
-        32
+        31
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -846,11 +846,11 @@
     "48": {
       "start_tile": [
         49,
-        32
+        31
       ],
       "end_tile": [
         49,
-        33
+        34
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",

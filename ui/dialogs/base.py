@@ -214,10 +214,11 @@ class Dialog:
         self._isolate_hint.y = cb + ch / 2
         self._isolate_hint.draw()
         self._draw_chip(self._del_rect(), self._del_text, False)
-        dl, db, dw, dh = self._del_rect()
-        self._delete_hint.x = dl + dw + TOOLBAR_HINT_GAP
-        self._delete_hint.y = db + dh / 2
-        self._delete_hint.draw()
+        if self._on_delete is not None:
+            dl, db, dw, dh = self._del_rect()
+            self._delete_hint.x = dl + dw + TOOLBAR_HINT_GAP
+            self._delete_hint.y = db + dh / 2
+            self._delete_hint.draw()
         cx = left + width / 2
         if self.kind:
             self._kind_text.value = self.kind
