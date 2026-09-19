@@ -1777,6 +1777,44 @@ def _twin_cross() -> None:
     world.rebuild_world(place_rects_from_places(places_by_id), intersections, lanes)
 
 
+def _twin_double_double() -> None:
+    """
+    8-wide hub with twin inbounds and outbounds on all four headings.
+
+    Eastbound y=19/18, westbound y=20/21; northbound x=18/19, southbound x=17/16
+    on the north arm and x=19/18 south, oncoming northbound x=20/21.
+    """
+    places_by_id = {
+        "West": places.Place(center_x=10, center_y=19, width=5, length=5),
+        "East": places.Place(center_x=30, center_y=19, width=5, length=5),
+        "North": places.Place(center_x=20, center_y=32, width=5, length=5),
+        "South": places.Place(center_x=20, center_y=8, width=5, length=5),
+    }
+    intersections = {
+        "hub": places.IntersectionConfig(size_cells=8, center_x=20, center_y=20),
+    }
+    lanes = {
+        1: places.LaneConfig(start_tile=(13, 19), end_tile=(15, 19)),
+        2: places.LaneConfig(start_tile=(13, 18), end_tile=(15, 18)),
+        3: places.LaneConfig(start_tile=(24, 19), end_tile=(27, 19)),
+        4: places.LaneConfig(start_tile=(24, 18), end_tile=(27, 18)),
+        5: places.LaneConfig(start_tile=(18, 24), end_tile=(18, 29)),
+        6: places.LaneConfig(start_tile=(19, 24), end_tile=(19, 29)),
+        7: places.LaneConfig(start_tile=(19, 15), end_tile=(19, 12)),
+        8: places.LaneConfig(start_tile=(18, 15), end_tile=(18, 12)),
+        9: places.LaneConfig(start_tile=(15, 20), end_tile=(12, 20)),
+        10: places.LaneConfig(start_tile=(15, 21), end_tile=(12, 21)),
+        11: places.LaneConfig(start_tile=(27, 20), end_tile=(24, 20)),
+        12: places.LaneConfig(start_tile=(27, 21), end_tile=(24, 21)),
+        13: places.LaneConfig(start_tile=(16, 29), end_tile=(16, 24)),
+        14: places.LaneConfig(start_tile=(17, 29), end_tile=(17, 24)),
+        15: places.LaneConfig(start_tile=(20, 12), end_tile=(20, 15)),
+        16: places.LaneConfig(start_tile=(21, 12), end_tile=(21, 15)),
+    }
+    places.set_route_hints([])
+    world.rebuild_world(place_rects_from_places(places_by_id), intersections, lanes)
+
+
 def test_identical_and_fraternal_twins() -> None:
     """Twins are named after shared mouths; merge sides follow the shared run."""
     identical = {
@@ -1985,6 +2023,63 @@ def test_fraternal_drop_lane_exits_onto_the_longer_twin() -> None:
     assert choice is not None
     assert choice[0] == 1
     assert choice[3] == passing.REASON_EXIT
+    GameState()
+
+
+def test_twins_do_not_keep_right() -> None:
+    """Identical twins stay in lane while going straight; keep-right is little sisters only."""
+    from sim import passing
+    from sim.occupancy import Occupancy
+
+    lanes = {
+        1: places.LaneConfig(start_tile=(0, 10), end_tile=(20, 10)),
+        2: places.LaneConfig(start_tile=(0, 11), end_tile=(20, 11)),
+    }
+    world.rebuild_world({}, {}, lanes)
+    assert world.sister_relation(1, 2) == world.SISTER_TWIN
+    left = world.left_lane_of((1, 2))
+    assert left == 2
+    car = _make_test_car(lane_index=2, position=0)
+    assert passing.merge_choice(car, Occupancy.from_cars([car])) is None
+    GameState()
+
+
+def test_twin_double_double_has_no_weaves() -> None:
+    """Every twin-to-twin combination: no straight-cross, far-turn, or 180."""
+    from sim.junction import LEFT_OF, OPPOSITE_CARDINAL, RIGHT_OF
+
+    _twin_double_double()
+    node = "hub"
+    saw_straight = saw_turn = saw_uturn = 0
+    for in_lane in world.incoming_lanes(node):
+        in_group = world.mouth_group(in_lane, node, inbound=True)
+        if len(in_group) < 2:
+            continue
+        in_left = world.left_lane_of(in_group)
+        din = world.lane_direction(in_lane)
+        for out_lane in world.outgoing_lanes(node):
+            out_group = world.mouth_group(out_lane, node, inbound=False)
+            if len(out_group) < 2:
+                continue
+            out_left = world.left_lane_of(out_group)
+            dout = world.lane_direction(out_lane)
+            keep = (in_lane == in_left) == (out_lane == out_left)
+            inside = out_lane == world.nearer_to_entry_edge(in_lane, out_group)
+            legal = places.is_valid_intersection_path(in_lane, out_lane)
+            if dout == din:
+                saw_straight += 1
+                assert legal == keep, (in_lane, out_lane)
+            elif dout == LEFT_OF.get(din) or dout == RIGHT_OF.get(din):
+                saw_turn += 1
+                assert legal == inside, (in_lane, out_lane)
+            elif dout == OPPOSITE_CARDINAL.get(din):
+                saw_uturn += 1
+                assert not legal, (in_lane, out_lane)
+            if dout == din and not keep:
+                assert not legal, (in_lane, out_lane, "straight weave")
+            if dout in (LEFT_OF.get(din), RIGHT_OF.get(din)) and not inside:
+                assert not legal, (in_lane, out_lane, "far-turn weave")
+    assert saw_straight and saw_turn and saw_uturn
     GameState()
 
 
@@ -3051,6 +3146,8 @@ def main() -> None:
         test_twin_keep_side_drive,
         test_twin_right_takes_the_inside_lane,
         test_fraternal_drop_lane_exits_onto_the_longer_twin,
+        test_twins_do_not_keep_right,
+        test_twin_double_double_has_no_weaves,
         test_sister_overlay_rects,
         test_lane_paint_roles_and_raster,
         test_path_cache_matches_live,

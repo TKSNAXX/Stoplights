@@ -81,7 +81,8 @@ def merge_choice(car, occupancy: Occupancy | None = None):
         found = _first_clear_target(
             car, lane, pos, world.MERGE_RIGHT, occ, strict=True, min_runway=MIN_RIGHT_RUNWAY
         )
-        if found is not None:
+        # Twins are equal lanes; keep-right is only onto a little sister.
+        if found is not None and world.sister_relation(lane, found[0]) == world.SISTER_LITTLE:
             return (found[0], found[1], world.MERGE_RIGHT, REASON_KEEP)
     return None
 

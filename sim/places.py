@@ -168,13 +168,11 @@ def out_lane_indices() -> frozenset[int]:
 
 def is_uturn_transition(in_lane_index: int, out_lane_index: int) -> bool:
     """
-    True if outbound goes back toward the same place the approach came from.
+    True if outbound goes back toward the same node the approach came from.
     """
     src = world.lane_traffic_in(in_lane_index)
     dst = world.lane_traffic_out(out_lane_index)
     if not src or not dst or src != dst:
-        return False
-    if world.is_intersection(src) or world.is_intersection(dst):
         return False
     return True
 
@@ -184,8 +182,8 @@ def is_valid_intersection_path(in_lane_index: int, out_lane_index: int) -> bool:
     True when this in→out pair is a legal crossing of a shared intersection.
 
     U-turns stay illegal. Twin dests: keep-side on the straight, inside (tight)
-    on a turn — never the far lane of the new heading. Twin-to-single: both
-    inbounds may use that one outbound.
+    on a turn — never the far lane of the new heading, and never a 180.
+    Twin-to-single: both inbounds may use that one outbound.
     """
     if is_uturn_transition(in_lane_index, out_lane_index):
         return False
@@ -199,8 +197,13 @@ def is_valid_intersection_path(in_lane_index: int, out_lane_index: int) -> bool:
     if len(in_group) >= 2 and len(out_group) <= 1:
         return True
     if len(out_group) >= 2:
+        from sim.junction import OPPOSITE_CARDINAL
         from sim.paths import is_straight_path
 
+        if world.lane_direction(out_lane_index) == OPPOSITE_CARDINAL.get(
+            world.lane_direction(in_lane_index), ""
+        ):
+            return False
         if is_straight_path(in_lane_index, out_lane_index):
             if len(in_group) >= 2:
                 in_left = world.left_lane_of(in_group)
