@@ -145,7 +145,11 @@ def _stroke_fillet_lip(
     inner_r: int | None = None,
     origin: tuple[int, int] | None = None,
 ) -> None:
-    """Inner curb white + grass-bite punch, drawn last so sibling greys cannot hide it."""
+    """Inner curb white + optional grass-bite punch.
+
+    inner_r 0 is a micro-fillet: curb-pack quarter-ring, no punch, so the white
+    pops out to the lane curb instead of terminating as a square L.
+    """
     if ImageDraw is None:
         return
     size = max(2, min(12, cells))
@@ -155,7 +159,7 @@ def _stroke_fillet_lip(
     if inner_r is None:
         _sz, inner_r, w_in, w_out = _fillet_white_radii(cells)
     else:
-        inner_r = max(2, int(inner_r))
+        inner_r = max(0, int(inner_r))
         w_in = inner_r + CURB_INSET
         w_out = inner_r + CURB_INSET + CURB_WIDTH
     arc_cx, arc_cy, start_angle, end_angle = _arc_center(quadrant, size_px)
@@ -167,8 +171,9 @@ def _stroke_fillet_lip(
     if w_in > 0:
         bbox_g = (arc_cx - w_in, arc_cy - w_in, arc_cx + w_in, arc_cy + w_in)
         draw.pieslice(bbox_g, start_angle, end_angle, fill=(*ROAD_GREY, 255))
-    bbox_inner = (arc_cx - inner_r, arc_cy - inner_r, arc_cx + inner_r, arc_cy + inner_r)
-    draw.pieslice(bbox_inner, start_angle, end_angle, fill=(0, 0, 0, 0))
+    if inner_r > 0:
+        bbox_inner = (arc_cx - inner_r, arc_cy - inner_r, arc_cx + inner_r, arc_cy + inner_r)
+        draw.pieslice(bbox_inner, start_angle, end_angle, fill=(0, 0, 0, 0))
 
 
 def make_corner_fillet(cells: int = 4, quadrant: int = 0):
@@ -373,18 +378,48 @@ def _centered_lo_hi(cells: int, travel: int) -> tuple[int, int]:
     return lo, lo + travel
 
 
-def _double_shoulder_cells(cells: int, travel: int) -> int:
-    cells = _even_aabb_cells(cells)
-    travel = _even_travel_cells(travel, cells)
-    return max(1, (cells - travel) // 2)
-
-
 def double_fillet_inner_r(cells: int, travel_cells: int = 4) -> int:
-    """Grass-bite radius for a centred even travel bundle on a larger AABB."""
+    """Grass-bite radius for a centred even travel bundle; 0 when travel is flush."""
     cells = _even_aabb_cells(cells)
     travel = _even_travel_cells(travel_cells, cells)
-    shoulder = max(1, (cells - travel) // 2)
-    return max(2, shoulder * ORTHO_TILE_SIZE)
+    shoulder = max(0, (cells - travel) // 2)
+    return shoulder * ORTHO_TILE_SIZE
+
+
+def _span_width(span: tuple[int, int]) -> int:
+    return span[1] - span[0] + 1
+
+
+def _mouth_widths_equal(spans: dict[str, tuple[int, int]]) -> bool:
+    widths = [_span_width(s) for s in spans.values()]
+    return len(widths) >= 2 and len(set(widths)) == 1 and widths[0] > 0
+
+
+def _centered_face_spans(
+    cells: int,
+    travel_x: int,
+    travel_y: int,
+    edges: tuple[str, ...] | frozenset[str],
+) -> dict[str, tuple[int, int]]:
+    xlo, xhi = _centered_lo_hi(cells, travel_x)
+    ylo, yhi = _centered_lo_hi(cells, travel_y)
+    spans: dict[str, tuple[int, int]] = {}
+    for e in edges:
+        if e in ("E", "W"):
+            spans[e] = (ylo, yhi - 1)
+        else:
+            spans[e] = (xlo, xhi - 1)
+    return spans
+
+
+def _flip_span(span: tuple[int, int], n: int) -> tuple[int, int]:
+    lo, hi = span
+    return (n - 1 - hi, n - 1 - lo)
+
+
+def _image_span_px(span: tuple[int, int], n: int) -> tuple[int, int]:
+    """Mouth span in image pixels. N/S → Y and E/W → X, both flipped (iso BL = NW)."""
+    return _span_px(_flip_span(span, n))
 
 
 def make_double(
@@ -393,30 +428,15 @@ def make_double(
     travel_x: int | None = None,
     travel_y: int | None = None,
 ):
-    """
-    Larger Cross: grey plaza, four AABB fillets sized to the twin shoulder.
+    """Cross from centred mouth spans; cell fillets where leftover > 0, throat L at 0."""
+    from render.intersection_topology import corner_leftovers_from_local
 
-    Does not use AABB-scaled 4-cell bands, which would bite into the travel bundle.
-    travel_x is the N/S mouth width; travel_y is the E/W mouth width.
-    """
-    if Image is None or ImageDraw is None:
-        raise RuntimeError("Pillow required for double generation: pip install Pillow")
     cells = _even_aabb_cells(cells)
     tx = _even_travel_cells(travel_x if travel_x is not None else travel_cells, cells)
     ty = _even_travel_cells(travel_y if travel_y is not None else travel_cells, cells)
-    size = cells * ORTHO_TILE_SIZE
-    img = Image.new("RGBA", (size, size), (*ROAD_GREY, 255))
-    sx = _double_shoulder_cells(cells, tx)
-    sy = _double_shoulder_cells(cells, ty)
-    inner_r = max(2, min(sx, sy) * ORTHO_TILE_SIZE)
-    if sx != sy:
-        draw = ImageDraw.Draw(img)
-        dx, dy = sx * ORTHO_TILE_SIZE, sy * ORTHO_TILE_SIZE
-        for q in range(4):
-            _punch_leftover_extra(draw, size, q, dx, dy, inner_r)
-    for q in range(4):
-        _stroke_fillet_lip(img, cells, q, inner_r=inner_r)
-    return img
+    spans = _centered_face_spans(cells, tx, ty, ("N", "S", "E", "W"))
+    leftovers = corner_leftovers_from_local(cells, spans)
+    return make_mixed(cells, leftovers, family="cross", spans=spans)
 
 
 _DOUBLE_CORNER_EDGES: dict[int, tuple[str, str]] = {
@@ -434,57 +454,23 @@ def make_double_tee(
     through_travel: int = 4,
     stem_travel: int = 4,
 ):
-    """
-    Centred even through + stem bands, two stem-side AABB fillets, open face punched.
-
-    No through-yellows and no Mixed leftover extra-strips from offset mouths.
-    axis/stem follow make_tee (display space).
-    """
-    if Image is None or ImageDraw is None:
-        raise RuntimeError("Pillow required for double tee generation: pip install Pillow")
-    from render.intersection_topology import tee_corner_quadrants
+    """Tee from centred mouth spans on the three active faces."""
+    from render.intersection_topology import corner_leftovers_from_local
 
     cells = _even_aabb_cells(cells)
-    size = cells * ORTHO_TILE_SIZE
-    img = Image.new("RGBA", (size, size), (*ROAD_GREY, 255))
-    draw = ImageDraw.Draw(img)
-    clear = (0, 0, 0, 0)
-    th = _even_travel_cells(through_travel, cells)
-    st = _even_travel_cells(stem_travel, cells)
-    tlo, thi = _centered_lo_hi(cells, th)
-    slo, shi = _centered_lo_hi(cells, st)
-    tile = ORTHO_TILE_SIZE
-    t0, t1 = tlo * tile, thi * tile
-    s0, s1 = slo * tile, shi * tile
     ax = axis if axis in ("ns", "ew") else "ns"
     sm = stem if stem in ("N", "S", "E", "W") else "E"
-
+    th = _even_travel_cells(through_travel, cells)
+    st = _even_travel_cells(stem_travel, cells)
     if ax == "ns":
-        if sm == "E":
-            _fill_band(draw, 0, t1, size, size, clear)
-            _fill_band(draw, 0, 0, s0, t0, clear)
-            _fill_band(draw, s1, 0, size, t0, clear)
-        else:
-            _fill_band(draw, 0, 0, size, t0, clear)
-            _fill_band(draw, 0, t1, s0, size, clear)
-            _fill_band(draw, s1, t1, size, size, clear)
+        tx, ty = th, st
+        edges: tuple[str, ...] = ("N", "S", sm if sm in ("E", "W") else "E")
     else:
-        if sm == "N":
-            _fill_band(draw, t1, 0, size, size, clear)
-            _fill_band(draw, 0, 0, t0, s0, clear)
-            _fill_band(draw, 0, s1, t0, size, clear)
-        else:
-            _fill_band(draw, 0, 0, t0, size, clear)
-            _fill_band(draw, t1, 0, size, s0, clear)
-            _fill_band(draw, t1, s1, size, size, clear)
-
-    inner_r = max(
-        2,
-        min(_double_shoulder_cells(cells, th), _double_shoulder_cells(cells, st)) * tile,
-    )
-    for q in tee_corner_quadrants(sm):  # type: ignore[arg-type]
-        _stroke_fillet_lip(img, cells, q, inner_r=inner_r)
-    return img
+        tx, ty = st, th
+        edges = ("E", "W", sm if sm in ("N", "S") else "N")
+    spans = _centered_face_spans(cells, tx, ty, edges)
+    leftovers = corner_leftovers_from_local(cells, spans)
+    return make_mixed(cells, leftovers, family="tee", spans=spans)
 
 
 def make_double_corner(
@@ -493,31 +479,16 @@ def make_double_corner(
     travel_x: int = 4,
     travel_y: int = 4,
 ):
-    """L of two centred even bands plus one inner AABB fillet. No scaled pie."""
-    if Image is None or ImageDraw is None:
-        raise RuntimeError("Pillow required for double corner generation: pip install Pillow")
+    """Equal-width corner annulus from centred mouth spans."""
+    from render.intersection_topology import corner_leftovers_from_local
+
     cells = _even_aabb_cells(cells)
-    size = cells * ORTHO_TILE_SIZE
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     q = quadrant % 4
     tx = _even_travel_cells(travel_x, cells)
     ty = _even_travel_cells(travel_y, cells)
-    xlo, xhi = _centered_lo_hi(cells, tx)
-    ylo, yhi = _centered_lo_hi(cells, ty)
-    spans: dict[str, tuple[int, int]] = {}
-    for edge in _DOUBLE_CORNER_EDGES[q]:
-        if edge in ("E", "W"):
-            spans[edge] = (ylo, yhi - 1)
-        else:
-            spans[edge] = (xlo, xhi - 1)
-    _fill_corner_L(ImageDraw.Draw(img), size, spans)
-    inner_r = max(
-        2,
-        min(_double_shoulder_cells(cells, tx), _double_shoulder_cells(cells, ty))
-        * ORTHO_TILE_SIZE,
-    )
-    _stroke_fillet_lip(img, cells, q, inner_r=inner_r)
-    return img
+    spans = _centered_face_spans(cells, tx, ty, _DOUBLE_CORNER_EDGES[q])
+    leftovers = corner_leftovers_from_local(cells, spans)
+    return make_mixed(cells, leftovers, family="corner", spans=spans)
 
 
 def make_big(cells: int = 4):
@@ -542,6 +513,25 @@ def _leftover_box(size: int, quadrant: int, dx: int, dy: int) -> tuple[int, int,
     return (0, 0, dx, dy)
 
 
+def _leftover_fillet_origin(
+    size: int, quadrant: int, dx: int, dy: int, r: int
+) -> tuple[int, int]:
+    """
+    AABB-style arc origin of the mouth-adjacent r×r.
+
+    Same sweep as the AABB fillet, translated so the square sits against both
+    mouths. Opposite-quadrant sweep (q+2) mirrored the pie across the join.
+    """
+    q = quadrant % 4
+    if q == 0:
+        return (dx - r, min(size - 1, size - dy + r))
+    if q == 1:
+        return (min(size - 1, size - dx + r), min(size - 1, size - dy + r))
+    if q == 2:
+        return (min(size - 1, size - dx + r), max(0, dy - r))
+    return (max(0, dx - r), max(0, dy - r))
+
+
 def _fill_band(draw, x0: int, y0: int, x1: int, y1: int, fill) -> None:
     if x1 <= x0 or y1 <= y0:
         return
@@ -563,73 +553,241 @@ def _span_px(span: tuple[int, int]) -> tuple[int, int]:
 
 def _fill_through_band(draw, size: int, spans: dict[str, tuple[int, int]]) -> None:
     fill = (*ROAD_GREY, 255)
+    n = size // ORTHO_TILE_SIZE
     edges = frozenset(spans)
     if edges <= frozenset({"E", "W"}):
         ew = _union_span(spans.get("E"), spans.get("W"))
         if ew is None:
             return
-        y0, y1 = _span_px(ew)
-        _fill_band(draw, 0, y0, size, y1, fill)
+        x0, x1 = _image_span_px(ew, n)
+        _fill_band(draw, x0, 0, x1, size, fill)
         return
     ns = _union_span(spans.get("N"), spans.get("S"))
     if ns is None:
         return
-    x0, x1 = _span_px(ns)
-    _fill_band(draw, x0, 0, x1, size, fill)
+    y0, y1 = _image_span_px(ns, n)
+    _fill_band(draw, 0, y0, size, y1, fill)
 
 
 def _fill_corner_L(draw, size: int, spans: dict[str, tuple[int, int]]) -> None:
-    """Pavement as two mouth-span bands that meet (an L), not a scaled pie."""
+    """Pavement as two mouth-span bands meeting at the _PAIR_TO_QUADRANT image corner.
+
+    N/S mouths are horizontal (image Y); E/W mouths are vertical (image X).
+    """
     fill = (*ROAD_GREY, 255)
+    n = size // ORTHO_TILE_SIZE
     edges = frozenset(spans)
     if edges == frozenset({"W", "N"}) and "W" in spans and "N" in spans:
-        w0, w1 = _span_px(spans["W"])
-        n0, n1 = _span_px(spans["N"])
-        _fill_band(draw, 0, w0, n1, w1, fill)
-        _fill_band(draw, n0, w0, n1, size, fill)
+        wx0, wx1 = _image_span_px(spans["W"], n)
+        ny0, ny1 = _image_span_px(spans["N"], n)
+        _fill_band(draw, wx0, ny0, wx1, size, fill)
+        _fill_band(draw, 0, ny0, wx1, ny1, fill)
         return
     if edges == frozenset({"W", "S"}) and "W" in spans and "S" in spans:
-        w0, w1 = _span_px(spans["W"])
-        s0, s1 = _span_px(spans["S"])
-        _fill_band(draw, 0, w0, s1, w1, fill)
-        _fill_band(draw, s0, 0, s1, w1, fill)
+        wx0, wx1 = _image_span_px(spans["W"], n)
+        sy0, sy1 = _image_span_px(spans["S"], n)
+        _fill_band(draw, wx0, sy0, wx1, size, fill)
+        _fill_band(draw, wx0, sy0, size, sy1, fill)
         return
     if edges == frozenset({"E", "N"}) and "E" in spans and "N" in spans:
-        e0, e1 = _span_px(spans["E"])
-        n0, n1 = _span_px(spans["N"])
-        _fill_band(draw, n0, e0, size, e1, fill)
-        _fill_band(draw, n0, e0, n1, size, fill)
+        ex0, ex1 = _image_span_px(spans["E"], n)
+        ny0, ny1 = _image_span_px(spans["N"], n)
+        _fill_band(draw, ex0, 0, ex1, ny1, fill)
+        _fill_band(draw, 0, ny0, ex1, ny1, fill)
         return
     if edges == frozenset({"E", "S"}) and "E" in spans and "S" in spans:
-        e0, e1 = _span_px(spans["E"])
-        s0, s1 = _span_px(spans["S"])
-        _fill_band(draw, s0, e0, size, e1, fill)
-        _fill_band(draw, s0, 0, s1, e1, fill)
+        ex0, ex1 = _image_span_px(spans["E"], n)
+        sy0, sy1 = _image_span_px(spans["S"], n)
+        _fill_band(draw, ex0, 0, ex1, sy1, fill)
+        _fill_band(draw, ex0, sy0, size, sy1, fill)
         return
     _fill_through_band(draw, size, spans)
 
 
+def _fill_outer_pie(draw, cx: int, cy: int, r: int, start_a: int, end_a: int) -> None:
+    """Pavement quarter-disk with ROLE_CURB on the outer ring (no inner bite)."""
+    if r <= 0:
+        return
+    bbox = (cx - r, cy - r, cx + r, cy + r)
+    draw.pieslice(bbox, start_a, end_a, fill=(*ROAD_GREY, 255))
+    white_outer = r - CURB_INSET
+    grey_inner = r - CURB_INSET - CURB_WIDTH
+    if white_outer > 0:
+        bbox_w = (cx - white_outer, cy - white_outer, cx + white_outer, cy + white_outer)
+        draw.pieslice(bbox_w, start_a, end_a, fill=(*WHITE, 255))
+    if grey_inner > 0:
+        bbox_g = (cx - grey_inner, cy - grey_inner, cx + grey_inner, cy + grey_inner)
+        draw.pieslice(bbox_g, start_a, end_a, fill=(*ROAD_GREY, 255))
+
+
+def _stroke_v_curb(draw, x: int, y0: int, y1: int, toward_plus_x: bool) -> None:
+    inset = CURB_INSET
+    width = CURB_WIDTH
+    grey = (*ROAD_GREY, 255)
+    white = (*WHITE, 255)
+    if toward_plus_x:
+        _fill_band(draw, x, y0, x + inset, y1, grey)
+        _fill_band(draw, x + inset, y0, x + inset + width, y1, white)
+    else:
+        _fill_band(draw, x - inset, y0, x, y1, grey)
+        _fill_band(draw, x - inset - width, y0, x - inset, y1, white)
+
+
+def _stroke_h_curb(draw, y: int, x0: int, x1: int, toward_plus_y: bool) -> None:
+    inset = CURB_INSET
+    width = CURB_WIDTH
+    grey = (*ROAD_GREY, 255)
+    white = (*WHITE, 255)
+    if toward_plus_y:
+        _fill_band(draw, x0, y, x1, y + inset, grey)
+        _fill_band(draw, x0, y + inset, x1, y + inset + width, white)
+    else:
+        _fill_band(draw, x0, y - inset, x1, y, grey)
+        _fill_band(draw, x0, y - inset - width, x1, y - inset, white)
+
+
+def _exterior_L_fillet(img, size: int, spans: dict[str, tuple[int, int]]) -> None:
+    """
+    Convex outer of an unequal L: straight from the narrower outer curb to a
+    square of side min(widths), then a quarter-turn to the wider outer.
+    """
+    if ImageDraw is None or _mouth_widths_equal(spans):
+        return
+    n = size // ORTHO_TILE_SIZE
+    edges = frozenset(spans)
+    spec = None
+    if edges == frozenset({"W", "N"}) and "W" in spans and "N" in spans:
+        wx0, wx1 = _image_span_px(spans["W"], n)
+        ny0, ny1 = _image_span_px(spans["N"], n)
+        r = min(wx1 - wx0, ny1 - ny0)
+        if r > 0:
+            spec = {
+                "q": 0,
+                "cx": wx1 - r,
+                "cy": ny0 + r,
+                "r": r,
+                "sq": (wx1 - r, ny0, wx1, ny0 + r),
+                "v": (wx1, ny0 + r, size, False),
+                "h": (ny0, 0, wx1 - r, True),
+            }
+    elif edges == frozenset({"W", "S"}) and "W" in spans and "S" in spans:
+        wx0, wx1 = _image_span_px(spans["W"], n)
+        sy0, sy1 = _image_span_px(spans["S"], n)
+        r = min(wx1 - wx0, sy1 - sy0)
+        if r > 0:
+            spec = {
+                "q": 1,
+                "cx": wx0 + r,
+                "cy": sy0 + r,
+                "r": r,
+                "sq": (wx0, sy0, wx0 + r, sy0 + r),
+                "v": (wx0, sy0 + r, size, True),
+                "h": (sy0, wx0 + r, size, True),
+            }
+    elif edges == frozenset({"E", "N"}) and "E" in spans and "N" in spans:
+        ex0, ex1 = _image_span_px(spans["E"], n)
+        ny0, ny1 = _image_span_px(spans["N"], n)
+        r = min(ex1 - ex0, ny1 - ny0)
+        if r > 0:
+            spec = {
+                "q": 3,
+                "cx": ex1 - r,
+                "cy": ny1 - r,
+                "r": r,
+                "sq": (ex1 - r, ny1 - r, ex1, ny1),
+                "v": (ex1, 0, ny1 - r, False),
+                "h": (ny1, 0, ex1 - r, False),
+            }
+    elif edges == frozenset({"E", "S"}) and "E" in spans and "S" in spans:
+        ex0, ex1 = _image_span_px(spans["E"], n)
+        sy0, sy1 = _image_span_px(spans["S"], n)
+        r = min(ex1 - ex0, sy1 - sy0)
+        if r > 0:
+            spec = {
+                "q": 2,
+                "cx": ex0 + r,
+                "cy": sy1 - r,
+                "r": r,
+                "sq": (ex0, sy1 - r, ex0 + r, sy1),
+                "v": (ex0, 0, sy1 - r, True),
+                "h": (sy1, ex0 + r, size, False),
+            }
+    if spec is None:
+        return
+    draw = ImageDraw.Draw(img)
+    x0, y0, x1, y1 = spec["sq"]
+    _fill_band(draw, x0, y0, x1, y1, (0, 0, 0, 0))
+    _cx, _cy, start_a, end_a = _CORNER_ARC_PRESETS[spec["q"]]
+    _fill_outer_pie(draw, spec["cx"], spec["cy"], spec["r"], start_a, end_a)
+    vx, vy0, vy1, vplus = spec["v"]
+    hy, hx0, hx1, hplus = spec["h"]
+    _stroke_v_curb(draw, vx, vy0, vy1, vplus)
+    _stroke_h_curb(draw, hy, hx0, hx1, hplus)
+
+
 def _punch_open_edge(draw, size: int, edge: str, spans: dict[str, tuple[int, int]]) -> None:
-    """Clear the open cardinal outside the through-mouth span (not a centre-two half)."""
+    """
+    Clear the open cardinal in image space matching make_tee:
+    N left, E top, S right, W bottom.
+    """
     clear = (0, 0, 0, 0)
-    if edge in ("E", "W"):
-        through = _union_span(spans.get("N"), spans.get("S"))
+    n = size // ORTHO_TILE_SIZE
+    if edge in ("N", "S"):
+        through = _union_span(spans.get("E"), spans.get("W"))
         if through is None:
             return
-        x0, x1 = _span_px(through)
-        if edge == "E":
+        x0, x1 = _image_span_px(through, n)
+        if edge == "S":
             _fill_band(draw, x1, 0, size, size, clear)
         else:
             _fill_band(draw, 0, 0, x0, size, clear)
         return
-    through = _union_span(spans.get("E"), spans.get("W"))
+    through = _union_span(spans.get("N"), spans.get("S"))
     if through is None:
         return
-    y0, y1 = _span_px(through)
-    if edge == "N":
+    y0, y1 = _image_span_px(through, n)
+    if edge == "W":
         _fill_band(draw, 0, y1, size, size, clear)
     else:
         _fill_band(draw, 0, 0, size, y0, clear)
+
+
+def _stroke_open_face_curb(img, size: int, edge: str, spans: dict[str, tuple[int, int]]) -> None:
+    """
+    Through-road ROLE_CURB along the open cardinal, full length of that edge.
+
+    Grey inset then white, matching lane tiles. Stem-side curbs stay the fillets.
+    """
+    if ImageDraw is None:
+        return
+    n = size // ORTHO_TILE_SIZE
+    inset = CURB_INSET
+    width = CURB_WIDTH
+    grey = (*ROAD_GREY, 255)
+    white = (*WHITE, 255)
+    draw = ImageDraw.Draw(img)
+    if edge in ("N", "S"):
+        through = _union_span(spans.get("E"), spans.get("W"))
+        if through is None:
+            return
+        x0, x1 = _image_span_px(through, n)
+        if edge == "S":
+            _fill_band(draw, x1 - inset, 0, x1, size, grey)
+            _fill_band(draw, x1 - inset - width, 0, x1 - inset, size, white)
+        else:
+            _fill_band(draw, x0, 0, x0 + inset, size, grey)
+            _fill_band(draw, x0 + inset, 0, x0 + inset + width, size, white)
+        return
+    through = _union_span(spans.get("N"), spans.get("S"))
+    if through is None:
+        return
+    y0, y1 = _image_span_px(through, n)
+    if edge == "W":
+        _fill_band(draw, 0, y1 - inset, size, y1, grey)
+        _fill_band(draw, 0, y1 - inset - width, size, y1 - inset, white)
+    else:
+        _fill_band(draw, 0, y0, size, y0 + inset, grey)
+        _fill_band(draw, 0, y0 + inset, size, y0 + inset + width, white)
 
 
 def _stroke_virtual_curbs(img, size: int, quadrant: int, dx: int, dy: int, r: int) -> None:
@@ -678,47 +836,113 @@ def _stroke_virtual_curbs(img, size: int, quadrant: int, dx: int, dy: int, r: in
 
 def _punch_leftover_extra(draw, size: int, quadrant: int, dx: int, dy: int, r: int) -> None:
     """
-    Grass only the leftover beyond the r×r AABB square.
+    Grass leftover beyond the mouth-adjacent r×r (toward the AABB).
 
-    The square itself is the Double-style quarter-circle bite, not a rectangle —
-    punching the full leftover pinched the mouth corridors into an X.
+    The fillet sits next to both mouths; extra unequal leftover is the AABB
+    remainder. Punching from the AABB instead left the curve one cell inboard.
     """
     clear = (0, 0, 0, 0)
     q = quadrant % 4
     if q == 0:
         if dx > r:
-            _fill_band(draw, r, size - dy, dx, size, clear)
+            _fill_band(draw, 0, size - dy, dx - r, size, clear)
         if dy > r:
-            _fill_band(draw, 0, size - dy, min(dx, r), size - r, clear)
+            _fill_band(draw, dx - r, size - dy + r, dx, size, clear)
     elif q == 1:
         if dx > r:
-            _fill_band(draw, size - dx, size - dy, size - r, size, clear)
+            _fill_band(draw, size - dx + r, size - dy, size, size, clear)
         if dy > r:
-            _fill_band(draw, max(size - dx, size - r), size - dy, size, size - r, clear)
+            _fill_band(draw, size - dx, size - dy + r, size - dx + r, size, clear)
     elif q == 2:
         if dx > r:
-            _fill_band(draw, size - dx, 0, size - r, dy, clear)
+            _fill_band(draw, size - dx + r, 0, size, dy, clear)
         if dy > r:
-            _fill_band(draw, max(size - dx, size - r), r, size, dy, clear)
+            _fill_band(draw, size - dx, 0, size - dx + r, dy - r, clear)
     else:
         if dx > r:
-            _fill_band(draw, r, 0, dx, dy, clear)
+            _fill_band(draw, 0, 0, dx - r, dy, clear)
         if dy > r:
-            _fill_band(draw, 0, r, min(dx, r), dy, clear)
+            _fill_band(draw, dx - r, 0, dx, dy - r, clear)
 
 
 def _apply_mixed_corner(img, cells: int, quadrant: int, leftover_x: int, leftover_y: int) -> None:
-    """AABB-corner fillet of min leftover, plus extra-strip grass; curbs on virtual sharps."""
-    if ImageDraw is None or leftover_x <= 0 or leftover_y <= 0:
+    """Fill leftover plaza, extra-strip grass, inner fillet lip, virtual-sharp curbs.
+
+    Leftover 0 on either axis: no grass bite; micro-fillet at the inner join
+    (curb-pack quarter-ring) plus leftover-edge curb if one axis remains.
+    """
+    if ImageDraw is None or leftover_x < 0 or leftover_y < 0:
         return
     t = ORTHO_TILE_SIZE
     size = cells * t
-    dx, dy = leftover_x * t, leftover_y * t
-    inner_r = max(2, min(dx, dy))
+    # leftover_x is the E/W (world X) shoulder → image Y; leftover_y is N/S → image X.
+    dx, dy = leftover_y * t, leftover_x * t
+    if leftover_x > 0 and leftover_y > 0:
+        inner_r = min(dx, dy)
+        draw = ImageDraw.Draw(img)
+        x0, y0, x1, y1 = _leftover_box(size, quadrant, dx, dy)
+        _fill_band(draw, x0, y0, x1, y1, (*ROAD_GREY, 255))
+        _punch_leftover_extra(draw, size, quadrant, dx, dy, inner_r)
+        origin = _leftover_fillet_origin(size, quadrant, dx, dy, inner_r)
+        _stroke_fillet_lip(img, cells, quadrant, inner_r=inner_r, origin=origin)
+        _stroke_virtual_curbs(img, size, quadrant, dx, dy, inner_r)
+        return
+    # Leftover 0: no grass bite; micro-fillet at the join (curb pack quarter-ring).
+    _stroke_virtual_curbs(img, size, quadrant, dx, dy, CURB_INSET)
+    origin = _leftover_fillet_origin(size, quadrant, dx, dy, 0)
+    _stroke_fillet_lip(img, cells, quadrant, inner_r=0, origin=origin)
+
+
+def _draw_constant_width_annulus(
+    img,
+    cells: int,
+    quadrant: int,
+    inner_r: int,
+    outer_r: int,
+) -> None:
+    """Quarter-annulus from an AABB corner: outer curb, optional inner bite."""
+    if ImageDraw is None:
+        return
+    size_px = cells * ORTHO_TILE_SIZE
+    outer_r = max(1, min(int(outer_r), size_px))
+    inner_r = max(0, int(inner_r))
+    arc_cx, arc_cy, start_angle, end_angle = _arc_center(quadrant, size_px)
     draw = ImageDraw.Draw(img)
-    _punch_leftover_extra(draw, size, quadrant, dx, dy, inner_r)
+    bbox = (arc_cx - outer_r, arc_cy - outer_r, arc_cx + outer_r, arc_cy + outer_r)
+    draw.pieslice(bbox, start_angle, end_angle, fill=(*ROAD_GREY, 255))
+    white_outer = outer_r - CURB_INSET
+    grey_inner = outer_r - CURB_INSET - CURB_WIDTH
+    if white_outer > 0:
+        bbox_w = (arc_cx - white_outer, arc_cy - white_outer, arc_cx + white_outer, arc_cy + white_outer)
+        draw.pieslice(bbox_w, start_angle, end_angle, fill=(*WHITE, 255))
+    if grey_inner > 0:
+        bbox_g = (arc_cx - grey_inner, arc_cy - grey_inner, arc_cx + grey_inner, arc_cy + grey_inner)
+        draw.pieslice(bbox_g, start_angle, end_angle, fill=(*ROAD_GREY, 255))
     _stroke_fillet_lip(img, cells, quadrant, inner_r=inner_r)
-    _stroke_virtual_curbs(img, size, quadrant, dx, dy, inner_r)
+
+
+def _annulus_radii(
+    cells: int,
+    spans: dict[str, tuple[int, int]],
+) -> tuple[int, int, int] | None:
+    from render.intersection_topology import leftover_xy_for_pair
+
+    if len(spans) != 2:
+        return None
+    a, b = tuple(spans)
+    xy = leftover_xy_for_pair(cells, spans, a, b)
+    if xy is None:
+        return None
+    from render.intersection_topology import corner_quadrant_for_sides
+
+    q = corner_quadrant_for_sides(frozenset(spans))
+    lx, ly = xy
+    if lx != ly:
+        return None
+    inner_r = max(0, min(lx, ly)) * ORTHO_TILE_SIZE
+    width = min(_span_width(s) for s in spans.values())
+    outer_r = inner_r + width * ORTHO_TILE_SIZE
+    return q, inner_r, outer_r
 
 
 def make_mixed(
@@ -730,7 +954,11 @@ def make_mixed(
     spans: dict[str, tuple[int, int]] | None = None,
 ):
     """
-    Mouth-span plaza: leftover fillets + family mask. No centre-two tee/corner recipes.
+    Mouth-span overlay: leftover fillets + family clip.
+
+    Corner with equal mouth widths is a constant-width annulus (inner leftover,
+    outer leftover + width). Unequal mouths keep an L, an exterior outer fillet,
+    and an inner leftover fillet.
     leftovers are (quadrant, leftover_x_cells, leftover_y_cells).
     spans are local cell inclusive (min, max) per pierced edge.
     """
@@ -750,7 +978,13 @@ def make_mixed(
         return img
     if fam == "corner":
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        radii = _annulus_radii(cells, local) if _mouth_widths_equal(local) else None
+        if radii is not None:
+            q, inner_r, outer_r = radii
+            _draw_constant_width_annulus(img, cells, q, inner_r, outer_r)
+            return img
         _fill_corner_L(ImageDraw.Draw(img), size, local)
+        _exterior_L_fillet(img, size, local)
         for quad, lx, ly in leftovers:
             _apply_mixed_corner(img, cells, quad, lx, ly)
         return img
@@ -763,6 +997,7 @@ def make_mixed(
         draw = ImageDraw.Draw(img)
         for edge in open_edges:
             _punch_open_edge(draw, size, edge, local)
+            _stroke_open_face_curb(img, size, edge, local)
     return img
 
 

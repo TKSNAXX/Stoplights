@@ -25,7 +25,6 @@ from render.lane_paint import paint_spec
 from render.intersection_topology import (
     classify_intersection_sides,
     corner_quadrant_for_sides,
-    double_travel_xy,
     mixed_corner_leftovers,
     mouth_spans_by_edge,
     mouth_spans_local,
@@ -38,9 +37,6 @@ from render.tiles import (
     TileSet,
     generate_corner_texture,
     generate_cross_texture,
-    generate_double_corner_texture,
-    generate_double_tee_texture,
-    generate_double_texture,
     generate_lane_paint_texture,
     generate_mixed_texture,
     generate_straight_texture,
@@ -698,53 +694,28 @@ class StoplightsWindow(arcade.Window):
             centered_tex: arcade.Texture | None = None
             if itype == places.INTERSECTION_TYPE_NONE:
                 pass
-            elif itype in (
-                places.INTERSECTION_TYPE_DOUBLE,
-                places.INTERSECTION_TYPE_DOUBLE_CROSS,
+            elif (
+                itype
+                in (
+                    places.INTERSECTION_TYPE_DOUBLE,
+                    places.INTERSECTION_TYPE_DOUBLE_CROSS,
+                    places.INTERSECTION_TYPE_DOUBLE_TEE,
+                    places.INTERSECTION_TYPE_DOUBLE_CORNER,
+                    places.INTERSECTION_TYPE_MIXED,
+                    places.INTERSECTION_TYPE_MIXED_CROSS,
+                    places.INTERSECTION_TYPE_MIXED_TEE,
+                    places.INTERSECTION_TYPE_MIXED_CORNER,
+                    places.INTERSECTION_TYPE_MIXED_STRAIGHT,
+                    places.INTERSECTION_TYPE_ONE,
+                    places.INTERSECTION_TYPE_ONE_CROSS,
+                    places.INTERSECTION_TYPE_ONE_TEE,
+                    places.INTERSECTION_TYPE_ONE_CORNER,
+                    places.INTERSECTION_TYPE_ONE_STRAIGHT,
+                )
+                or str(itype).startswith("mixed_")
+                or str(itype).startswith("double_")
+                or str(itype).startswith("one_")
             ):
-                spans = mouth_spans_by_edge(key, cells)
-                local = mouth_spans_local(cells, spans)
-                travel_x, travel_y = double_travel_xy(local, size_cells)
-                centered_tex = generate_double_texture(
-                    size_cells, travel_x=travel_x, travel_y=travel_y
-                )
-            elif itype == places.INTERSECTION_TYPE_DOUBLE_TEE:
-                world_active, _, _ = classify_intersection_sides(
-                    key, cells, require_centre_two=False
-                )
-                spans = mouth_spans_by_edge(key, cells)
-                local = mouth_spans_local(cells, spans)
-                travel_x, travel_y = double_travel_xy(local, size_cells)
-                world_ax = straight_axis_for_intersection(key, cells, world_active)
-                axis, stem = tee_layout_for_sides(
-                    display_active, through_fallback=rotate_straight_axis(world_ax, yaw)
-                )
-                if stem in ("E", "W"):
-                    through_travel, stem_travel = travel_x, travel_y
-                else:
-                    through_travel, stem_travel = travel_y, travel_x
-                centered_tex = generate_double_tee_texture(
-                    size_cells,
-                    axis=axis,
-                    stem=stem,
-                    through_travel=through_travel,
-                    stem_travel=stem_travel,
-                )
-            elif itype == places.INTERSECTION_TYPE_DOUBLE_CORNER:
-                spans = mouth_spans_by_edge(key, cells)
-                local = mouth_spans_local(cells, spans)
-                travel_x, travel_y = double_travel_xy(local, size_cells)
-                q = corner_quadrant_for_sides(display_active)
-                centered_tex = generate_double_corner_texture(
-                    size_cells, quadrant=q, travel_x=travel_x, travel_y=travel_y
-                )
-            elif itype in (
-                places.INTERSECTION_TYPE_MIXED,
-                places.INTERSECTION_TYPE_MIXED_CROSS,
-                places.INTERSECTION_TYPE_MIXED_TEE,
-                places.INTERSECTION_TYPE_MIXED_CORNER,
-                places.INTERSECTION_TYPE_MIXED_STRAIGHT,
-            ) or str(itype).startswith("mixed_"):
                 spans = mouth_spans_by_edge(key, cells)
                 world_active, _, _ = classify_intersection_sides(
                     key, cells, require_centre_two=False

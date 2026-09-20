@@ -126,10 +126,10 @@ _lane_paint_cache: dict[tuple, arcade.Texture] = {}
 _STRAIGHT_TEX_REV = 11
 _TEE_TEX_REV = 7
 _CROSS_TEX_REV = 5
-_DOUBLE_TEX_REV = 3
-_DOUBLE_TEE_TEX_REV = 1
-_DOUBLE_CORNER_TEX_REV = 1
-_MIXED_TEX_REV = 4
+_DOUBLE_TEX_REV = 5
+_DOUBLE_TEE_TEX_REV = 3
+_DOUBLE_CORNER_TEX_REV = 3
+_MIXED_TEX_REV = 12
 
 
 def generate_corner_texture(cells: int, quadrant: int = 0) -> arcade.Texture | None:

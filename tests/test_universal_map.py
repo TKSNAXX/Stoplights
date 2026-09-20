@@ -1954,6 +1954,7 @@ def test_twin_intersection_paths_and_double_stamp() -> None:
     assert places.clamp_intersection_type("big") == places.INTERSECTION_TYPE_DOUBLE_CROSS
     assert places.clamp_intersection_type("double") == places.INTERSECTION_TYPE_DOUBLE_CROSS
     assert places.clamp_intersection_type("mixed") == places.INTERSECTION_TYPE_MIXED_CROSS
+    assert places.clamp_intersection_type("one") == places.INTERSECTION_TYPE_ONE_CROSS
 
     places_by_id = {
         "West": places.Place(center_x=10, center_y=19, width=5, length=5),
@@ -2231,7 +2232,7 @@ def test_twin_elsewhere_does_not_make_mixed_cross() -> None:
     active, _, _ = classify_intersection_sides("hub", cells, require_centre_two=False)
     assert overlay_type_for_sides(active) == places.INTERSECTION_TYPE_CROSS
     assert not world.intersection_has_twins("hub")
-    assert overlay_type_for_intersection("hub", active) == places.INTERSECTION_TYPE_CROSS
+    assert overlay_type_for_intersection("hub", active) == places.INTERSECTION_TYPE_ONE_CROSS
     GameState()
 
 
@@ -2341,18 +2342,20 @@ def test_mixed_stamp_min_leftover_and_virtual_curb() -> None:
     assert lx != ly
     t = ORTHO_TILE_SIZE
     size = 8 * t
-    dx, dy = lx * t, ly * t
-    # AABB corner is the grass bite; extra strip along the long leftover stays grass.
+    dx, dy = ly * t, lx * t
+    # AABB remainder is grass; the r×r bite sits at the mouths, not the AABB.
     assert img.getpixel((1, size - 2))[3] == 0
     r_px = min(dx, dy)
     if dy > dx:
-        assert img.getpixel((1, size - dy + 1))[3] == 0
+        extra_y = size - dy + r_px + max(1, (dy - r_px) // 2)
+        assert img.getpixel((max(1, dx - r_px // 2), extra_y))[3] == 0
     else:
-        assert img.getpixel((max(1, dx - 2), size - 2))[3] == 0
+        extra_x = max(1, (dx - r_px) // 2)
+        assert img.getpixel((min(size - 2, extra_x), size - 2))[3] == 0
     east_of = img.getpixel((min(size - 1, dx + 8), size - 2))
-    assert east_of[3] == 255, "leftover wider than lx (dx/dy swapped?)"
-    south_of = img.getpixel((1, max(0, size - dy - 8)))
-    assert south_of[3] == 255, "leftover taller than ly (dx/dy swapped?)"
+    assert east_of[3] == 255, "leftover wider than image dx (ns shoulder)"
+    south_of = img.getpixel((size // 2, max(0, size - dy - 8)))
+    assert south_of[3] == 255, "leftover taller than image dy (ew shoulder)"
     # Inner leftover is plaza, not a punched rectangle (that pinched the roads into an X).
     inner = img.getpixel((min(size - 1, dx + 4), max(0, size - dy - 4)))
     assert inner[3] == 255 and inner[:3] == ROAD_GREY
@@ -2409,9 +2412,9 @@ def test_mixed_tee_open_face_from_mouth_span() -> None:
     assert "S" not in local
     t = ORTHO_TILE_SIZE
     size = 8 * t
-    # Open south is image top; through is E/W (local y).
+    # Open south is image right (make_tee / iso); through is E/W.
     ylo, _yhi = local["W"]
-    assert img.getpixel((size // 2, 4))[3] == 0
+    assert img.getpixel((size - 4, size // 2))[3] == 0
     through_mid_y = ylo * t + t // 2
     plaza = img.getpixel((size // 2, through_mid_y))
     assert plaza[3] == 255 and plaza[:3] == ROAD_GREY
@@ -2443,7 +2446,7 @@ def _mixed_corner_wn() -> None:
 
 def test_mixed_corner_is_mouth_L_not_scaled_pie() -> None:
     """Mixed corner pavement is an L of the two mouth bands, with one inner fillet."""
-    from render.corner_gen import ROAD_GREY, WHITE
+    from render.corner_gen import ROAD_GREY, WHITE, _image_span_px
     from render.intersection_topology import overlay_type_for_intersection, overlay_type_for_sides
     from sim.constants import ORTHO_TILE_SIZE
 
@@ -2455,20 +2458,70 @@ def test_mixed_corner_is_mouth_L_not_scaled_pie() -> None:
     assert frozenset(local) == frozenset({"W", "N"})
     t = ORTHO_TILE_SIZE
     size = 8 * t
+    n = 8
     # Open SE of the image stays clear — not a plaza or scaled pie.
     assert img.getpixel((size - 4, 4))[3] == 0
-    assert img.getpixel((size // 2, size // 2))[3] == 0
-    w0, w1 = local["W"]
-    n0, n1 = local["N"]
-    wx = (n0 + n1) * t // 2
-    wy = (w0 + w1) * t // 2
-    meet = img.getpixel((wx, wy))
+    assert img.getpixel((size - 4, size // 2))[3] == 0
+    wx0, wx1 = _image_span_px(local["W"], n)
+    ny0, ny1 = _image_span_px(local["N"], n)
+    meet = img.getpixel(((wx0 + wx1) // 2, (ny0 + ny1) // 2))
     assert meet[3] == 255 and meet[:3] == ROAD_GREY
-    # East of the N-mouth and south of the W-mouth is grass.
-    assert img.getpixel((min(size - 1, (n1 + 1) * t + 8), max(0, w0 * t - 8)))[3] == 0
+    # South of the W-mouth and east of the N-mouth is grass.
+    assert img.getpixel((min(size - 1, wx1 + 8), max(0, ny0 - 8)))[3] == 0
     assert leftovers and leftovers[0][0] == 0
-    r_px = min(leftovers[0][1], leftovers[0][2]) * t
-    assert _has_color_near(img, r_px + 3, size - 2, WHITE, r=8)
+    dx, dy = leftovers[0][2] * t, leftovers[0][1] * t
+    r_px = min(dx, dy)
+    join = img.getpixel((dx - 4, size - dy + 4))
+    assert join[3] == 255 and join[:3] == ROAD_GREY
+    assert _has_color_near(img, dx - 4, size - 4, WHITE, r=8)
+    GameState()
+
+
+def test_mixed_corner_ns_double_ew_single_on_stamp_axes() -> None:
+    """Size-6 W+N mixed corner: 4-cell N/S, 2-cell E/W — leftover extra is beside the single."""
+    from render.corner_gen import ROAD_GREY, WHITE, _image_span_px, make_mixed
+    from render.intersection_topology import corner_leftovers_from_local
+    from render.lane_paint import CURB_INSET, CURB_WIDTH
+    from sim.constants import ORTHO_TILE_SIZE
+
+    n = 6
+    spans = {"N": (1, 4), "W": (2, 3)}
+    leftovers = corner_leftovers_from_local(n, spans)
+    img = make_mixed(n, leftovers, family="corner", spans=spans)
+    assert leftovers and leftovers[0] == (0, 1, 2)
+    t = ORTHO_TILE_SIZE
+    size = n * t
+    lx, ly = leftovers[0][1], leftovers[0][2]
+    dx, dy = ly * t, lx * t
+    r_px = min(dx, dy)
+    wx0, wx1 = _image_span_px(spans["W"], n)
+    ny0, ny1 = _image_span_px(spans["N"], n)
+
+    extra_x = max(1, (dx - r_px) // 2)
+    assert img.getpixel((extra_x, size - 2))[3] == 0
+    ns_mid = img.getpixel(((wx0 + wx1) // 2, (ny0 + ny1) // 2))
+    assert ns_mid[3] == 255 and ns_mid[:3] == ROAD_GREY
+    # Extra strip must not bite the 4-cell N/S corridor (horizontal Y-band).
+    assert img.getpixel((dx + 8, (ny0 + ny1) // 2))[3] == 255
+    join = img.getpixel((dx - 4, size - dy + 4))
+    assert join[3] == 255 and join[:3] == ROAD_GREY
+    assert _has_color_near(img, dx - 4, size - 4, WHITE, r=8)
+    y_s = size - dy
+    white_y = y_s - CURB_INSET - CURB_WIDTH // 2
+    assert _has_color_near(img, max(2, (dx - r_px) // 2), white_y, WHITE, r=3)
+    west = img.getpixel(((wx0 + wx1) // 2, size - 2))
+    assert west[3] == 255
+    r_out = min(wx1 - wx0, ny1 - ny0)
+    assert r_out > 0
+    assert img.getpixel((wx1 - 2, ny0 + 2))[3] == 0
+    pie = img.getpixel((wx1 - r_out + r_out // 2, ny0 + r_out - r_out // 2))
+    assert pie[3] == 255 and pie[:3] == ROAD_GREY
+    assert _has_color_near(
+        img, wx1 - r_out + r_out - CURB_INSET - 1, ny0 + r_out, WHITE, r=8
+    )
+    assert _has_color_near(
+        img, wx1 - CURB_INSET - CURB_WIDTH // 2, size - 2, WHITE, r=4
+    )
     GameState()
 
 
@@ -2557,11 +2610,37 @@ def test_double_tee_classified_open_and_fillet() -> None:
     assert g0[:3] == ROAD_GREY and g0[3] == 255
     assert w0[:3] == WHITE and w0[3]
     assert w1[:3] == WHITE and w1[3]
+    # Through curb continues along the open face (image right), not only at the centre.
+    x1 = 6 * t
+    white_x = x1 - CURB_INSET - CURB_WIDTH // 2
+    for y in (8, size // 2, size - 9):
+        assert _has_color_near(img, white_x, y, WHITE, r=2), y
+        assert img.getpixel((x1 - 1, y))[:3] == ROAD_GREY
     GameState()
 
 
+def test_tee_open_face_curb_runs_across() -> None:
+    """Through ROLE_CURB continues the full open face, not only the mouth middle."""
+    from render.corner_gen import WHITE, make_double_tee
+    from render.lane_paint import CURB_INSET, CURB_WIDTH
+    from sim.constants import ORTHO_TILE_SIZE
+
+    t = ORTHO_TILE_SIZE
+    for cells in (4, 6, 8):
+        img = make_double_tee(
+            cells, axis="ew", stem="N", through_travel=4, stem_travel=4
+        )
+        size = cells * t
+        travel = min(4, cells)
+        lo = (cells - travel) // 2
+        x1 = (lo + travel) * t
+        white_x = x1 - CURB_INSET - CURB_WIDTH // 2
+        for y in (8, size // 2, size - 9):
+            assert _has_color_near(img, white_x, y, WHITE, r=2), (cells, y)
+
+
 def test_double_corner_classified_is_L() -> None:
-    """2-perp closed dual is Double Corner: L of centred bands, not a full plaza."""
+    """2-perp closed dual is Double Corner: equal-width annulus, not a full plaza."""
     from render.corner_gen import ROAD_GREY, WHITE, make_double_corner
     from render.intersection_topology import (
         classify_intersection_sides,
@@ -2586,7 +2665,253 @@ def test_double_corner_classified_is_L() -> None:
     assert meet[3] == 255 and meet[:3] == ROAD_GREY
     inner_r = 2 * t
     assert _has_color_near(img, inner_r + 3, size - 2, WHITE, r=8)
+    outer_r = inner_r + 4 * t
+    assert _has_color_near(img, 2, size - outer_r - 3, WHITE, r=8)
     GameState()
+
+
+def test_leftover_zero_flush_double_is_opaque() -> None:
+    """Flush travel (leftover 0) does not punch AABB-corner armpit fillets."""
+    from render.corner_gen import ROAD_GREY, WHITE, double_fillet_inner_r, make_double
+    from render.lane_paint import CURB_INSET, CURB_WIDTH
+
+    assert double_fillet_inner_r(4, 4) == 0
+    img = make_double(4, travel_cells=4)
+    w, h = img.size
+    for x, y in ((0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)):
+        p = img.getpixel((x, y))
+        assert p[3] == 255 and p[:3] == ROAD_GREY, (x, y, p)
+    throat = CURB_INSET + CURB_WIDTH
+    assert _has_color_near(img, throat // 2, h - throat // 2, WHITE, r=4)
+    assert _has_color_near(img, throat // 2, throat // 2, WHITE, r=4)
+    assert _has_color_near(img, w - throat // 2, h - throat // 2, WHITE, r=4)
+    assert _has_color_near(img, w - throat // 2, throat // 2, WHITE, r=4)
+
+
+def test_leftover_zero_mixed_flush_mouth_paints_throat_L() -> None:
+    """Size-4 double+single: leftover (0, 1) still gets inner L along the flush face."""
+    from render.corner_gen import WHITE, make_mixed
+    from render.intersection_topology import corner_leftovers_from_local
+    from render.lane_paint import CURB_INSET, CURB_WIDTH
+    from sim.constants import ORTHO_TILE_SIZE
+
+    n = 4
+    spans = {"N": (0, 3), "W": (1, 2)}
+    leftovers = corner_leftovers_from_local(n, spans)
+    assert leftovers == ((0, 0, 1),)
+    img = make_mixed(n, leftovers, family="corner", spans=spans)
+    t = ORTHO_TILE_SIZE
+    size = n * t
+    dx = 1 * t
+    white_y = size - CURB_INSET - CURB_WIDTH // 2
+    assert _has_color_near(img, max(2, dx // 2), white_y, WHITE, r=3)
+    assert _has_color_near(img, dx + CURB_INSET + 1, size - CURB_INSET - 1, WHITE, r=4)
+    assert img.getpixel((0, size - 1))[3] == 255
+
+
+def test_leftover_zero_three_lane_flush_paints_segment() -> None:
+    """Size-6 3-lane flush vs 2-cell mouth: leftover (0, 2) curb along the extra."""
+    from render.corner_gen import WHITE, make_mixed
+    from render.intersection_topology import corner_leftovers_from_local
+    from render.lane_paint import CURB_INSET, CURB_WIDTH
+    from sim.constants import ORTHO_TILE_SIZE
+
+    n = 6
+    spans = {"N": (0, 5), "W": (2, 3)}
+    leftovers = corner_leftovers_from_local(n, spans)
+    assert leftovers == ((0, 0, 2),)
+    img = make_mixed(n, leftovers, family="corner", spans=spans)
+    t = ORTHO_TILE_SIZE
+    size = n * t
+    dx = 2 * t
+    white_y = size - CURB_INSET - CURB_WIDTH // 2
+    assert _has_color_near(img, max(2, dx // 2), white_y, WHITE, r=3)
+    assert _has_color_near(img, dx + CURB_INSET + 1, size - CURB_INSET - 1, WHITE, r=4)
+    assert img.getpixel((0, size - 1))[3] == 255
+
+
+def test_leftover_zero_size2_one_lane_paints_throat_L() -> None:
+    """2-cell AABB with a 1-cell mouth: leftover 0 on one axis still paints the L."""
+    from render.corner_gen import WHITE, make_mixed
+    from render.intersection_topology import corner_leftovers_from_local
+    from render.lane_paint import CURB_INSET, CURB_WIDTH
+    from sim.constants import ORTHO_TILE_SIZE
+
+    n = 2
+    spans = {"N": (0, 1), "W": (0, 0)}
+    leftovers = corner_leftovers_from_local(n, spans)
+    assert leftovers == ((0, 0, 1),)
+    img = make_mixed(n, leftovers, family="corner", spans=spans)
+    t = ORTHO_TILE_SIZE
+    size = n * t
+    dx = 1 * t
+    white_y = size - CURB_INSET - CURB_WIDTH // 2
+    assert _has_color_near(img, max(2, dx // 2), white_y, WHITE, r=3)
+    assert _has_color_near(img, dx + CURB_INSET + 1, size - CURB_INSET - 1, WHITE, r=4)
+
+
+def test_one_stamp_family_and_clamp() -> None:
+    assert places.overlay_stamp_family(places.INTERSECTION_TYPE_ONE_CROSS) == "cross"
+    assert places.overlay_stamp_family(places.INTERSECTION_TYPE_ONE_TEE) == "tee"
+    assert places.overlay_stamp_family(places.INTERSECTION_TYPE_ONE_CORNER) == "corner"
+    assert places.overlay_stamp_family(places.INTERSECTION_TYPE_ONE_STRAIGHT) == "straight"
+
+
+def test_one_lane_corner_classified_uses_mouth_span() -> None:
+    """Single-lane W+N on a 6-cell AABB is One Corner, not the centred dual pie."""
+    from render.corner_gen import ROAD_GREY, WHITE, make_mixed
+    from render.intersection_topology import (
+        classify_intersection_sides,
+        mixed_corner_leftovers,
+        mouth_spans_by_edge,
+        mouth_spans_local,
+        overlay_type_for_intersection,
+        overlay_type_for_sides,
+    )
+    from render.lane_paint import CURB_INSET
+    from sim.constants import ORTHO_TILE_SIZE
+
+    places_by_id = {
+        "West": places.Place(center_x=8, center_y=22, width=5, length=5),
+        "North": places.Place(center_x=17, center_y=32, width=5, length=5),
+    }
+    intersections = {
+        "hub": places.IntersectionConfig(size_cells=6, center_x=20, center_y=20),
+    }
+    lanes = {
+        1: places.LaneConfig(start_tile=(10, 22), end_tile=(16, 22)),
+        2: places.LaneConfig(start_tile=(17, 23), end_tile=(17, 29)),
+    }
+    places.set_route_hints([])
+    world.rebuild_world(place_rects_from_places(places_by_id), intersections, lanes)
+    cells = world.get_intersection_cells_by_key("hub")
+    active, _, _ = classify_intersection_sides("hub", cells, require_centre_two=False)
+    assert overlay_type_for_sides(active) == "corner"
+    assert not world.intersection_has_twins("hub")
+    assert overlay_type_for_intersection("hub", active) == places.INTERSECTION_TYPE_ONE_CORNER
+    spans = mouth_spans_by_edge("hub", cells)
+    local = mouth_spans_local(cells, spans)
+    leftovers = mixed_corner_leftovers(cells, spans, active)
+    img = make_mixed(6, leftovers, family="corner", spans=local)
+    t = ORTHO_TILE_SIZE
+    size = 6 * t
+    assert img.getpixel((size - 4, 4))[3] == 0
+    meet = img.getpixel((8, size - 8))
+    assert meet[3] == 255 and meet[:3] == ROAD_GREY, meet
+    assert _has_color_near(img, CURB_INSET + 1, size - CURB_INSET - 1, WHITE, r=6)
+    GameState()
+
+
+def test_one_lane_offset_fillet_at_mouth_not_aabb() -> None:
+    """1-cell N flush west + 1-cell W at south: micro-fillet sits on the mouth join."""
+    from render.corner_gen import WHITE, make_mixed
+    from render.intersection_topology import corner_leftovers_from_local
+    from render.lane_paint import CURB_INSET
+    from sim.constants import ORTHO_TILE_SIZE
+
+    n = 6
+    spans = {"N": (0, 0), "W": (0, 0)}
+    leftovers = corner_leftovers_from_local(n, spans)
+    assert leftovers == ((0, 0, 5),)
+    img = make_mixed(n, leftovers, family="corner", spans=spans)
+    t = ORTHO_TILE_SIZE
+    size = n * t
+    dx = 5 * t
+    assert img.getpixel((size // 2, size // 2))[3] == 0
+    assert _has_color_near(img, dx + CURB_INSET + 1, size - CURB_INSET - 1, WHITE, r=6)
+    assert img.getpixel((0, size - 1))[3] == 255
+
+
+def test_tee_spandrel_is_pavement() -> None:
+    """Leftover fillet fills the square-outside-arc; AABB corner stays grass."""
+    from render.corner_gen import ROAD_GREY, make_double_tee
+    from sim.constants import ORTHO_TILE_SIZE
+
+    t = ORTHO_TILE_SIZE
+    for cells, r in ((6, t), (8, 2 * t)):
+        img = make_double_tee(
+            cells, axis="ew", stem="N", through_travel=4, stem_travel=4
+        )
+        sx = sy = r - 4
+        sp = img.getpixel((sx, sy))
+        assert sp[3] == 255 and sp[:3] == ROAD_GREY, (cells, sx, sy, sp)
+        assert img.getpixel((0, 0))[3] == 0
+        assert img.getpixel((r + 4, 1))[3] == 255
+
+
+def test_equal_width_corner_follows_pair_table() -> None:
+    """q1 occupies image BR, q3 occupies TL — not the opposite L."""
+    from render.corner_gen import make_double_corner
+
+    img1 = make_double_corner(6, quadrant=1, travel_x=4, travel_y=4)
+    w, h = img1.size
+    assert img1.getpixel((w - 3, h // 2))[3] == 255
+    assert img1.getpixel((w // 2, h - 3))[3] == 255
+    assert img1.getpixel((2, h // 2))[3] == 0
+    assert img1.getpixel((w // 2, 2))[3] == 0
+
+    img3 = make_double_corner(6, quadrant=3, travel_x=4, travel_y=4)
+    w, h = img3.size
+    assert img3.getpixel((2, h // 2))[3] == 255
+    assert img3.getpixel((w // 2, 2))[3] == 255
+    assert img3.getpixel((w - 3, h // 2))[3] == 0
+    assert img3.getpixel((w // 2, h - 3))[3] == 0
+
+
+def test_size4_double_corner_has_outer_curb_no_inner_bite() -> None:
+    from render.corner_gen import WHITE, make_double_corner
+    from render.lane_paint import CURB_INSET, CURB_WIDTH
+
+    img = make_double_corner(4, quadrant=0, travel_x=4, travel_y=4)
+    w, h = img.size
+    assert img.getpixel((0, h - 1))[3] == 255
+    assert _has_color_near(img, 2, 1, WHITE, r=4)
+    assert img.getpixel((w - 4, 4))[3] == 0
+    throat = CURB_INSET + CURB_WIDTH
+    assert _has_color_near(img, throat // 2, h - throat // 2, WHITE, r=4)
+
+
+def test_mixed_leftover_quadrants_match_pair_table() -> None:
+    from render.intersection_topology import corner_leftovers_from_local
+
+    n = 8
+    # E+N leftover at image TL (q3), not BR (q1).
+    spans_ne = {"E": (2, 5), "N": (2, 5)}
+    by_q = {q: (lx, ly) for q, lx, ly in corner_leftovers_from_local(n, spans_ne)}
+    assert 3 in by_q and 1 not in by_q
+    # W+S leftover at image BR (q1), not TL (q3).
+    spans_sw = {"W": (2, 5), "S": (2, 5)}
+    by_q = {q: (lx, ly) for q, lx, ly in corner_leftovers_from_local(n, spans_sw)}
+    assert 1 in by_q and 3 not in by_q
+
+
+def test_mixed_ne_leftover_punches_image_tl() -> None:
+    from render.corner_gen import make_mixed
+    from render.intersection_topology import corner_leftovers_from_local
+
+    n = 8
+    spans = {"N": (2, 5), "S": (2, 5), "E": (2, 5), "W": (2, 5)}
+    leftovers = corner_leftovers_from_local(n, spans)
+    img = make_mixed(n, leftovers, family="cross", spans=spans)
+    t = 32
+    size = n * t
+    assert img.getpixel((1, 1))[3] == 0
+    assert img.getpixel((size - 2, 1))[3] == 0
+    assert img.getpixel((1, size - 2))[3] == 0
+    assert img.getpixel((size - 2, size - 2))[3] == 0
+
+
+def test_width6_centered_span_uses_one_cell_fillet() -> None:
+    """Future triple width: leftover 1 on an 8-cell AABB, no new stamp type."""
+    from render.corner_gen import double_fillet_inner_r, make_double
+    from sim.constants import ORTHO_TILE_SIZE
+
+    assert double_fillet_inner_r(8, 6) == ORTHO_TILE_SIZE
+    img = make_double(8, travel_cells=6)
+    assert img.getpixel((0, 0))[3] == 0
+    r = ORTHO_TILE_SIZE
+    sp = img.getpixel((r - 4, r - 4))
+    assert sp[3] == 255
 
 
 def test_sister_overlay_rects() -> None:
@@ -3664,8 +3989,23 @@ def main() -> None:
         test_mixed_stamp_min_leftover_and_virtual_curb,
         test_mixed_tee_open_face_from_mouth_span,
         test_mixed_corner_is_mouth_L_not_scaled_pie,
+        test_mixed_corner_ns_double_ew_single_on_stamp_axes,
         test_double_tee_classified_open_and_fillet,
+        test_tee_open_face_curb_runs_across,
         test_double_corner_classified_is_L,
+        test_leftover_zero_flush_double_is_opaque,
+        test_leftover_zero_mixed_flush_mouth_paints_throat_L,
+        test_leftover_zero_three_lane_flush_paints_segment,
+        test_leftover_zero_size2_one_lane_paints_throat_L,
+        test_one_stamp_family_and_clamp,
+        test_one_lane_corner_classified_uses_mouth_span,
+        test_one_lane_offset_fillet_at_mouth_not_aabb,
+        test_tee_spandrel_is_pavement,
+        test_equal_width_corner_follows_pair_table,
+        test_size4_double_corner_has_outer_curb_no_inner_bite,
+        test_mixed_leftover_quadrants_match_pair_table,
+        test_mixed_ne_leftover_punches_image_tl,
+        test_width6_centered_span_uses_one_cell_fillet,
         test_sister_overlay_rects,
         test_lane_paint_roles_and_raster,
         test_path_cache_matches_live,

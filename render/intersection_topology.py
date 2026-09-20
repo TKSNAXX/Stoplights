@@ -429,6 +429,63 @@ def is_double_layout(
     )
 
 
+def leftover_xy_for_pair(
+    n: int,
+    local_spans: dict[str, tuple[int, int]],
+    e1: str,
+    e2: str,
+) -> tuple[int, int] | None:
+    """
+    AABB-local leftover_x, leftover_y for one corner. Either may be 0.
+    leftover_x is the east/west shoulder; leftover_y is the north/south shoulder.
+    """
+    pair = frozenset({e1, e2})
+    n = max(0, int(n))
+
+    def span(edge: str) -> tuple[int, int] | None:
+        return local_spans.get(edge)
+
+    if pair == frozenset({"W", "N"}) and span("W") and span("N"):
+        return span("N")[0], (n - 1) - span("W")[1]
+    if pair == frozenset({"S", "W"}) and span("S") and span("W"):
+        return span("S")[0], span("W")[0]
+    if pair == frozenset({"E", "S"}) and span("E") and span("S"):
+        return (n - 1) - span("S")[1], span("E")[0]
+    if pair == frozenset({"N", "E"}) and span("N") and span("E"):
+        return (n - 1) - span("N")[1], (n - 1) - span("E")[1]
+    return None
+
+
+def corner_leftovers_from_local(
+    cells: int,
+    local_spans: dict[str, tuple[int, int]],
+) -> tuple[tuple[int, int, int], ...]:
+    """
+    (quadrant, leftover_x_cells, leftover_y_cells) from AABB-local mouth spans.
+
+    Quadrants are _PAIR_TO_QUADRANT (image-clockwise from BL). Zero leftover
+    still emits the corner so the painter can stroke a throat L (no grass bite).
+    """
+    n = max(0, int(cells))
+    out: list[tuple[int, int, int]] = []
+    seen: set[int] = set()
+    edges = tuple(local_spans)
+    for i, a in enumerate(edges):
+        for b in edges[i + 1 :]:
+            pair = frozenset({a, b})
+            q = _PAIR_TO_QUADRANT.get(pair)
+            if q is None or q in seen:
+                continue
+            xy = leftover_xy_for_pair(n, local_spans, a, b)
+            if xy is None:
+                continue
+            lx, ly = xy
+            if lx >= 0 and ly >= 0:
+                seen.add(q)
+                out.append((q, lx, ly))
+    return tuple(out)
+
+
 def mixed_corner_leftovers(
     cells: list[tuple[int, int]],
     spans: dict[str, tuple[int, int]],
@@ -437,36 +494,17 @@ def mixed_corner_leftovers(
     """
     (quadrant, leftover_x_cells, leftover_y_cells) for corners with two incident faces.
 
-    Quadrants match make_cross image corners (0 NW, 1 NE, 2 SE, 3 SW).
+    Quadrants match _PAIR_TO_QUADRANT (0 W+N, 1 S+W, 2 E+S, 3 N+E).
     leftover_x is the east/west shoulder; leftover_y is the north/south shoulder.
     """
-    x_lo, x_hi, y_lo, y_hi = _bounds_from_cells(cells)
-    out: list[tuple[int, int, int]] = []
-
-    def span(edge: str) -> tuple[int, int] | None:
-        return spans.get(edge)
-
-    if "W" in active and "N" in active and span("W") and span("N"):
-        lw = span("N")[0] - x_lo
-        ln = (y_hi - 1) - span("W")[1]
-        if lw > 0 and ln > 0:
-            out.append((0, lw, ln))
-    if "E" in active and "N" in active and span("E") and span("N"):
-        le = (x_hi - 1) - span("N")[1]
-        ln = (y_hi - 1) - span("E")[1]
-        if le > 0 and ln > 0:
-            out.append((1, le, ln))
-    if "E" in active and "S" in active and span("E") and span("S"):
-        le = (x_hi - 1) - span("S")[1]
-        ls = span("E")[0] - y_lo
-        if le > 0 and ls > 0:
-            out.append((2, le, ls))
-    if "W" in active and "S" in active and span("W") and span("S"):
-        lw = span("S")[0] - x_lo
-        ls = span("W")[0] - y_lo
-        if lw > 0 and ls > 0:
-            out.append((3, lw, ls))
-    return tuple(out)
+    x_lo, x_hi, _y_lo, _y_hi = _bounds_from_cells(cells)
+    n = x_hi - x_lo
+    local = {
+        e: s
+        for e, s in mouth_spans_local(cells, spans).items()
+        if e in active
+    }
+    return corner_leftovers_from_local(n, local)
 
 
 def even_travel_cells(
@@ -505,11 +543,20 @@ def overlay_type_for_intersection(intersection_key: str, active: frozenset[str])
     Stamp kind: Double{Cross,Tee,Corner} only for a closed dual on every
     active face (two centred in/out pairs, RHT). Other twin nodes are Mixed.
     Twin straights stay Mixed through-band (no Double Straight).
+    No twins: One{Cross,Tee,Corner,Straight} — mouth-span Mixed painter.
     """
     from sim import places
 
     if not world.intersection_has_twins(intersection_key):
-        return overlay_type_for_sides(active)
+        family = overlay_type_for_sides(active)
+        if family == places.INTERSECTION_TYPE_NONE:
+            return family
+        return {
+            places.INTERSECTION_TYPE_CROSS: places.INTERSECTION_TYPE_ONE_CROSS,
+            places.INTERSECTION_TYPE_TEE: places.INTERSECTION_TYPE_ONE_TEE,
+            places.INTERSECTION_TYPE_CORNER: places.INTERSECTION_TYPE_ONE_CORNER,
+            places.INTERSECTION_TYPE_STRAIGHT: places.INTERSECTION_TYPE_ONE_STRAIGHT,
+        }.get(family, places.INTERSECTION_TYPE_ONE_CROSS)
     cells = list(world.get_intersection_cells_by_key(intersection_key) or [])
     raw_active, _, _ = classify_intersection_sides(
         intersection_key, cells, require_centre_two=False
