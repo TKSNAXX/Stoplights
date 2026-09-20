@@ -648,10 +648,10 @@ def _stroke_h_curb(draw, y: int, x0: int, x1: int, toward_plus_y: bool) -> None:
 
 def _exterior_L_fillet(img, size: int, spans: dict[str, tuple[int, int]]) -> None:
     """
-    Convex outer of an unequal L: straight from the narrower outer curb to a
-    square of side min(widths), then a quarter-turn to the wider outer.
+    Convex outer of an L: straight from the narrower (or either, if equal)
+    outer curb to a square of side min(widths), then a quarter-turn.
     """
-    if ImageDraw is None or _mouth_widths_equal(spans):
+    if ImageDraw is None:
         return
     n = size // ORTHO_TILE_SIZE
     edges = frozenset(spans)
@@ -865,11 +865,21 @@ def _punch_leftover_extra(draw, size: int, quadrant: int, dx: int, dy: int, r: i
             _fill_band(draw, dx - r, 0, dx, dy - r, clear)
 
 
-def _apply_mixed_corner(img, cells: int, quadrant: int, leftover_x: int, leftover_y: int) -> None:
+def _apply_mixed_corner(
+    img,
+    cells: int,
+    quadrant: int,
+    leftover_x: int,
+    leftover_y: int,
+    family: str = "cross",
+) -> None:
     """Fill leftover plaza, extra-strip grass, inner fillet lip, virtual-sharp curbs.
 
     Leftover 0 on either axis: no grass bite; micro-fillet at the inner join
     (curb-pack quarter-ring) plus leftover-edge curb if one axis remains.
+    Size-2 tee/cross leftover is a 1-cell bite on an asymmetric plaza — force
+    the 0-throat L and punch the leftover cell (no rounded extra). Size-2
+    corners keep the annulus / cell fillet.
     """
     if ImageDraw is None or leftover_x < 0 or leftover_y < 0:
         return
@@ -877,7 +887,8 @@ def _apply_mixed_corner(img, cells: int, quadrant: int, leftover_x: int, leftove
     size = cells * t
     # leftover_x is the E/W (world X) shoulder → image Y; leftover_y is N/S → image X.
     dx, dy = leftover_y * t, leftover_x * t
-    if leftover_x > 0 and leftover_y > 0:
+    size2_plaza = cells <= 2 and family in ("tee", "cross")
+    if leftover_x > 0 and leftover_y > 0 and not size2_plaza:
         inner_r = min(dx, dy)
         draw = ImageDraw.Draw(img)
         x0, y0, x1, y1 = _leftover_box(size, quadrant, dx, dy)
@@ -887,7 +898,9 @@ def _apply_mixed_corner(img, cells: int, quadrant: int, leftover_x: int, leftove
         _stroke_fillet_lip(img, cells, quadrant, inner_r=inner_r, origin=origin)
         _stroke_virtual_curbs(img, size, quadrant, dx, dy, inner_r)
         return
-    # Leftover 0: no grass bite; micro-fillet at the join (curb pack quarter-ring).
+    # Leftover 0, or size-2 tee/cross: no cell fillet; micro-fillet at the join.
+    if leftover_x > 0 and leftover_y > 0:
+        _punch_leftover_extra(ImageDraw.Draw(img), size, quadrant, dx, dy, 0)
     _stroke_virtual_curbs(img, size, quadrant, dx, dy, CURB_INSET)
     origin = _leftover_fillet_origin(size, quadrant, dx, dy, 0)
     _stroke_fillet_lip(img, cells, quadrant, inner_r=0, origin=origin)
@@ -986,12 +999,12 @@ def make_mixed(
         _fill_corner_L(ImageDraw.Draw(img), size, local)
         _exterior_L_fillet(img, size, local)
         for quad, lx, ly in leftovers:
-            _apply_mixed_corner(img, cells, quad, lx, ly)
+            _apply_mixed_corner(img, cells, quad, lx, ly, family=fam)
         return img
 
     img = Image.new("RGBA", (size, size), (*ROAD_GREY, 255))
     for quad, lx, ly in leftovers:
-        _apply_mixed_corner(img, cells, quad, lx, ly)
+        _apply_mixed_corner(img, cells, quad, lx, ly, family=fam)
     if fam == "tee":
         open_edges = frozenset({"N", "S", "E", "W"}) - frozenset(local)
         draw = ImageDraw.Draw(img)

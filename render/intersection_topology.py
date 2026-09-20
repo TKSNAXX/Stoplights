@@ -399,6 +399,78 @@ def _face_closed_dual(
     return not inbound_lower
 
 
+def _face_ins_outs(
+    edge: str,
+    crossings: list[tuple[int, Cardinal, str, int, int]],
+) -> tuple[dict[int, int], dict[int, int]]:
+    ins: dict[int, int] = {}
+    outs: dict[int, int] = {}
+    for i, e, kind, gx, gy in crossings:
+        if e != edge:
+            continue
+        perp = _perp_on_edge(e, gx, gy)
+        if kind == "in":
+            ins[i] = perp
+        else:
+            outs[i] = perp
+    return ins, outs
+
+
+def _face_opposed_pair(
+    intersection_key: str,
+    edge: str,
+    crossings: list[tuple[int, Cardinal, str, int, int]],
+    x_lo: int,
+    x_hi: int,
+    y_lo: int,
+    y_hi: int,
+) -> bool:
+    """One inbound and one outbound, adjacent, centred. Side-of-road is not required."""
+    ins, outs = _face_ins_outs(edge, crossings)
+    if len(ins) != 1 or len(outs) != 1:
+        return False
+    in_i, in_perp = next(iter(ins.items()))
+    out_i, out_perp = next(iter(outs.items()))
+    if abs(in_perp - out_perp) != 1:
+        return False
+    want_in = _EDGE_INBOUND_DIR.get(edge)
+    want_out = _EDGE_OUTBOUND_DIR.get(edge)
+    if world.lane_direction(in_i) != want_in:
+        return False
+    if world.lane_direction(out_i) != want_out:
+        return False
+    lo, hi = min(in_perp, out_perp), max(in_perp, out_perp)
+    aabb_lo, aabb_hi = (y_lo, y_hi) if edge in ("W", "E") else (x_lo, x_hi)
+    return _span_even_centered(lo, hi, aabb_lo, aabb_hi)
+
+
+def is_normal_layout(
+    intersection_key: str,
+    cells: list[tuple[int, int]],
+    raw_active: frozenset[str],
+) -> bool:
+    """
+    Centred opposed pair on every active face: one in, one out, RHT.
+
+    No twins. A lone mouth, extra lane, or off-centre pair fails (those are One).
+    """
+    from sim import places
+
+    family = overlay_type_for_sides(raw_active)
+    if family == places.INTERSECTION_TYPE_NONE:
+        return False
+    if not raw_active:
+        return False
+    x_lo, x_hi, y_lo, y_hi = _bounds_from_cells(cells)
+    crossings = _raw_mouth_crossings(intersection_key, cells)
+    return all(
+        _face_opposed_pair(
+            intersection_key, edge, crossings, x_lo, x_hi, y_lo, y_hi
+        )
+        for edge in raw_active
+    )
+
+
 def is_double_layout(
     intersection_key: str,
     cells: list[tuple[int, int]],
@@ -543,21 +615,32 @@ def overlay_type_for_intersection(intersection_key: str, active: frozenset[str])
     Stamp kind: Double{Cross,Tee,Corner} only for a closed dual on every
     active face (two centred in/out pairs, RHT). Other twin nodes are Mixed.
     Twin straights stay Mixed through-band (no Double Straight).
-    No twins: One{Cross,Tee,Corner,Straight} — mouth-span Mixed painter.
+    No twins: Normal if every face is a centred opposed pair; One if a face
+    has a lone mouth (mouth-span Mixed painter).
     """
     from sim import places
 
+    cells = list(world.get_intersection_cells_by_key(intersection_key) or [])
     if not world.intersection_has_twins(intersection_key):
-        family = overlay_type_for_sides(active)
+        raw_active, _, _ = classify_intersection_sides(
+            intersection_key, cells, require_centre_two=False
+        )
+        family = overlay_type_for_sides(raw_active or active)
         if family == places.INTERSECTION_TYPE_NONE:
             return family
+        if is_normal_layout(intersection_key, cells, raw_active):
+            return {
+                places.INTERSECTION_TYPE_CROSS: places.INTERSECTION_TYPE_NORMAL_CROSS,
+                places.INTERSECTION_TYPE_TEE: places.INTERSECTION_TYPE_NORMAL_TEE,
+                places.INTERSECTION_TYPE_CORNER: places.INTERSECTION_TYPE_NORMAL_CORNER,
+                places.INTERSECTION_TYPE_STRAIGHT: places.INTERSECTION_TYPE_NORMAL_STRAIGHT,
+            }.get(family, places.INTERSECTION_TYPE_NORMAL_CROSS)
         return {
             places.INTERSECTION_TYPE_CROSS: places.INTERSECTION_TYPE_ONE_CROSS,
             places.INTERSECTION_TYPE_TEE: places.INTERSECTION_TYPE_ONE_TEE,
             places.INTERSECTION_TYPE_CORNER: places.INTERSECTION_TYPE_ONE_CORNER,
             places.INTERSECTION_TYPE_STRAIGHT: places.INTERSECTION_TYPE_ONE_STRAIGHT,
         }.get(family, places.INTERSECTION_TYPE_ONE_CROSS)
-    cells = list(world.get_intersection_cells_by_key(intersection_key) or [])
     raw_active, _, _ = classify_intersection_sides(
         intersection_key, cells, require_centre_two=False
     )

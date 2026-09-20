@@ -736,15 +736,27 @@ class StoplightsWindow(arcade.Window):
                     yaw=yaw,
                     spans=local,
                 )
-            elif itype == places.INTERSECTION_TYPE_CROSS:
+            elif itype in (
+                places.INTERSECTION_TYPE_CROSS,
+                places.INTERSECTION_TYPE_NORMAL_CROSS,
+            ):
                 centered_tex = generate_cross_texture(size_cells)
-            elif itype == places.INTERSECTION_TYPE_CORNER:
+            elif itype in (
+                places.INTERSECTION_TYPE_CORNER,
+                places.INTERSECTION_TYPE_NORMAL_CORNER,
+            ):
                 q = corner_quadrant_for_sides(display_active)
                 centered_tex = generate_corner_texture(size_cells, quadrant=q)
-            elif itype == places.INTERSECTION_TYPE_STRAIGHT:
+            elif itype in (
+                places.INTERSECTION_TYPE_STRAIGHT,
+                places.INTERSECTION_TYPE_NORMAL_STRAIGHT,
+            ):
                 ax = rotate_straight_axis(straight_axis_for_intersection(key, cells, active), yaw)
                 centered_tex = generate_straight_texture(size_cells, axis=ax)
-            elif itype == places.INTERSECTION_TYPE_TEE:
+            elif itype in (
+                places.INTERSECTION_TYPE_TEE,
+                places.INTERSECTION_TYPE_NORMAL_TEE,
+            ):
                 world_ax = straight_axis_for_intersection(key, cells, active)
                 axis, stem = tee_layout_for_sides(
                     display_active, through_fallback=rotate_straight_axis(world_ax, yaw)
