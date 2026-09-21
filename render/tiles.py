@@ -129,7 +129,7 @@ _CROSS_TEX_REV = 5
 _DOUBLE_TEX_REV = 5
 _DOUBLE_TEE_TEX_REV = 3
 _DOUBLE_CORNER_TEX_REV = 3
-_MIXED_TEX_REV = 16
+_MIXED_TEX_REV = 19
 
 
 def generate_corner_texture(cells: int, quadrant: int = 0) -> arcade.Texture | None:

@@ -391,6 +391,12 @@ class StoplightsWindow(arcade.Window):
         )
         self._invalidate_draw_cache()
 
+    def zoom_camera_at_cursor(self, zoom_in: bool) -> None:
+        scroll = 1 if zoom_in else -1
+        if self._camera.handle_scroll(scroll, self._mouse_x, self._mouse_y, self.width, self.height):
+            if self._car_sprite_pool is not None:
+                self._car_sprite_pool.set_zoom_scale(self._zoom_scale)
+
     def _start_space_pan(self) -> None:
         if self._camera.pan_fly:
             self.begin_camera_fly(self._mouse_x, self._mouse_y)
@@ -904,6 +910,16 @@ class StoplightsWindow(arcade.Window):
             if fw is not None:
                 return
             self.orbit_camera_about_cursor(clockwise=True)
+            return
+        if hk.action == "zoom_in":
+            if fw is not None:
+                return
+            self.zoom_camera_at_cursor(zoom_in=True)
+            return
+        if hk.action == "zoom_out":
+            if fw is not None:
+                return
+            self.zoom_camera_at_cursor(zoom_in=False)
             return
         if hk.action == "escape":
             if self._draw_tool_active():

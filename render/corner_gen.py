@@ -5,6 +5,8 @@ Corner size = cells * 32 ortho pixels. Band radii offset (not scaled):
 """
 from __future__ import annotations
 
+import math
+
 try:
     from PIL import Image, ImageDraw
 except ImportError:
@@ -958,6 +960,201 @@ def _annulus_radii(
     return q, inner_r, outer_r
 
 
+def _diag_offset(inward: tuple[int, int], dist: int) -> tuple[int, int]:
+    ix, iy = inward
+    s = dist / math.sqrt(2.0)
+    ox, oy = round(ix * s), round(iy * s)
+    if dist and ox == 0 and oy == 0:
+        return ix, iy
+    return ox, oy
+
+
+def _stroke_diag_curb(
+    draw,
+    a: tuple[int, int],
+    b: tuple[int, int],
+    inward: tuple[int, int],
+) -> None:
+    """ROLE_CURB along a 45° hypotenuse: grey inset on the grass side, then white."""
+    og = _diag_offset(inward, CURB_INSET)
+    ow = _diag_offset(inward, CURB_INSET + CURB_WIDTH)
+    if ow == og:
+        ow = (og[0] + inward[0], og[1] + inward[1])
+
+    def add(p: tuple[int, int], o: tuple[int, int]) -> tuple[int, int]:
+        return (p[0] + o[0], p[1] + o[1])
+
+    draw.polygon([a, b, add(b, og), add(a, og)], fill=(*ROAD_GREY, 255))
+    draw.polygon(
+        [add(a, og), add(b, og), add(b, ow), add(a, ow)],
+        fill=(*WHITE, 255),
+    )
+
+
+def _chamfer_blocked_at_pair(
+    n: int,
+    spans: dict[str, tuple[int, int]],
+    e1: str,
+    e2: str,
+) -> bool:
+    """True when that AABB corner is leftover/mouth paint, not a chamfer site.
+
+    Inner leftover (both axes > 0) already has a fillet. Leftover 0 on either
+    axis means the other mouth occupies the corner — no non-mouth D×D room
+    (typical size-4 flush twins). Chamfer only where leftover_xy is None
+    (open face or straight).
+    """
+    from render.intersection_topology import leftover_xy_for_pair
+
+    return leftover_xy_for_pair(n, spans, e1, e2) is not None
+
+
+def _ns_through_chamfer(
+    size: int,
+    n: int,
+    t: int,
+    nspan: tuple[int, int],
+    sspan: tuple[int, int],
+    west: bool,
+    spans: dict[str, tuple[int, int]],
+) -> dict | None:
+    if west:
+        d = nspan[0] - sspan[0]
+        lf, ls = min(nspan[0], sspan[0]), max(nspan[0], sspan[0])
+        y_fat = size - lf * t
+        y_skinny = size - ls * t
+    else:
+        d = sspan[1] - nspan[1]
+        ln = (n - 1) - nspan[1]
+        l_s = (n - 1) - sspan[1]
+        lf, ls = min(ln, l_s), max(ln, l_s)
+        y_fat = lf * t
+        y_skinny = ls * t
+    if d == 0:
+        return None
+    dpx = min(abs(d), n) * t
+    if dpx <= 0:
+        return None
+    skinny_n = d > 0
+    if west:
+        pair = ("W", "N") if skinny_n else ("S", "W")
+    else:
+        pair = ("N", "E") if skinny_n else ("E", "S")
+    if _chamfer_blocked_at_pair(n, spans, pair[0], pair[1]):
+        return None
+    if skinny_n:
+        hyp0, hyp1 = (0, y_skinny), (dpx, y_fat)
+        outer = [(0, y_skinny), (0, y_fat), (dpx, y_fat)]
+        inner = [(0, y_skinny), (dpx, y_skinny), (dpx, y_fat)]
+        inward = (1, -1) if west else (1, 1)
+    else:
+        hyp0, hyp1 = (size, y_skinny), (size - dpx, y_fat)
+        outer = [(size, y_skinny), (size, y_fat), (size - dpx, y_fat)]
+        inner = [(size, y_skinny), (size - dpx, y_skinny), (size - dpx, y_fat)]
+        inward = (-1, -1) if west else (-1, 1)
+    return {
+        "inner": inner,
+        "outer": outer,
+        "hyp0": hyp0,
+        "hyp1": hyp1,
+        "inward": inward,
+    }
+
+
+def _ew_through_chamfer(
+    size: int,
+    n: int,
+    t: int,
+    espan: tuple[int, int],
+    wspan: tuple[int, int],
+    south: bool,
+    spans: dict[str, tuple[int, int]],
+) -> dict | None:
+    if south:
+        d = espan[0] - wspan[0]
+        lf, ls = min(espan[0], wspan[0]), max(espan[0], wspan[0])
+        x_fat = size - lf * t
+        x_skinny = size - ls * t
+    else:
+        d = wspan[1] - espan[1]
+        le = (n - 1) - espan[1]
+        lw = (n - 1) - wspan[1]
+        lf, ls = min(le, lw), max(le, lw)
+        x_fat = lf * t
+        x_skinny = ls * t
+    if d == 0:
+        return None
+    dpx = min(abs(d), n) * t
+    if dpx <= 0:
+        return None
+    skinny_e = d > 0
+    if south:
+        pair = ("E", "S") if skinny_e else ("S", "W")
+    else:
+        pair = ("N", "E") if skinny_e else ("W", "N")
+    if _chamfer_blocked_at_pair(n, spans, pair[0], pair[1]):
+        return None
+    if skinny_e:
+        hyp0, hyp1 = (x_skinny, 0), (x_fat, dpx)
+        outer = [(x_skinny, 0), (x_fat, 0), (x_fat, dpx)]
+        inner = [(x_skinny, 0), (x_skinny, dpx), (x_fat, dpx)]
+        inward = (-1, 1) if south else (1, 1)
+    else:
+        hyp0, hyp1 = (x_skinny, size), (x_fat, size - dpx)
+        outer = [(x_skinny, size), (x_fat, size), (x_fat, size - dpx)]
+        inner = [(x_skinny, size), (x_skinny, size - dpx), (x_fat, size - dpx)]
+        inward = (-1, -1) if south else (1, -1)
+    return {
+        "inner": inner,
+        "outer": outer,
+        "hyp0": hyp0,
+        "hyp1": hyp1,
+        "inward": inward,
+    }
+
+
+def _through_chamfer_specs(
+    cells: int,
+    spans: dict[str, tuple[int, int]],
+) -> list[dict]:
+    """D×D 45° tapers on the outside of an opposite-mouth width step.
+
+    A two-axis leftover corner already has a concave inner fillet; skip those.
+    """
+    n = max(0, int(cells))
+    t = ORTHO_TILE_SIZE
+    size = n * t
+    out: list[dict] = []
+    if "N" in spans and "S" in spans:
+        for west in (True, False):
+            spec = _ns_through_chamfer(
+                size, n, t, spans["N"], spans["S"], west, spans
+            )
+            if spec is not None:
+                out.append(spec)
+    if "E" in spans and "W" in spans:
+        for south in (True, False):
+            spec = _ew_through_chamfer(
+                size, n, t, spans["E"], spans["W"], south, spans
+            )
+            if spec is not None:
+                out.append(spec)
+    return out
+
+
+def _apply_through_chamfers(img, cells: int, spans: dict[str, tuple[int, int]]) -> None:
+    """Replace opposite-mouth width jogs with a 45° curb chamfer."""
+    if ImageDraw is None or not spans:
+        return
+    draw = ImageDraw.Draw(img)
+    clear = (0, 0, 0, 0)
+    grey = (*ROAD_GREY, 255)
+    for spec in _through_chamfer_specs(cells, spans):
+        draw.polygon(spec["inner"], fill=grey)
+        draw.polygon(spec["outer"], fill=clear)
+        _stroke_diag_curb(draw, spec["hyp0"], spec["hyp1"], spec["inward"])
+
+
 def make_mixed(
     cells: int,
     leftovers: tuple[tuple[int, int, int], ...],
@@ -967,11 +1164,13 @@ def make_mixed(
     spans: dict[str, tuple[int, int]] | None = None,
 ):
     """
-    Mouth-span overlay: leftover fillets + family clip.
+    Mouth-span overlay: leftover fillets + family clip + through-width chamfers.
 
     Corner with equal mouth widths is a constant-width annulus (inner leftover,
     outer leftover + width). Unequal mouths keep an L, an exterior outer fillet,
-    and an inner leftover fillet.
+    and an inner leftover fillet. Cross/tee/straight taper the *outside* of
+    opposite-mouth width steps with a 45° chamfer; inner leftover corners keep
+    the fillet. Corners are not chamfered.
     leftovers are (quadrant, leftover_x_cells, leftover_y_cells).
     spans are local cell inclusive (min, max) per pierced edge.
     """
@@ -988,6 +1187,7 @@ def make_mixed(
     if fam == "straight":
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         _fill_through_band(ImageDraw.Draw(img), size, local)
+        _apply_through_chamfers(img, cells, local)
         return img
     if fam == "corner":
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
@@ -1011,6 +1211,7 @@ def make_mixed(
         for edge in open_edges:
             _punch_open_edge(draw, size, edge, local)
             _stroke_open_face_curb(img, size, edge, local)
+    _apply_through_chamfers(img, cells, local)
     return img
 
 

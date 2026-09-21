@@ -29,6 +29,8 @@ HOTKEYS: tuple[Hotkey, ...] = (
     Hotkey(arcade.key.CAPSLOCK, "cam_toggle_fly", "Caps", WHEN_ALWAYS),
     Hotkey(arcade.key.COMMA, "orbit_ccw", ",", WHEN_ALWAYS),
     Hotkey(arcade.key.PERIOD, "orbit_cw", ".", WHEN_ALWAYS),
+    Hotkey(arcade.key.MINUS, "zoom_out", "-", WHEN_ALWAYS),
+    Hotkey(arcade.key.EQUAL, "zoom_in", "=", WHEN_ALWAYS),
     Hotkey(arcade.key.V, "toggle_visibility_fans", "V", WHEN_ALWAYS),
     Hotkey(arcade.key.LSHIFT, "select_toggle_mode", "Shift", WHEN_SELECT),
     Hotkey(arcade.key.RSHIFT, "select_toggle_mode", "Shift", WHEN_SELECT),

@@ -2788,6 +2788,109 @@ def test_size2_one_asymmetric_uses_zero_throat_L() -> None:
     assert corner.getpixel((1, size - 1))[3] == 0
 
 
+def test_through_width_chamfer_cross_tee_and_skip() -> None:
+    """Chamfer needs leftover room; two-mouth corners keep fillet / 0-throat L."""
+    from render.corner_gen import (
+        ROAD_GREY,
+        WHITE,
+        _through_chamfer_specs,
+        make_mixed,
+    )
+    from render.intersection_topology import corner_leftovers_from_local
+    from sim.constants import ORTHO_TILE_SIZE
+
+    def _centroid(tri: list[tuple[int, int]]) -> tuple[int, int]:
+        xs = [p[0] for p in tri]
+        ys = [p[1] for p in tri]
+        return sum(xs) // len(xs), sum(ys) // len(ys)
+
+    n = 6
+    t = ORTHO_TILE_SIZE
+    size = n * t
+
+    def _clamp_xy(x: int, y: int) -> tuple[int, int]:
+        return min(size - 1, max(0, x)), min(size - 1, max(0, y))
+
+    # Inner leftover (both axes > 0): fillet, not chamfer.
+    inner_spans = {"N": (1, 2), "S": (2, 2), "W": (1, 2), "E": (1, 2)}
+    assert _through_chamfer_specs(n, inner_spans) == []
+    inner_img = make_mixed(
+        n,
+        corner_leftovers_from_local(n, inner_spans),
+        family="cross",
+        spans=inner_spans,
+    )
+    leftover_plaza = inner_img.getpixel((size - t + 2, size - 2 * t + 2))
+    assert leftover_plaza[3] == 255 and leftover_plaza[:3] == ROAD_GREY, leftover_plaza
+    assert inner_img.getpixel((size - 2, size - 2))[3] == 0
+
+    # Size-4 flush twins: leftover 0 on a perp axis, no D×D room.
+    n4 = 4
+    size4 = n4 * t
+    flush4 = {"N": (0, 1), "S": (1, 1), "W": (0, 1), "E": (0, 1)}
+    assert _through_chamfer_specs(n4, flush4) == []
+    img4 = make_mixed(
+        n4,
+        corner_leftovers_from_local(n4, flush4),
+        family="cross",
+        spans=flush4,
+    )
+    meet4 = img4.getpixel((size4 // 2, size4 // 2))
+    assert meet4[3] == 255 and meet4[:3] == ROAD_GREY, meet4
+
+    # Four-way with a perp mouth occupies the corner even on size 6.
+    occupied = {"N": (0, 1), "S": (1, 1), "W": (0, 1), "E": (0, 1)}
+    assert _through_chamfer_specs(n, occupied) == []
+
+    # Tee: chamfer the open through-side, not the stem leftover corner.
+    tee_spans = {"N": (0, 1), "S": (1, 1), "E": (0, 1)}
+    tee_specs = _through_chamfer_specs(n, tee_spans)
+    assert len(tee_specs) == 1
+    tee = make_mixed(
+        n,
+        corner_leftovers_from_local(n, tee_spans),
+        family="tee",
+        axis="ns",
+        stem="E",
+        spans=tee_spans,
+    )
+    tox, toy = _clamp_xy(*_centroid(tee_specs[0]["outer"]))
+    assert tee.getpixel((tox, toy))[3] == 0
+    tix, tiy = _clamp_xy(*_centroid(tee_specs[0]["inner"]))
+    tp = tee.getpixel((tix, tiy))
+    assert tp[3] == 255 and tp[:3] == ROAD_GREY, tp
+
+    st_spans = {"N": (1, 2), "S": (2, 2)}
+    st_specs = _through_chamfer_specs(n, st_spans)
+    assert len(st_specs) == 1
+    st = make_mixed(n, (), family="straight", spans=st_spans)
+    sox, soy = _clamp_xy(*_centroid(st_specs[0]["outer"]))
+    assert st.getpixel((sox, soy))[3] == 0
+    six, siy = _clamp_xy(*_centroid(st_specs[0]["inner"]))
+    sp = st.getpixel((six, siy))
+    assert sp[3] == 255 and sp[:3] == ROAD_GREY, sp
+    assert _has_color_near(
+        st,
+        (st_specs[0]["hyp0"][0] + st_specs[0]["hyp1"][0]) // 2,
+        (st_specs[0]["hyp0"][1] + st_specs[0]["hyp1"][1]) // 2,
+        WHITE,
+        r=8,
+    )
+
+    corner_spans = {"N": (1, 2), "W": (0, 0)}
+    assert _through_chamfer_specs(n, corner_spans) == []
+    corner = make_mixed(
+        n,
+        corner_leftovers_from_local(n, corner_spans),
+        family="corner",
+        spans=corner_spans,
+    )
+    assert corner.getpixel((size - 2, 2))[3] == 0
+
+    eq = {"N": (1, 2), "S": (1, 2), "E": (1, 2), "W": (1, 2)}
+    assert _through_chamfer_specs(n, eq) == []
+
+
 def test_one_stamp_family_and_clamp() -> None:
     assert places.overlay_stamp_family(places.INTERSECTION_TYPE_ONE_CROSS) == "cross"
     assert places.overlay_stamp_family(places.INTERSECTION_TYPE_ONE_TEE) == "tee"
@@ -4065,6 +4168,7 @@ def main() -> None:
         test_leftover_zero_three_lane_flush_paints_segment,
         test_leftover_zero_size2_one_lane_paints_throat_L,
         test_size2_one_asymmetric_uses_zero_throat_L,
+        test_through_width_chamfer_cross_tee_and_skip,
         test_one_stamp_family_and_clamp,
         test_one_lane_corner_classified_uses_mouth_span,
         test_one_lane_offset_fillet_at_mouth_not_aabb,
