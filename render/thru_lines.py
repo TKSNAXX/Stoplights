@@ -261,19 +261,22 @@ def _paint_oncoming_stripe(img, split: int, horizontal: bool) -> None:
 
 
 def _paint_sister_stripe(img, split: int, horizontal: bool) -> None:
+    """2px dash, same weight as the corner sister arc and the yellow pair."""
     grey = _road_grey()
     white = _white()
     style = STYLES[ROLE_SISTER]
     px = img.load()
     w, h = img.size
     if horizontal:
-        for x in range(w):
-            if dash_on_at(style, x):
-                _stamp(px, x, split, w, h, white, grey)
+        for y in (split, split + 1):
+            for x in range(w):
+                if dash_on_at(style, x):
+                    _stamp(px, x, y, w, h, white, grey)
     else:
-        for y in range(h):
-            if dash_on_at(style, y):
-                _stamp(px, split, y, w, h, white, grey)
+        for x in (split, split + 1):
+            for y in range(h):
+                if dash_on_at(style, y):
+                    _stamp(px, x, y, w, h, white, grey)
 
 
 def _blend_overlay(img, overlay) -> None:

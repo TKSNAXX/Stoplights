@@ -4240,7 +4240,7 @@ def test_paint_thru_lines_three_cell_mixed_corner() -> None:
 
 
 def test_paint_thru_lines_mixed_tee_through() -> None:
-    from render.corner_gen import YELLOW, make_mixed
+    from render.corner_gen import WHITE, YELLOW, make_mixed
     from render.intersection_topology import (
         classify_intersection_sides,
         mixed_corner_leftovers,
@@ -4297,6 +4297,10 @@ def test_paint_thru_lines_mixed_tee_through() -> None:
     assert img.getpixel((split - 4, size // 2))[:3] == YELLOW
     assert img.getpixel((size - 4, size // 2))[3] == 0
     assert img.getpixel((8, 8))[:3] != YELLOW
+    # Sister dash on the through band is two pixels, not one.
+    sister = (8 - 3) * t
+    assert img.getpixel((sister, size // 2))[:3] == WHITE
+    assert img.getpixel((sister + 1, size // 2))[:3] == WHITE
     GameState()
 
 
