@@ -224,6 +224,7 @@ def _normalize_intersection(raw: dict) -> dict:
         "center_y": int(raw.get("center_y", 48)),
         "size_cells": clamp_intersection_size(int(raw.get("size_cells", places.INTERSECTION_SIZE_DEFAULT))),
         "protected": bool(raw.get("protected", False)),
+        "paint_thru_lines": bool(raw.get("paint_thru_lines", True)),
     }
 
 
@@ -371,6 +372,7 @@ def scenario_to_game_dicts(scenario: dict) -> tuple[
             center_x=int(raw["center_x"]),
             center_y=int(raw["center_y"]),
             protected=bool(raw.get("protected", False)),
+            paint_thru_lines=bool(raw.get("paint_thru_lines", True)),
         )
 
     lanes_by_id: dict[int, places.LaneConfig] = {}
@@ -449,6 +451,7 @@ def game_to_scenario(game: "GameState", window=None) -> dict:
             "center_y": cfg.center_y,
             "size_cells": cfg.size_cells,
             "protected": bool(getattr(cfg, "protected", False)),
+            "paint_thru_lines": bool(getattr(cfg, "paint_thru_lines", True)),
         }
     lanes_out: dict[str, dict] = {}
     for idx, cfg in game.lanes.items():

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from draw_compat import ipx, rect_filled
-from ui.theme import ICON_BUTTON_BG, SLIDER_TRACK
+from ui.theme import ICON_BUTTON_BG, ICON_BUTTON_DISABLED_BG, ICON_BUTTON_DISABLED_FG, SLIDER_TRACK
 
 
 class Switch:
@@ -17,11 +17,13 @@ class Switch:
         initial_value: bool = True,
         bar_color: tuple[int, int, int] = SLIDER_TRACK,
         thumb_color: tuple[int, int, int] = ICON_BUTTON_BG,
+        enabled: bool = True,
     ):
         self.rect = (left, bottom, width, height)
         self.value = initial_value
         self.bar_color = bar_color
         self.thumb_color = thumb_color
+        self.enabled = enabled
 
     def contains(self, x: float, y: float) -> bool:
         left, bottom, width, height = self.rect
@@ -34,6 +36,8 @@ class Switch:
     def on_press(self, x: float, y: float) -> bool:
         if not self.contains(x, y):
             return False
+        if not self.enabled:
+            return True
         self.toggle()
         return True
 
@@ -48,10 +52,12 @@ class Switch:
         left, bottom, width, height = ipx(left), ipx(bottom), ipx(width), ipx(height)
         track_h = max(4, height // 3)
         track_b = bottom + (height - track_h) // 2
-        rect_filled(left, track_b, width, track_h, self.bar_color)
+        bar = self.bar_color if self.enabled else ICON_BUTTON_DISABLED_FG
+        thumb_c = self.thumb_color if self.enabled else ICON_BUTTON_DISABLED_BG
+        rect_filled(left, track_b, width, track_h, bar)
         thumb = min(width, height) - 2
         if self.value:
             tx = left + width - thumb
         else:
             tx = left
-        rect_filled(tx, bottom + (height - thumb) // 2, thumb, thumb, self.thumb_color)
+        rect_filled(tx, bottom + (height - thumb) // 2, thumb, thumb, thumb_c)

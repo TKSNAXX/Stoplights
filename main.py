@@ -698,6 +698,7 @@ class StoplightsWindow(arcade.Window):
             display_active = rotate_sides(active, yaw)
             itype = overlay_type_for_intersection(key, display_active)
             centered_tex: arcade.Texture | None = None
+            paint_thru = bool(getattr(cfg, "paint_thru_lines", True)) if cfg else True
             if itype == places.INTERSECTION_TYPE_NONE:
                 pass
             elif (
@@ -741,6 +742,8 @@ class StoplightsWindow(arcade.Window):
                     stem=stem,
                     yaw=yaw,
                     spans=local,
+                    paint_thru_lines=paint_thru,
+                    intersection_key=key,
                 )
             elif itype in (
                 places.INTERSECTION_TYPE_CROSS,
@@ -752,13 +755,17 @@ class StoplightsWindow(arcade.Window):
                 places.INTERSECTION_TYPE_NORMAL_CORNER,
             ):
                 q = corner_quadrant_for_sides(display_active)
-                centered_tex = generate_corner_texture(size_cells, quadrant=q)
+                centered_tex = generate_corner_texture(
+                    size_cells, quadrant=q, paint_thru_lines=paint_thru
+                )
             elif itype in (
                 places.INTERSECTION_TYPE_STRAIGHT,
                 places.INTERSECTION_TYPE_NORMAL_STRAIGHT,
             ):
                 ax = rotate_straight_axis(straight_axis_for_intersection(key, cells, active), yaw)
-                centered_tex = generate_straight_texture(size_cells, axis=ax)
+                centered_tex = generate_straight_texture(
+                    size_cells, axis=ax, paint_thru_lines=paint_thru
+                )
             elif itype in (
                 places.INTERSECTION_TYPE_TEE,
                 places.INTERSECTION_TYPE_NORMAL_TEE,
@@ -767,7 +774,9 @@ class StoplightsWindow(arcade.Window):
                 axis, stem = tee_layout_for_sides(
                     display_active, through_fallback=rotate_straight_axis(world_ax, yaw)
                 )
-                centered_tex = generate_tee_texture(size_cells, axis=axis, stem=stem)
+                centered_tex = generate_tee_texture(
+                    size_cells, axis=axis, stem=stem, paint_thru_lines=paint_thru
+                )
             self._overlay_intersection(cells, centered_tex, road_cross_tex, center_x, center_y)
 
         self._rebuild_building_sprites(center_x, center_y)

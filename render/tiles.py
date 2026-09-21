@@ -114,25 +114,30 @@ class TileSet:
         return len(self._textures)
 
 
-_corner_texture_cache: dict[tuple[int, int], arcade.Texture] = {}
-_straight_texture_cache: dict[tuple[int, str, int], arcade.Texture] = {}
-_tee_texture_cache: dict[tuple[int, str, str, int], arcade.Texture] = {}
+_corner_texture_cache: dict[tuple, arcade.Texture] = {}
+_straight_texture_cache: dict[tuple, arcade.Texture] = {}
+_tee_texture_cache: dict[tuple, arcade.Texture] = {}
 _cross_texture_cache: dict[tuple[int, int], arcade.Texture] = {}
 _double_texture_cache: dict[tuple, arcade.Texture] = {}
 _double_tee_texture_cache: dict[tuple, arcade.Texture] = {}
 _double_corner_texture_cache: dict[tuple, arcade.Texture] = {}
 _mixed_texture_cache: dict[tuple, arcade.Texture] = {}
 _lane_paint_cache: dict[tuple, arcade.Texture] = {}
-_STRAIGHT_TEX_REV = 11
-_TEE_TEX_REV = 7
+_STRAIGHT_TEX_REV = 12
+_TEE_TEX_REV = 8
 _CROSS_TEX_REV = 5
 _DOUBLE_TEX_REV = 5
 _DOUBLE_TEE_TEX_REV = 3
 _DOUBLE_CORNER_TEX_REV = 3
-_MIXED_TEX_REV = 19
+_MIXED_TEX_REV = 20
+_CORNER_TEX_REV = 1
 
 
-def generate_corner_texture(cells: int, quadrant: int = 0) -> arcade.Texture | None:
+def generate_corner_texture(
+    cells: int,
+    quadrant: int = 0,
+    paint_thru_lines: bool = True,
+) -> arcade.Texture | None:
     """
     Generate corner texture for given cell count and quadrant 0..3. Cached by (cells, quadrant).
     Returns None if Pillow unavailable.
@@ -143,20 +148,25 @@ def generate_corner_texture(cells: int, quadrant: int = 0) -> arcade.Texture | N
     if cells % 2 != 0:
         cells = (cells // 2) * 2
     q = quadrant % 4
-    key = (cells, q)
+    paint = bool(paint_thru_lines)
+    key = (cells, q, paint, _CORNER_TEX_REV)
     if key in _corner_texture_cache:
         return _corner_texture_cache[key]
     try:
-        ortho_img = make_corner(cells, quadrant=q)
+        ortho_img = make_corner(cells, quadrant=q, paint_thru_lines=paint)
         iso_img = ortho_to_iso_large(ortho_img, cells=cells)
-        tex = arcade.Texture(iso_img, name=f"corner_{cells}_q{q}")
+        tex = arcade.Texture(iso_img, name=f"corner_{cells}_q{q}_p{int(paint)}_r{_CORNER_TEX_REV}")
         _corner_texture_cache[key] = tex
         return tex
     except Exception:
         return None
 
 
-def generate_straight_texture(cells: int, axis: str = "ns") -> arcade.Texture | None:
+def generate_straight_texture(
+    cells: int,
+    axis: str = "ns",
+    paint_thru_lines: bool = True,
+) -> arcade.Texture | None:
     """Straight-through overlay: dual centre lanes on grey. Cached by (cells, axis)."""
     if Image is None:
         return None
@@ -164,20 +174,26 @@ def generate_straight_texture(cells: int, axis: str = "ns") -> arcade.Texture | 
     if cells % 2 != 0:
         cells = (cells // 2) * 2
     ax = axis if axis in ("ns", "ew") else "ns"
-    key = (cells, ax, _STRAIGHT_TEX_REV)
+    paint = bool(paint_thru_lines)
+    key = (cells, ax, paint, _STRAIGHT_TEX_REV)
     if key in _straight_texture_cache:
         return _straight_texture_cache[key]
     try:
-        ortho_img = make_straight_through(cells, axis=ax)
+        ortho_img = make_straight_through(cells, axis=ax, paint_thru_lines=paint)
         iso_img = ortho_to_iso_large(ortho_img, cells=cells)
-        tex = arcade.Texture(iso_img, name=f"straight_{cells}_{ax}_r{_STRAIGHT_TEX_REV}")
+        tex = arcade.Texture(iso_img, name=f"straight_{cells}_{ax}_p{int(paint)}_r{_STRAIGHT_TEX_REV}")
         _straight_texture_cache[key] = tex
         return tex
     except Exception:
         return None
 
 
-def generate_tee_texture(cells: int, axis: str = "ns", stem: str = "E") -> arcade.Texture | None:
+def generate_tee_texture(
+    cells: int,
+    axis: str = "ns",
+    stem: str = "E",
+    paint_thru_lines: bool = True,
+) -> arcade.Texture | None:
     """Tee overlay: through dual-lane band plus stem-side fillets. Cached by (cells, axis, stem)."""
     if Image is None:
         return None
@@ -186,13 +202,14 @@ def generate_tee_texture(cells: int, axis: str = "ns", stem: str = "E") -> arcad
         cells = (cells // 2) * 2
     ax = axis if axis in ("ns", "ew") else "ns"
     st = stem if stem in ("N", "S", "E", "W") else "E"
-    key = (cells, ax, st, _TEE_TEX_REV)
+    paint = bool(paint_thru_lines)
+    key = (cells, ax, st, paint, _TEE_TEX_REV)
     if key in _tee_texture_cache:
         return _tee_texture_cache[key]
     try:
-        ortho_img = make_tee(cells, axis=ax, stem=st)
+        ortho_img = make_tee(cells, axis=ax, stem=st, paint_thru_lines=paint)
         iso_img = ortho_to_iso_large(ortho_img, cells=cells)
-        tex = arcade.Texture(iso_img, name=f"tee_{cells}_{ax}_{st}_r{_TEE_TEX_REV}")
+        tex = arcade.Texture(iso_img, name=f"tee_{cells}_{ax}_{st}_p{int(paint)}_r{_TEE_TEX_REV}")
         _tee_texture_cache[key] = tex
         return tex
     except Exception:
@@ -320,10 +337,14 @@ def generate_mixed_texture(
     stem: str = "E",
     yaw: int = 0,
     spans: dict[str, tuple[int, int]] | None = None,
+    paint_thru_lines: bool = True,
+    intersection_key: str | None = None,
 ) -> arcade.Texture | None:
-    """Mouth-based twin stamp. Cached by leftovers, spans, family, yaw."""
+    """Mouth-based twin stamp. Cached by leftovers, spans, family, yaw, thru paint."""
     if Image is None:
         return None
+    from render.thru_lines import frozen_thru_profile
+
     cells = max(2, min(12, cells))
     if cells % 2 != 0:
         cells = (cells // 2) * 2
@@ -331,18 +352,35 @@ def generate_mixed_texture(
     st = stem if stem in ("N", "S", "E", "W") else "E"
     fam = family if family in ("cross", "tee", "corner", "straight") else "cross"
     yq = int(yaw) % 4
+    paint = bool(paint_thru_lines)
     frozen_spans = tuple(sorted((e, lo, hi) for e, (lo, hi) in (spans or {}).items()))
-    key = (cells, leftovers, fam, ax, st, yq, frozen_spans, _MIXED_TEX_REV)
+    thru_key = frozen_thru_profile(
+        cells,
+        fam,
+        axis=ax,
+        stem=st,
+        spans=spans,
+        intersection_key=intersection_key,
+        paint=paint,
+    )
+    key = (cells, leftovers, fam, ax, st, yq, frozen_spans, paint, thru_key, _MIXED_TEX_REV)
     if key in _mixed_texture_cache:
         return _mixed_texture_cache[key]
     try:
         ortho_img = make_mixed(
-            cells, leftovers, family=fam, axis=ax, stem=st, spans=spans or {}
+            cells,
+            leftovers,
+            family=fam,
+            axis=ax,
+            stem=st,
+            spans=spans or {},
+            paint_thru_lines=paint,
+            intersection_key=intersection_key,
         )
         if yq:
             ortho_img = ortho_img.rotate(-90 * yq, expand=False)
         iso_img = ortho_to_iso_large(ortho_img, cells=cells)
-        tex = arcade.Texture(iso_img, name=f"mixed_{cells}_{fam}_{yq}_r{_MIXED_TEX_REV}")
+        tex = arcade.Texture(iso_img, name=f"mixed_{cells}_{fam}_{yq}_p{int(paint)}_r{_MIXED_TEX_REV}")
         _mixed_texture_cache[key] = tex
         return tex
     except Exception:

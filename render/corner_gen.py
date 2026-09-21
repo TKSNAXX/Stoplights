@@ -75,7 +75,7 @@ def _corner_bands(cells: int) -> tuple[int, list[tuple[tuple[int, int, int], int
     return size, bands
 
 
-def make_corner(cells: int = 4, quadrant: int = 0):
+def make_corner(cells: int = 4, quadrant: int = 0, paint_thru_lines: bool = True):
     """
     Generate corner ortho image for given cell count. Size = cells * 32.
     quadrant 0..3 selects arc corner / sweep (W+N, S+W, E+S, N+E connectivity).
@@ -98,6 +98,8 @@ def make_corner(cells: int = 4, quadrant: int = 0):
     draw.pieslice(bbox_base, start_angle, end_angle, fill=(*ROAD_GREY, 255))
 
     for color, r_inner, r_outer in bands:
+        if color == YELLOW:
+            continue
         bbox = (arc_cx - r_outer, arc_cy - r_outer, arc_cx + r_outer, arc_cy + r_outer)
         draw.pieslice(bbox, start_angle, end_angle, fill=(*color, 255))
         if r_inner > 0:
@@ -106,6 +108,10 @@ def make_corner(cells: int = 4, quadrant: int = 0):
 
     bbox_inner = (arc_cx - inner_r, arc_cy - inner_r, arc_cx + inner_r, arc_cy + inner_r)
     draw.pieslice(bbox_inner, start_angle, end_angle, fill=(0, 0, 0, 0))
+    if paint_thru_lines:
+        from render.thru_lines import stroke_thru_lines
+
+        stroke_thru_lines(img, cells, "corner", quadrant=quadrant, paint=True)
     return img
 
 
@@ -214,7 +220,12 @@ def make_corner_fillet(cells: int = 4, quadrant: int = 0):
     return img
 
 
-def make_straight_through(cells: int = 4, axis: str = "ns", omit_white: str | None = None):
+def make_straight_through(
+    cells: int = 4,
+    axis: str = "ns",
+    omit_white: str | None = None,
+    paint_thru_lines: bool = True,
+):
     """
     Ortho patch for straight-through intersections: grey only on the dual-carriageway band (two ortho
     cells); outside stays transparent so the iso sprite does not paint a full diamond over grass.
@@ -262,13 +273,16 @@ def make_straight_through(cells: int = 4, axis: str = "ns", omit_white: str | No
             h_white_outer_1px(ya + 2)
         if omit_white not in ("hi", "both"):
             h_white_outer_1px(white_outer_bottom)
-        _stroke_through_yellows(draw, size, split, "ns")
     else:
         if omit_white not in ("lo", "both"):
             v_white_outer_1px(xa + 2)
         if omit_white not in ("hi", "both"):
             v_white_outer_1px(white_outer_right)
-        _stroke_through_yellows(draw, size, split, "ew")
+
+    if paint_thru_lines:
+        from render.thru_lines import stroke_thru_lines
+
+        stroke_thru_lines(img, cells, "straight", axis=axis, paint=True)
 
     return img
 
@@ -1162,6 +1176,8 @@ def make_mixed(
     axis: str = "ns",
     stem: str = "E",
     spans: dict[str, tuple[int, int]] | None = None,
+    paint_thru_lines: bool = True,
+    intersection_key: str | None = None,
 ):
     """
     Mouth-span overlay: leftover fillets + family clip + through-width chamfers.
@@ -1188,6 +1204,9 @@ def make_mixed(
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         _fill_through_band(ImageDraw.Draw(img), size, local)
         _apply_through_chamfers(img, cells, local)
+        _stroke_mixed_thru(
+            img, cells, fam, axis, stem, local, paint_thru_lines, intersection_key
+        )
         return img
     if fam == "corner":
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
@@ -1195,11 +1214,17 @@ def make_mixed(
         if radii is not None:
             q, inner_r, outer_r = radii
             _draw_constant_width_annulus(img, cells, q, inner_r, outer_r)
+            _stroke_mixed_thru(
+                img, cells, fam, axis, stem, local, paint_thru_lines, intersection_key
+            )
             return img
         _fill_corner_L(ImageDraw.Draw(img), size, local)
         _exterior_L_fillet(img, size, local)
         for quad, lx, ly in leftovers:
             _apply_mixed_corner(img, cells, quad, lx, ly, family=fam)
+        _stroke_mixed_thru(
+            img, cells, fam, axis, stem, local, paint_thru_lines, intersection_key
+        )
         return img
 
     img = Image.new("RGBA", (size, size), (*ROAD_GREY, 255))
@@ -1212,10 +1237,39 @@ def make_mixed(
             _punch_open_edge(draw, size, edge, local)
             _stroke_open_face_curb(img, size, edge, local)
     _apply_through_chamfers(img, cells, local)
+    _stroke_mixed_thru(
+        img, cells, fam, axis, stem, local, paint_thru_lines, intersection_key
+    )
     return img
 
 
-def make_tee(cells: int = 4, axis: str = "ns", stem: str = "E"):
+def _stroke_mixed_thru(
+    img,
+    cells: int,
+    family: str,
+    axis: str,
+    stem: str,
+    spans: dict[str, tuple[int, int]],
+    paint_thru_lines: bool,
+    intersection_key: str | None,
+) -> None:
+    if not paint_thru_lines:
+        return
+    from render.thru_lines import stroke_thru_lines
+
+    stroke_thru_lines(
+        img,
+        cells,
+        family,
+        axis=axis,
+        stem=stem,
+        spans=spans,
+        intersection_key=intersection_key,
+        paint=True,
+    )
+
+
+def make_tee(cells: int = 4, axis: str = "ns", stem: str = "E", paint_thru_lines: bool = True):
     """
     Through dual-lane lines plus two stem-side corner fillets.
 
@@ -1238,12 +1292,15 @@ def make_tee(cells: int = 4, axis: str = "ns", stem: str = "E"):
         elif stem == "S":
             omit_white = "hi"
 
-    img = make_straight_through(cells, axis=axis, omit_white=omit_white)
+    img = make_straight_through(cells, axis=axis, omit_white=omit_white, paint_thru_lines=False)
     _fill_stem_shoulder(img, cells, axis, stem)
     quads = tee_corner_quadrants(stem)  # type: ignore[arg-type]
-    _restroke_axis_yellows(img, cells, axis)
     _restroke_open_side_white(img, cells, axis, omit_white)
     for q in quads:
         _stroke_fillet_lip(img, cells, q)
     _clear_open_half(img, cells, axis, stem)
+    if paint_thru_lines:
+        from render.thru_lines import stroke_thru_lines
+
+        stroke_thru_lines(img, cells, "tee", axis=axis, stem=stem, paint=True)
     return img

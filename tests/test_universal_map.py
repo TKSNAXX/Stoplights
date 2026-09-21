@@ -681,6 +681,7 @@ def test_named_map_save_load_roundtrip() -> None:
         assert persistence.load_named_map(g2, "city", directory=folder, working_path=working)
         assert {k: (p.center_x, p.center_y, p.width, p.length) for k, p in g2.places.items()} == places_snap
         assert {k: (i.center_x, i.center_y, i.size_cells) for k, i in g2.intersections.items()} == ints_snap
+        assert getattr(g2.intersections["plaza"], "paint_thru_lines", None) is True
         assert {k: (tuple(l.start_tile), tuple(l.end_tile)) for k, l in g2.lanes.items()} == lanes_snap
         assert working.is_file()
 
@@ -2321,7 +2322,7 @@ def _mixed_paint(family: str | None = None):
     leftovers = mixed_corner_leftovers(cells, spans, active)
     local = mouth_spans_local(cells, spans)
     fam = family if family is not None else overlay_type_for_sides(active)
-    img = make_mixed(8, leftovers, family=fam, spans=local)
+    img = make_mixed(8, leftovers, family=fam, spans=local, intersection_key="hub")
     return img, leftovers, local, active, fam
 
 
@@ -2602,7 +2603,7 @@ def test_double_tee_classified_open_and_fillet() -> None:
     # Missing south, stem north, axis ew: open is image right.
     assert stem == "N" and axis == "ew"
     assert img.getpixel((size - 4, size // 2))[3] == 0
-    through = img.getpixel((size // 2, size // 2))
+    through = img.getpixel((size // 2 + 8, size // 2))
     assert through[3] == 255 and through[:3] == ROAD_GREY
     inner_r = double_fillet_inner_r(8, 4)
     g0 = img.getpixel((inner_r + 1, 1))
@@ -4092,6 +4093,208 @@ def test_observed_cars_membership() -> None:
     assert any(c is tail for c in seen)
 
 
+def test_paint_thru_lines_normal_on_off() -> None:
+    from render.corner_gen import WHITE, YELLOW, make_corner, make_tee
+
+    tee_on = make_tee(4, axis="ns", stem="E", paint_thru_lines=True)
+    tw, th = tee_on.size
+    assert tee_on.getpixel((tw // 2, 60))[:3] == YELLOW
+    tee_off = make_tee(4, axis="ns", stem="E", paint_thru_lines=False)
+    assert tee_off.getpixel((tw // 2, 60))[:3] != YELLOW
+    assert _has_color_near(tee_off, 16, 16, WHITE, r=24)
+    assert _has_color_near(tee_off, tw - 16, 16, WHITE, r=24)
+
+    corner_on = make_corner(4, quadrant=0, paint_thru_lines=True)
+    _cw, ch = corner_on.size
+    assert _has_color_near(corner_on, 8, 60, YELLOW, r=6)
+    corner_off = make_corner(4, quadrant=0, paint_thru_lines=False)
+    w, h = corner_off.size
+    for y in range(0, h, 4):
+        for x in range(0, w, 4):
+            assert corner_off.getpixel((x, y))[:3] != YELLOW
+    assert _has_color_near(corner_off, 16, ch - 16, WHITE, r=12)
+
+
+def test_paint_thru_lines_one_skips() -> None:
+    from render.corner_gen import YELLOW, make_mixed
+    from render.intersection_topology import corner_leftovers_from_local
+
+    n = 6
+    spans = {"N": (0, 0), "W": (0, 0)}
+    img = make_mixed(
+        n,
+        corner_leftovers_from_local(n, spans),
+        family="corner",
+        spans=spans,
+        paint_thru_lines=True,
+    )
+    w, h = img.size
+    for y in range(0, h, 3):
+        for x in range(0, w, 3):
+            assert img.getpixel((x, y))[:3] != YELLOW
+
+
+def test_paint_thru_lines_double_corner() -> None:
+    from render.corner_gen import WHITE, YELLOW, make_double_corner
+    from sim.constants import ORTHO_TILE_SIZE
+
+    img = make_double_corner(8, quadrant=0, travel_x=4, travel_y=4)
+    t = ORTHO_TILE_SIZE
+    size = 8 * t
+    assert img.getpixel((4, size - 4))[3] == 0
+    assert _has_color_near(img, 124, size - 2, YELLOW, r=6)
+    assert _has_color_near(img, 96, size - 2, WHITE, r=8)
+
+
+def test_paint_thru_lines_asymmetric_mixed_skips() -> None:
+    from render.corner_gen import YELLOW, make_mixed
+    from render.intersection_topology import corner_leftovers_from_local
+
+    n = 6
+    spans = {"N": (1, 2), "W": (0, 0)}
+    img = make_mixed(
+        n,
+        corner_leftovers_from_local(n, spans),
+        family="corner",
+        spans=spans,
+        paint_thru_lines=True,
+    )
+    w, h = img.size
+    for y in range(0, h, 3):
+        for x in range(0, w, 3):
+            assert img.getpixel((x, y))[:3] != YELLOW
+
+
+def test_paint_thru_lines_mixed_tee_through() -> None:
+    from render.corner_gen import YELLOW, make_mixed
+    from render.intersection_topology import (
+        classify_intersection_sides,
+        mixed_corner_leftovers,
+        mouth_spans_by_edge,
+        mouth_spans_local,
+        overlay_type_for_intersection,
+        overlay_type_for_sides,
+        tee_layout_for_sides,
+    )
+    from sim.constants import ORTHO_TILE_SIZE
+
+    places_by_id = {
+        "West": places.Place(center_x=10, center_y=19, width=5, length=5),
+        "East": places.Place(center_x=30, center_y=19, width=5, length=5),
+        "North": places.Place(center_x=20, center_y=32, width=5, length=5),
+    }
+    intersections = {
+        "hub": places.IntersectionConfig(size_cells=8, center_x=20, center_y=20),
+    }
+    lanes = {
+        1: places.LaneConfig(start_tile=(13, 19), end_tile=(15, 19)),
+        2: places.LaneConfig(start_tile=(13, 18), end_tile=(15, 18)),
+        3: places.LaneConfig(start_tile=(24, 19), end_tile=(27, 19)),
+        4: places.LaneConfig(start_tile=(24, 18), end_tile=(27, 18)),
+        5: places.LaneConfig(start_tile=(19, 24), end_tile=(19, 29)),
+        9: places.LaneConfig(start_tile=(15, 20), end_tile=(12, 20)),
+        10: places.LaneConfig(start_tile=(15, 21), end_tile=(12, 21)),
+        11: places.LaneConfig(start_tile=(27, 20), end_tile=(24, 20)),
+        12: places.LaneConfig(start_tile=(27, 21), end_tile=(24, 21)),
+    }
+    places.set_route_hints([])
+    world.rebuild_world(place_rects_from_places(places_by_id), intersections, lanes)
+    cells = world.get_intersection_cells_by_key("hub")
+    active, _, _ = classify_intersection_sides("hub", cells, require_centre_two=False)
+    assert overlay_type_for_sides(active) == "tee"
+    assert overlay_type_for_intersection("hub", active) == places.INTERSECTION_TYPE_MIXED_TEE
+    spans = mouth_spans_by_edge("hub", cells)
+    local = mouth_spans_local(cells, spans)
+    leftovers = mixed_corner_leftovers(cells, spans, active)
+    axis, stem = tee_layout_for_sides(active)
+    img = make_mixed(
+        8,
+        leftovers,
+        family="tee",
+        axis=axis,
+        stem=stem,
+        spans=local,
+        paint_thru_lines=True,
+        intersection_key="hub",
+    )
+    t = ORTHO_TILE_SIZE
+    size = 8 * t
+    split = (8 - 4) * t
+    assert img.getpixel((split - 4, size // 2))[:3] == YELLOW
+    assert img.getpixel((size - 4, size // 2))[3] == 0
+    assert img.getpixel((8, 8))[:3] != YELLOW
+    GameState()
+
+
+def test_paint_thru_lines_scenario_roundtrip() -> None:
+    from sim.scenario import _normalize_intersection
+
+    missing = _normalize_intersection({"center_x": 4, "center_y": 5, "size_cells": 4})
+    assert missing["paint_thru_lines"] is True
+    off = _normalize_intersection(
+        {"center_x": 4, "center_y": 5, "size_cells": 4, "paint_thru_lines": False}
+    )
+    assert off["paint_thru_lines"] is False
+    _, ixs, _, _, _, _, _ = scenario_to_game_dicts(
+        {
+            "places": {},
+            "intersections": {"hub": {"center_x": 4, "center_y": 5, "size_cells": 4}},
+            "lanes": {},
+        }
+    )
+    assert ixs["hub"].paint_thru_lines is True
+    g = GameState()
+    g.places = {}
+    g.intersections = {
+        "hub": places.IntersectionConfig(
+            size_cells=4, center_x=4, center_y=5, paint_thru_lines=False
+        )
+    }
+    g.lanes = {}
+    g.route_hints = []
+    sc = game_to_scenario(g)
+    assert sc["intersections"]["hub"]["paint_thru_lines"] is False
+    _, ixs2, _, _, _, _, _ = scenario_to_game_dicts(sc)
+    assert ixs2["hub"].paint_thru_lines is False
+
+
+def test_paint_thru_dialog_disabled_for_one() -> None:
+    from ui.dialogs.intersection import IntersectionVarsDialog
+    from ui.widgets.switch import Switch
+    from render.intersection_topology import (
+        classify_intersection_sides,
+        overlay_type_for_intersection,
+    )
+
+    sw = Switch(0, 0, 50, 22, initial_value=True, enabled=False)
+    assert sw.on_press(5, 5) is True
+    assert sw.value is True
+    sw.enabled = True
+    assert sw.on_press(5, 5) is True
+    assert sw.value is False
+
+    places_by_id = {
+        "West": places.Place(center_x=8, center_y=22, width=5, length=5),
+        "North": places.Place(center_x=17, center_y=32, width=5, length=5),
+    }
+    intersections = {
+        "hub": places.IntersectionConfig(size_cells=6, center_x=20, center_y=20),
+    }
+    lanes = {
+        1: places.LaneConfig(start_tile=(10, 22), end_tile=(16, 22)),
+        2: places.LaneConfig(start_tile=(17, 23), end_tile=(17, 29)),
+    }
+    places.set_route_hints([])
+    world.rebuild_world(place_rects_from_places(places_by_id), intersections, lanes)
+    cells = world.get_intersection_cells_by_key("hub")
+    active, _, _ = classify_intersection_sides("hub", cells, require_centre_two=False)
+    raw = overlay_type_for_intersection("hub", active)
+    assert str(raw).startswith("one")
+    dlg = IntersectionVarsDialog(0, 0, "hub", intersections["hub"])
+    assert dlg._paint_switch.enabled is False
+    GameState()
+
+
 def main() -> None:
     tests = [
         test_migrate_schema_3_snippet,
@@ -4169,6 +4372,13 @@ def main() -> None:
         test_leftover_zero_size2_one_lane_paints_throat_L,
         test_size2_one_asymmetric_uses_zero_throat_L,
         test_through_width_chamfer_cross_tee_and_skip,
+        test_paint_thru_lines_normal_on_off,
+        test_paint_thru_lines_one_skips,
+        test_paint_thru_lines_double_corner,
+        test_paint_thru_lines_asymmetric_mixed_skips,
+        test_paint_thru_lines_mixed_tee_through,
+        test_paint_thru_lines_scenario_roundtrip,
+        test_paint_thru_dialog_disabled_for_one,
         test_one_stamp_family_and_clamp,
         test_one_lane_corner_classified_uses_mouth_span,
         test_one_lane_offset_fillet_at_mouth_not_aabb,

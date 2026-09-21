@@ -6,1093 +6,1275 @@
       "center_x": 18,
       "center_y": 18,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_3": {
       "center_x": -27,
       "center_y": 6,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_4": {
       "center_x": 131,
       "center_y": 107,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_5": {
       "center_x": 28,
       "center_y": 18,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_6": {
       "center_x": 18,
       "center_y": 28,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_7": {
       "center_x": 28,
       "center_y": 28,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_8": {
       "center_x": 38,
       "center_y": 18,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_9": {
       "center_x": 38,
       "center_y": 28,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_10": {
       "center_x": 28,
       "center_y": 38,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_11": {
       "center_x": 38,
       "center_y": 38,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_12": {
       "center_x": 18,
       "center_y": 38,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_13": {
       "center_x": 49,
       "center_y": 18,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_14": {
       "center_x": 59,
       "center_y": 18,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_15": {
       "center_x": 49,
       "center_y": 28,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_16": {
       "center_x": 59,
       "center_y": 28,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_17": {
       "center_x": 69,
       "center_y": 18,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_18": {
       "center_x": 69,
       "center_y": 28,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_19": {
       "center_x": 59,
       "center_y": 38,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_20": {
       "center_x": 69,
       "center_y": 38,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_21": {
       "center_x": 49,
       "center_y": 38,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_22": {
       "center_x": 18,
       "center_y": 49,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_23": {
       "center_x": 28,
       "center_y": 49,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_24": {
       "center_x": 18,
       "center_y": 59,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_25": {
       "center_x": 28,
       "center_y": 59,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_26": {
       "center_x": 38,
       "center_y": 49,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_27": {
       "center_x": 38,
       "center_y": 59,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_28": {
       "center_x": 28,
       "center_y": 69,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_29": {
       "center_x": 38,
       "center_y": 69,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_30": {
       "center_x": 18,
       "center_y": 69,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_31": {
       "center_x": 49,
       "center_y": 49,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_32": {
       "center_x": 59,
       "center_y": 49,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_33": {
       "center_x": 49,
       "center_y": 59,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_34": {
       "center_x": 59,
       "center_y": 59,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_35": {
       "center_x": 69,
       "center_y": 49,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_36": {
       "center_x": 69,
       "center_y": 59,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_37": {
       "center_x": 59,
       "center_y": 69,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_38": {
       "center_x": 69,
       "center_y": 69,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_39": {
       "center_x": 49,
       "center_y": 69,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_40": {
       "center_x": 80,
       "center_y": 49,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_41": {
       "center_x": 90,
       "center_y": 49,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_42": {
       "center_x": 80,
       "center_y": 59,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_43": {
       "center_x": 90,
       "center_y": 59,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_44": {
       "center_x": 100,
       "center_y": 49,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_45": {
       "center_x": 100,
       "center_y": 59,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_46": {
       "center_x": 90,
       "center_y": 69,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_47": {
       "center_x": 100,
       "center_y": 69,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_48": {
       "center_x": 80,
       "center_y": 69,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_49": {
       "center_x": 80,
       "center_y": 18,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_50": {
       "center_x": 90,
       "center_y": 18,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_51": {
       "center_x": 80,
       "center_y": 28,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_52": {
       "center_x": 90,
       "center_y": 28,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_53": {
       "center_x": 100,
       "center_y": 18,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_54": {
       "center_x": 100,
       "center_y": 28,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_55": {
       "center_x": 90,
       "center_y": 38,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_56": {
       "center_x": 100,
       "center_y": 38,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_57": {
       "center_x": 80,
       "center_y": 38,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_58": {
       "center_x": -13,
       "center_y": 18,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_59": {
       "center_x": -3,
       "center_y": 18,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_60": {
       "center_x": -13,
       "center_y": 28,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_61": {
       "center_x": -3,
       "center_y": 28,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_62": {
       "center_x": 7,
       "center_y": 18,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_63": {
       "center_x": 7,
       "center_y": 28,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_64": {
       "center_x": -3,
       "center_y": 38,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_65": {
       "center_x": 7,
       "center_y": 38,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_66": {
       "center_x": -13,
       "center_y": 38,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_67": {
       "center_x": -13,
       "center_y": 49,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_68": {
       "center_x": -3,
       "center_y": 49,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_69": {
       "center_x": -13,
       "center_y": 59,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_70": {
       "center_x": -3,
       "center_y": 59,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_71": {
       "center_x": 7,
       "center_y": 49,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_72": {
       "center_x": 7,
       "center_y": 59,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_73": {
       "center_x": -3,
       "center_y": 69,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_74": {
       "center_x": 7,
       "center_y": 69,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_75": {
       "center_x": -13,
       "center_y": 69,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_76": {
       "center_x": -13,
       "center_y": 80,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_77": {
       "center_x": -3,
       "center_y": 80,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_78": {
       "center_x": -13,
       "center_y": 90,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_79": {
       "center_x": -3,
       "center_y": 90,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_80": {
       "center_x": 7,
       "center_y": 80,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_81": {
       "center_x": 7,
       "center_y": 90,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_82": {
       "center_x": -3,
       "center_y": 100,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_83": {
       "center_x": 7,
       "center_y": 100,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_84": {
       "center_x": -13,
       "center_y": 100,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_85": {
       "center_x": 18,
       "center_y": 80,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_86": {
       "center_x": 28,
       "center_y": 80,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_87": {
       "center_x": 18,
       "center_y": 90,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_88": {
       "center_x": 28,
       "center_y": 90,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_89": {
       "center_x": 38,
       "center_y": 80,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_90": {
       "center_x": 38,
       "center_y": 90,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_91": {
       "center_x": 28,
       "center_y": 100,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_92": {
       "center_x": 38,
       "center_y": 100,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_93": {
       "center_x": 18,
       "center_y": 100,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_94": {
       "center_x": 49,
       "center_y": 80,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_95": {
       "center_x": 59,
       "center_y": 80,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_96": {
       "center_x": 49,
       "center_y": 90,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_97": {
       "center_x": 59,
       "center_y": 90,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_98": {
       "center_x": 69,
       "center_y": 80,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_99": {
       "center_x": 69,
       "center_y": 90,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_100": {
       "center_x": 59,
       "center_y": 100,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_101": {
       "center_x": 69,
       "center_y": 100,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_102": {
       "center_x": 49,
       "center_y": 100,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_103": {
       "center_x": 80,
       "center_y": 80,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_104": {
       "center_x": 90,
       "center_y": 80,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_105": {
       "center_x": 80,
       "center_y": 90,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_106": {
       "center_x": 90,
       "center_y": 90,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_107": {
       "center_x": 100,
       "center_y": 80,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_108": {
       "center_x": 100,
       "center_y": 90,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_109": {
       "center_x": 90,
       "center_y": 100,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_110": {
       "center_x": 100,
       "center_y": 100,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_111": {
       "center_x": 80,
       "center_y": 100,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_112": {
       "center_x": -13,
       "center_y": 111,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_113": {
       "center_x": -3,
       "center_y": 111,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_114": {
       "center_x": -13,
       "center_y": 121,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_115": {
       "center_x": -3,
       "center_y": 121,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_116": {
       "center_x": 7,
       "center_y": 111,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_117": {
       "center_x": 7,
       "center_y": 121,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_118": {
       "center_x": -3,
       "center_y": 131,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_119": {
       "center_x": 7,
       "center_y": 131,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_120": {
       "center_x": -13,
       "center_y": 131,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_121": {
       "center_x": 18,
       "center_y": 111,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_122": {
       "center_x": 28,
       "center_y": 111,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_123": {
       "center_x": 18,
       "center_y": 121,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_124": {
       "center_x": 28,
       "center_y": 121,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_125": {
       "center_x": 38,
       "center_y": 111,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_126": {
       "center_x": 38,
       "center_y": 121,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_127": {
       "center_x": 28,
       "center_y": 131,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_128": {
       "center_x": 38,
       "center_y": 131,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_129": {
       "center_x": 18,
       "center_y": 131,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_130": {
       "center_x": 49,
       "center_y": 111,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_131": {
       "center_x": 59,
       "center_y": 111,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_132": {
       "center_x": 49,
       "center_y": 121,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_133": {
       "center_x": 59,
       "center_y": 121,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_134": {
       "center_x": 69,
       "center_y": 111,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_135": {
       "center_x": 69,
       "center_y": 121,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_136": {
       "center_x": 59,
       "center_y": 131,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_137": {
       "center_x": 69,
       "center_y": 131,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_138": {
       "center_x": 49,
       "center_y": 131,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_139": {
       "center_x": 80,
       "center_y": 111,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_140": {
       "center_x": 90,
       "center_y": 111,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_141": {
       "center_x": 80,
       "center_y": 121,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_142": {
       "center_x": 90,
       "center_y": 121,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_143": {
       "center_x": 100,
       "center_y": 111,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_144": {
       "center_x": 100,
       "center_y": 121,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_145": {
       "center_x": 90,
       "center_y": 131,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_146": {
       "center_x": 100,
       "center_y": 131,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_147": {
       "center_x": 80,
       "center_y": 131,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_148": {
       "center_x": -13,
       "center_y": -13,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_149": {
       "center_x": -3,
       "center_y": -13,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_150": {
       "center_x": -13,
       "center_y": -3,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_151": {
       "center_x": -3,
       "center_y": -3,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_152": {
       "center_x": 7,
       "center_y": -13,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_153": {
       "center_x": 7,
       "center_y": -3,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_154": {
       "center_x": -3,
       "center_y": 7,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_155": {
       "center_x": 7,
       "center_y": 7,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_156": {
       "center_x": -13,
       "center_y": 7,
       "size_cells": 2,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_157": {
       "center_x": 18,
       "center_y": -13,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_158": {
       "center_x": 28,
       "center_y": -13,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_159": {
       "center_x": 18,
       "center_y": -3,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_160": {
       "center_x": 28,
       "center_y": -3,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_161": {
       "center_x": 38,
       "center_y": -13,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_162": {
       "center_x": 38,
       "center_y": -3,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_163": {
       "center_x": 28,
       "center_y": 7,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_164": {
       "center_x": 38,
       "center_y": 7,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_165": {
       "center_x": 18,
       "center_y": 7,
       "size_cells": 4,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_166": {
       "center_x": 49,
       "center_y": -13,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_167": {
       "center_x": 59,
       "center_y": -13,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_168": {
       "center_x": 49,
       "center_y": -3,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_169": {
       "center_x": 59,
       "center_y": -3,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_170": {
       "center_x": 69,
       "center_y": -13,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_171": {
       "center_x": 69,
       "center_y": -3,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_172": {
       "center_x": 59,
       "center_y": 7,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_173": {
       "center_x": 69,
       "center_y": 7,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_174": {
       "center_x": 49,
       "center_y": 7,
       "size_cells": 6,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_175": {
       "center_x": 80,
       "center_y": -13,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_176": {
       "center_x": 90,
       "center_y": -13,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_177": {
       "center_x": 80,
       "center_y": -3,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_178": {
       "center_x": 90,
       "center_y": -3,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_179": {
       "center_x": 100,
       "center_y": -13,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_180": {
       "center_x": 100,
       "center_y": -3,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_181": {
       "center_x": 90,
       "center_y": 7,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_182": {
       "center_x": 100,
       "center_y": 7,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     },
     "intersection_183": {
       "center_x": 80,
       "center_y": 7,
       "size_cells": 8,
-      "protected": false
+      "protected": false,
+      "paint_thru_lines": true
     }
   },
   "lanes": {
@@ -8054,11 +8236,11 @@
     "614": {
       "start_tile": [
         5,
-        -3
+        -4
       ],
       "end_tile": [
         -2,
-        -3
+        -4
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",

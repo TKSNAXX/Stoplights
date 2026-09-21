@@ -184,6 +184,7 @@ class IntersectionConfig:
     center_x: int = 36
     center_y: int = 48
     protected: bool = False
+    paint_thru_lines: bool = True
 
 
 @dataclasses.dataclass
