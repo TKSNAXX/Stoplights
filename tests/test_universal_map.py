@@ -954,7 +954,9 @@ def test_filleted_cross_tee_transparency() -> None:
     assert tee_c[3] == 255
     assert tee_c[:3] != WHITE
     # Through yellows continue; branch yellows do not enter the box.
+    # Two 2px strokes (PIL-inclusive), same as the old `_stroke_through_yellows`.
     assert tee.getpixel((tw // 2, 60))[:3] == YELLOW
+    assert tee.getpixel((tw // 2, 61))[:3] == YELLOW
     assert tee.getpixel((60, 16))[:3] != YELLOW
     # Open shoulder (opposite the stem) stays transparent on 4-cell+ stamps.
     assert tee.getpixel((tw // 2, 104))[3] == 0
@@ -4099,6 +4101,7 @@ def test_paint_thru_lines_normal_on_off() -> None:
     tee_on = make_tee(4, axis="ns", stem="E", paint_thru_lines=True)
     tw, th = tee_on.size
     assert tee_on.getpixel((tw // 2, 60))[:3] == YELLOW
+    assert tee_on.getpixel((tw // 2, 61))[:3] == YELLOW
     tee_off = make_tee(4, axis="ns", stem="E", paint_thru_lines=False)
     assert tee_off.getpixel((tw // 2, 60))[:3] != YELLOW
     assert _has_color_near(tee_off, 16, 16, WHITE, r=24)
@@ -4107,6 +4110,16 @@ def test_paint_thru_lines_normal_on_off() -> None:
     corner_on = make_corner(4, quadrant=0, paint_thru_lines=True)
     _cw, ch = corner_on.size
     assert _has_color_near(corner_on, 8, 60, YELLOW, r=6)
+    yellow_run = 0
+    best = 0
+    for y in range(ch):
+        p = corner_on.getpixel((0, y))
+        if p[:3] == YELLOW and p[3]:
+            yellow_run += 1
+            best = max(best, yellow_run)
+        else:
+            yellow_run = 0
+    assert best >= 2
     corner_off = make_corner(4, quadrant=0, paint_thru_lines=False)
     w, h = corner_off.size
     for y in range(0, h, 4):
@@ -4163,6 +4176,67 @@ def test_paint_thru_lines_asymmetric_mixed_skips() -> None:
     for y in range(0, h, 3):
         for x in range(0, w, 3):
             assert img.getpixel((x, y))[:3] != YELLOW
+
+
+def test_paint_thru_lines_three_cell_mixed_corner() -> None:
+    """Twin beside opposite on both faces: one sister dash and one double yellow."""
+    from render.corner_gen import WHITE, YELLOW, make_mixed
+    from render.intersection_topology import (
+        classify_intersection_sides,
+        mixed_corner_leftovers,
+        mouth_spans_by_edge,
+        mouth_spans_local,
+        overlay_type_for_intersection,
+        overlay_type_for_sides,
+    )
+    from render.thru_lines import ROLE_ONCOMING, ROLE_SISTER, _seams_from_occupied, resolve_face_profiles
+
+    assert _seams_from_occupied({3: "out", 4: "in", 5: "in"}) == (
+        (4, ROLE_ONCOMING),
+        (5, ROLE_SISTER),
+    )
+    assert _seams_from_occupied({1: "in"}) == ()
+    assert _seams_from_occupied({1: "in", 3: "out"}) == ()
+
+    places_by_id = {
+        "East": places.Place(center_x=30, center_y=20, width=5, length=5),
+        "North": places.Place(center_x=20, center_y=32, width=5, length=5),
+        "West": places.Place(center_x=8, center_y=20, width=5, length=5),
+    }
+    intersections = {
+        "hub": places.IntersectionConfig(size_cells=4, center_x=20, center_y=20),
+    }
+    lanes = {
+        1: places.LaneConfig(start_tile=(22, 19), end_tile=(26, 19)),
+        2: places.LaneConfig(start_tile=(26, 20), end_tile=(22, 20)),
+        3: places.LaneConfig(start_tile=(26, 21), end_tile=(22, 21)),
+        4: places.LaneConfig(start_tile=(19, 26), end_tile=(19, 22)),
+        5: places.LaneConfig(start_tile=(20, 22), end_tile=(20, 26)),
+        6: places.LaneConfig(start_tile=(21, 22), end_tile=(21, 26)),
+    }
+    places.set_route_hints([])
+    world.rebuild_world(place_rects_from_places(places_by_id), intersections, lanes)
+    cells = world.get_intersection_cells_by_key("hub")
+    active, _, _ = classify_intersection_sides("hub", cells, require_centre_two=False)
+    assert overlay_type_for_sides(active) == "corner"
+    assert overlay_type_for_intersection("hub", active) == places.INTERSECTION_TYPE_MIXED_CORNER
+    spans = mouth_spans_by_edge("hub", cells)
+    local = mouth_spans_local(cells, spans)
+    leftovers = mixed_corner_leftovers(cells, spans, active)
+    prof = resolve_face_profiles(4, spans=local, intersection_key="hub")
+    assert set(prof) == {"E", "N"}
+    assert all(prof[e] for e in prof)
+    img = make_mixed(
+        4,
+        leftovers,
+        family="corner",
+        spans=local,
+        paint_thru_lines=True,
+        intersection_key="hub",
+    )
+    assert _has_color_near(img, 64, 2, YELLOW, r=24)
+    assert _has_color_near(img, 32, 2, WHITE, r=24)
+    GameState()
 
 
 def test_paint_thru_lines_mixed_tee_through() -> None:
@@ -4376,6 +4450,7 @@ def main() -> None:
         test_paint_thru_lines_one_skips,
         test_paint_thru_lines_double_corner,
         test_paint_thru_lines_asymmetric_mixed_skips,
+        test_paint_thru_lines_three_cell_mixed_corner,
         test_paint_thru_lines_mixed_tee_through,
         test_paint_thru_lines_scenario_roundtrip,
         test_paint_thru_dialog_disabled_for_one,

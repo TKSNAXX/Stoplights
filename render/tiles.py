@@ -123,14 +123,14 @@ _double_tee_texture_cache: dict[tuple, arcade.Texture] = {}
 _double_corner_texture_cache: dict[tuple, arcade.Texture] = {}
 _mixed_texture_cache: dict[tuple, arcade.Texture] = {}
 _lane_paint_cache: dict[tuple, arcade.Texture] = {}
-_STRAIGHT_TEX_REV = 12
-_TEE_TEX_REV = 8
+_STRAIGHT_TEX_REV = 13
+_TEE_TEX_REV = 9
 _CROSS_TEX_REV = 5
 _DOUBLE_TEX_REV = 5
 _DOUBLE_TEE_TEX_REV = 3
 _DOUBLE_CORNER_TEX_REV = 3
-_MIXED_TEX_REV = 20
-_CORNER_TEX_REV = 1
+_MIXED_TEX_REV = 22
+_CORNER_TEX_REV = 3
 
 
 def generate_corner_texture(

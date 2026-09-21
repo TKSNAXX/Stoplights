@@ -80,29 +80,30 @@ def _live_profiles(intersection_key: str) -> dict[str, Profile] | None:
             slot[local] = ""
         else:
             slot[local] = kind
-    out: dict[str, Profile] = {}
-    for edge, occupied in faces.items():
-        if any(k == "" for k in occupied.values()):
-            out[edge] = ()
-            continue
-        items = sorted(occupied.items())
-        if not items:
-            out[edge] = ()
-            continue
-        idxs = [i for i, _ in items]
-        if idxs[-1] - idxs[0] + 1 != len(idxs) or len(idxs) not in (2, 4):
-            out[edge] = ()
-            continue
-        seams: list[Seam] = []
-        ok = True
-        for (a, ka), (b, kb) in zip(items, items[1:]):
-            if b != a + 1:
-                ok = False
-                break
-            role = ROLE_SISTER if ka == kb else ROLE_ONCOMING
-            seams.append((b, role))
-        out[edge] = tuple(seams) if ok else ()
-    return out
+    return {edge: _seams_from_occupied(occupied) for edge, occupied in faces.items()}
+
+
+def _seams_from_occupied(occupied: dict[int, str]) -> Profile:
+    """Interior seams along a contiguous occupied run of 2+ cells.
+
+    Twin beside opposite (3-cell) is sister then oncoming, not an extra single.
+    Gaps or a lone One mouth emit nothing.
+    """
+    if not occupied or any(k == "" for k in occupied.values()):
+        return ()
+    items = sorted(occupied.items())
+    if len(items) < 2:
+        return ()
+    idxs = [i for i, _ in items]
+    if idxs[-1] - idxs[0] + 1 != len(idxs):
+        return ()
+    seams: list[Seam] = []
+    for (a, ka), (b, kb) in zip(items, items[1:]):
+        if b != a + 1:
+            return ()
+        role = ROLE_SISTER if ka == kb else ROLE_ONCOMING
+        seams.append((b, role))
+    return tuple(seams)
 
 
 def resolve_face_profiles(
@@ -242,11 +243,13 @@ def _stamp(px, x: int, y: int, w: int, h: int, color: tuple[int, int, int], grey
 
 
 def _paint_oncoming_stripe(img, split: int, horizontal: bool) -> None:
+    """Two 2px yellows, same inclusive packing as `_stroke_through_yellows`."""
     grey = _road_grey()
     yellow = _yellow()
     px = img.load()
     w, h = img.size
-    offsets = (split - 4, split + 3)
+    # PIL rectangle (split-4, split-3) is inclusive — two pixels, not one.
+    offsets = (split - 4, split - 3, split + 3, split + 4)
     if horizontal:
         for y in offsets:
             for x in range(w):
@@ -288,44 +291,56 @@ def _blend_overlay(img, overlay) -> None:
 
 
 def _paint_oncoming_arc(overlay, cx: int, cy: int, r: int, start: int, end: int) -> None:
+    """2px pieslice rings, same weight as `_CORNER_BANDS_BASE` yellows.
+
+    Outer ring first, then inner, so the inner punch does not wipe the pair.
+    """
     if ImageDraw is None:
         return
     draw = ImageDraw.Draw(overlay)
     yellow = _yellow()
-    for rr in (r - 4, r + 3):
-        if rr <= 0:
+    # 2px rings (r_out - r_in == 2), same as `_CORNER_BANDS_BASE` yellows.
+    for r_out, r_in in ((r + 5, r + 3), (r - 2, r - 4)):
+        if r_out <= 0:
             continue
-        draw.arc(
-            (cx - rr, cy - rr, cx + rr, cy + rr),
+        draw.pieslice(
+            (cx - r_out, cy - r_out, cx + r_out, cy + r_out),
             start,
             end,
             fill=(*yellow, 255),
-            width=1,
         )
+        if r_in > 0:
+            draw.pieslice(
+                (cx - r_in, cy - r_in, cx + r_in, cy + r_in),
+                start,
+                end,
+                fill=(0, 0, 0, 0),
+            )
 
 
 def _paint_sister_arc(overlay, cx: int, cy: int, r: int, start: int, end: int) -> None:
-    if r <= 0:
+    if ImageDraw is None or r <= 0:
         return
+    draw = ImageDraw.Draw(overlay)
     white = _white()
     style = STYLES[ROLE_SISTER]
-    px = overlay.load()
-    w, h = overlay.size
     span = end - start
     if span < 0:
         span += 360
-    step = max(0.25, (180.0 / math.pi) / max(1, r))
+    on_deg = max(0.5, (style.dash_on / r) * 180.0 / math.pi)
+    off_deg = max(0.5, (style.dash_off / r) * 180.0 / math.pi)
     theta = float(start)
-    along = 0.0
-    while theta < start + span:
-        if dash_on_at(style, int(along)):
-            rad = math.radians(theta)
-            x = int(round(cx + r * math.cos(rad)))
-            y = int(round(cy + r * math.sin(rad)))
-            if 0 <= x < w and 0 <= y < h:
-                px[x, y] = (*white, 255)
-        along += r * math.radians(step)
-        theta += step
+    limit = start + span
+    while theta < limit:
+        t1 = min(theta + on_deg, limit)
+        draw.arc(
+            (cx - r, cy - r, cx + r, cy + r),
+            theta,
+            t1,
+            fill=(*white, 255),
+            width=2,
+        )
+        theta = t1 + off_deg
 
 
 def _stroke_axis(
@@ -395,10 +410,12 @@ def _stroke_corner(
     if Image is None:
         return
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    # Oncoming pieslice punches clear the interior; sisters must be stroked after.
     for role, r, _k in paired:
         if role == ROLE_ONCOMING:
             _paint_oncoming_arc(overlay, cx, cy, r, start_a, end_a)
-        elif role == ROLE_SISTER:
+    for role, r, _k in paired:
+        if role == ROLE_SISTER:
             _paint_sister_arc(overlay, cx, cy, r, start_a, end_a)
     _blend_overlay(img, overlay)
 
