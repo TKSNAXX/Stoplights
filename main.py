@@ -722,6 +722,7 @@ class StoplightsWindow(arcade.Window):
                 or str(itype).startswith("mixed_")
                 or str(itype).startswith("double_")
                 or str(itype).startswith("one_")
+                or str(itype).startswith("jogged_")
             ):
                 spans = mouth_spans_by_edge(key, cells)
                 world_active, _, _ = classify_intersection_sides(

@@ -78,7 +78,7 @@ class IntersectionVarsDialog(Dialog):
         self._type_label = ParamLabel("Type")
         self._center_label = ParamLabel("Center")
         self._size_label = ParamLabel("Size")
-        self._paint_label = ParamLabel("Paint Thru Lines")
+        self._paint_label = ParamLabel("Thru Lines")
         self._delete_label = ParamLabel("Delete")
         self.labels = [
             self._type_label,
@@ -87,7 +87,7 @@ class IntersectionVarsDialog(Dialog):
             self._paint_label,
             self._delete_label,
         ]
-        self._sync_paint_switch()
+        self._sync_thru_switch()
 
     def _raw_overlay_type(self) -> str:
         from sim import world
@@ -106,31 +106,35 @@ class IntersectionVarsDialog(Dialog):
     def _inferred_type(self) -> str:
         return self._raw_overlay_type().replace("_", " ").title()
 
-    def _sync_paint_switch(self) -> None:
-        raw = self._raw_overlay_type()
-        self._paint_switch.enabled = not str(raw).startswith("one")
+    def _thru_lines_allowed(self) -> bool:
+        return not self._raw_overlay_type().startswith("jogged")
+
+    def _sync_thru_switch(self) -> None:
+        allowed = self._thru_lines_allowed()
+        self._paint_switch.enabled = allowed
+        if not allowed:
+            self._paint_switch.value = False
 
     def _apply_config(self) -> None:
+        self._sync_thru_switch()
         new_cx, new_cy = self._center_compass.value
         new_size = max(2, min(12, self._size_box.value))
         if new_size % 2 != 0:
             new_size = (new_size // 2) * 2
-        new_paint = bool(self._paint_switch.value)
-        if not self._paint_switch.enabled:
+        if self._paint_switch.enabled:
+            new_paint = bool(self._paint_switch.value)
+        else:
             new_paint = bool(getattr(self._config, "paint_thru_lines", True))
-            self._paint_switch.value = new_paint
         if (
             self._config.center_x == new_cx
             and self._config.center_y == new_cy
             and self._config.size_cells == new_size
             and bool(getattr(self._config, "paint_thru_lines", True)) == new_paint
         ):
-            self._sync_paint_switch()
             return
         self._config.center_x, self._config.center_y = new_cx, new_cy
         self._config.size_cells = new_size
         self._config.paint_thru_lines = new_paint
-        self._sync_paint_switch()
         if self._on_commit:
             self._on_commit()
 
@@ -158,7 +162,7 @@ class IntersectionVarsDialog(Dialog):
         self._remove_btn.rect = (r4.control_left, r4.control_bottom, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE)
 
     def draw(self) -> None:
-        self._sync_paint_switch()
+        self._sync_thru_switch()
         self._type_datum.set_value(self._inferred_type())
         super().draw()
         self._type_datum.draw()

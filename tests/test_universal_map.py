@@ -1911,7 +1911,7 @@ def test_identical_and_fraternal_twins() -> None:
 
 
 def test_twin_intersection_paths_and_double_stamp() -> None:
-    """Keep-side straight, inside turns; far-lane rights are not cached; stamp is Mixed."""
+    """Keep-side straight, inside turns; far-lane rights are not cached; stamp is One."""
     from render.intersection_topology import (
         classify_intersection_sides,
         overlay_type_for_intersection,
@@ -1952,7 +1952,7 @@ def test_twin_intersection_paths_and_double_stamp() -> None:
     cells = world.get_intersection_cells_by_key("hub")
     active, _, _ = classify_intersection_sides("hub", cells)
     assert overlay_type_for_sides(active) == places.INTERSECTION_TYPE_CROSS
-    assert overlay_type_for_intersection("hub", active) == places.INTERSECTION_TYPE_MIXED_CROSS
+    assert overlay_type_for_intersection("hub", active) == places.INTERSECTION_TYPE_ONE_CROSS
     assert world.intersection_has_twins("hub")
     assert places.clamp_intersection_type("big") == places.INTERSECTION_TYPE_DOUBLE_CROSS
     assert places.clamp_intersection_type("double") == places.INTERSECTION_TYPE_DOUBLE_CROSS
@@ -2149,7 +2149,7 @@ def test_twin_double_double_has_no_weaves() -> None:
 
 
 def test_double_cross_requires_closed_dual() -> None:
-    """Deleting or shifting a dual lane drops Double Cross to Mixed Cross."""
+    """Deleting a dual lane drops Double to Mixed; shifting it off centre drops to Jogged."""
     from render.intersection_topology import overlay_type_for_intersection
 
     _twin_double_double()
@@ -2196,7 +2196,7 @@ def test_double_cross_requires_closed_dual() -> None:
     shifted[1] = places.LaneConfig(start_tile=(13, 17), end_tile=(15, 17))
     world.rebuild_world(place_rects_from_places(places_by_id), intersections, shifted)
     assert overlay_type_for_intersection("hub", frozenset({"N", "S", "E", "W"})) == (
-        places.INTERSECTION_TYPE_MIXED_CROSS
+        places.INTERSECTION_TYPE_JOGGED_CROSS
     )
     GameState()
 
@@ -2329,7 +2329,7 @@ def _mixed_paint(family: str | None = None):
 
 
 def test_mixed_stamp_min_leftover_and_virtual_curb() -> None:
-    """Mixed 8-cell E/W twins: NW leftover box is (lx, ly) at BL; white is inset."""
+    """One-way 8-cell E/W twins: NW leftover box is (lx, ly) at BL; white is inset."""
     from render.corner_gen import ROAD_GREY, WHITE
     from render.intersection_topology import overlay_type_for_intersection
     from render.lane_paint import CURB_INSET, CURB_WIDTH
@@ -2338,7 +2338,7 @@ def test_mixed_stamp_min_leftover_and_virtual_curb() -> None:
     _mixed_ew_twins()
     cells = world.get_intersection_cells_by_key("hub")
     img, leftovers, _local, active, family = _mixed_paint()
-    assert overlay_type_for_intersection("hub", active) == places.INTERSECTION_TYPE_MIXED_CROSS
+    assert overlay_type_for_intersection("hub", active) == places.INTERSECTION_TYPE_ONE_CROSS
     assert family == "cross"
     by_q = {q: (lx, ly) for q, lx, ly in leftovers}
     assert 0 in by_q
@@ -2403,7 +2403,7 @@ def _mixed_tee_no_south() -> None:
 
 
 def test_mixed_tee_open_face_from_mouth_span() -> None:
-    """Mixed tee punches the open cardinal outside the through span; no overlay yellows."""
+    """One-way tee punches the open cardinal outside the through span; no overlay yellows."""
     from render.corner_gen import ROAD_GREY, YELLOW
     from render.intersection_topology import overlay_type_for_intersection, overlay_type_for_sides
     from sim.constants import ORTHO_TILE_SIZE
@@ -2411,7 +2411,7 @@ def test_mixed_tee_open_face_from_mouth_span() -> None:
     _mixed_tee_no_south()
     img, _leftovers, local, active, family = _mixed_paint()
     assert overlay_type_for_sides(active) == "tee"
-    assert overlay_type_for_intersection("hub", active) == places.INTERSECTION_TYPE_MIXED_TEE
+    assert overlay_type_for_intersection("hub", active) == places.INTERSECTION_TYPE_ONE_TEE
     assert family == "tee"
     assert "S" not in local
     t = ORTHO_TILE_SIZE
@@ -2449,7 +2449,7 @@ def _mixed_corner_wn() -> None:
 
 
 def test_mixed_corner_is_mouth_L_not_scaled_pie() -> None:
-    """Mixed corner pavement is an L of the two mouth bands, with one inner fillet."""
+    """One-way corner pavement is an L of the two mouth bands, with one inner fillet."""
     from render.corner_gen import ROAD_GREY, WHITE, _image_span_px
     from render.intersection_topology import overlay_type_for_intersection, overlay_type_for_sides
     from sim.constants import ORTHO_TILE_SIZE
@@ -2457,7 +2457,7 @@ def test_mixed_corner_is_mouth_L_not_scaled_pie() -> None:
     _mixed_corner_wn()
     img, leftovers, local, active, family = _mixed_paint()
     assert overlay_type_for_sides(active) == "corner"
-    assert overlay_type_for_intersection("hub", active) == places.INTERSECTION_TYPE_MIXED_CORNER
+    assert overlay_type_for_intersection("hub", active) == places.INTERSECTION_TYPE_ONE_CORNER
     assert family == "corner"
     assert frozenset(local) == frozenset({"W", "N"})
     t = ORTHO_TILE_SIZE
@@ -2899,6 +2899,10 @@ def test_one_stamp_family_and_clamp() -> None:
     assert places.overlay_stamp_family(places.INTERSECTION_TYPE_ONE_TEE) == "tee"
     assert places.overlay_stamp_family(places.INTERSECTION_TYPE_ONE_CORNER) == "corner"
     assert places.overlay_stamp_family(places.INTERSECTION_TYPE_ONE_STRAIGHT) == "straight"
+    assert places.overlay_stamp_family(places.INTERSECTION_TYPE_JOGGED_CROSS) == "cross"
+    assert places.overlay_stamp_family(places.INTERSECTION_TYPE_JOGGED_TEE) == "tee"
+    assert places.overlay_stamp_family(places.INTERSECTION_TYPE_JOGGED_CORNER) == "corner"
+    assert places.clamp_intersection_type("jogged") == places.INTERSECTION_TYPE_JOGGED_CROSS
     assert places.overlay_stamp_family(places.INTERSECTION_TYPE_NORMAL_CROSS) == "cross"
     assert places.overlay_stamp_family(places.INTERSECTION_TYPE_NORMAL_CORNER) == "corner"
 
@@ -4276,7 +4280,7 @@ def test_paint_thru_lines_mixed_tee_through() -> None:
     cells = world.get_intersection_cells_by_key("hub")
     active, _, _ = classify_intersection_sides("hub", cells, require_centre_two=False)
     assert overlay_type_for_sides(active) == "tee"
-    assert overlay_type_for_intersection("hub", active) == places.INTERSECTION_TYPE_MIXED_TEE
+    assert overlay_type_for_intersection("hub", active) == places.INTERSECTION_TYPE_ONE_TEE
     spans = mouth_spans_by_edge("hub", cells)
     local = mouth_spans_local(cells, spans)
     leftovers = mixed_corner_leftovers(cells, spans, active)
@@ -4336,7 +4340,71 @@ def test_paint_thru_lines_scenario_roundtrip() -> None:
     assert ixs2["hub"].paint_thru_lines is False
 
 
-def test_paint_thru_dialog_disabled_for_one() -> None:
+def test_jogged_is_off_centre_and_skips_thru_lines() -> None:
+    """North cluster: centred unequal counts stay Mixed, a one-way face is One, the rest Jogged."""
+    from render.corner_gen import YELLOW, make_mixed
+    from render.intersection_topology import (
+        classify_intersection_sides,
+        mixed_corner_leftovers,
+        mouth_spans_by_edge,
+        mouth_spans_local,
+        overlay_type_for_intersection,
+    )
+    from ui.dialogs.intersection import IntersectionVarsDialog
+    from sim import persistence
+
+    g = GameState()
+    persistence.load_config(g)
+    g.rebuild_world_from_config()
+    expect = {
+        "intersection_213": "one",
+        "intersection_195": "one",
+        "intersection_204": "one",
+        "intersection_219": "mixed",
+        "intersection_201": "mixed",
+        "intersection_210": "mixed",
+        "intersection_214": "jogged",
+        "intersection_217": "jogged",
+        "intersection_218": "jogged",
+    }
+    for key, prefix in expect.items():
+        cells = world.get_intersection_cells_by_key(key)
+        active, _, _ = classify_intersection_sides(key, cells, require_centre_two=False)
+        itype = overlay_type_for_intersection(key, active)
+        assert itype.startswith(prefix), (key, itype)
+
+    key = "intersection_217"
+    cells = world.get_intersection_cells_by_key(key)
+    active, _, _ = classify_intersection_sides(key, cells, require_centre_two=False)
+    spans = mouth_spans_by_edge(key, cells)
+    local = mouth_spans_local(cells, spans)
+    leftovers = mixed_corner_leftovers(cells, spans, active)
+    n = g.intersections[key].size_cells
+    img = make_mixed(
+        n,
+        leftovers,
+        family="tee",
+        spans=local,
+        paint_thru_lines=True,
+        intersection_key=key,
+    )
+    w, h = img.size
+    for y in range(0, h, 3):
+        for x in range(0, w, 3):
+            assert img.getpixel((x, y))[:3] != YELLOW
+
+    cfg = g.intersections[key]
+    stored = cfg.paint_thru_lines
+    dlg = IntersectionVarsDialog(0, 0, key, cfg)
+    assert dlg._paint_switch.enabled is False
+    dlg._paint_switch.value = True
+    dlg._apply_config()
+    assert cfg.paint_thru_lines is stored
+    assert dlg._paint_switch.value is False
+    GameState()
+
+
+def test_paint_thru_dialog_one_can_turn_off() -> None:
     from ui.dialogs.intersection import IntersectionVarsDialog
     from ui.widgets.switch import Switch
     from render.intersection_topology import (
@@ -4368,8 +4436,12 @@ def test_paint_thru_dialog_disabled_for_one() -> None:
     active, _, _ = classify_intersection_sides("hub", cells, require_centre_two=False)
     raw = overlay_type_for_intersection("hub", active)
     assert str(raw).startswith("one")
-    dlg = IntersectionVarsDialog(0, 0, "hub", intersections["hub"])
-    assert dlg._paint_switch.enabled is False
+    cfg = intersections["hub"]
+    dlg = IntersectionVarsDialog(0, 0, "hub", cfg)
+    assert dlg._paint_switch.enabled is True
+    dlg._paint_switch.value = False
+    dlg._apply_config()
+    assert cfg.paint_thru_lines is False
     GameState()
 
 
@@ -4457,7 +4529,8 @@ def main() -> None:
         test_paint_thru_lines_three_cell_mixed_corner,
         test_paint_thru_lines_mixed_tee_through,
         test_paint_thru_lines_scenario_roundtrip,
-        test_paint_thru_dialog_disabled_for_one,
+        test_jogged_is_off_centre_and_skips_thru_lines,
+        test_paint_thru_dialog_one_can_turn_off,
         test_one_stamp_family_and_clamp,
         test_one_lane_corner_classified_uses_mouth_span,
         test_one_lane_offset_fillet_at_mouth_not_aabb,

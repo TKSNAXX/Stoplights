@@ -435,9 +435,22 @@ def stroke_thru_lines(
     intersection_key: str | None = None,
     paint: bool = True,
 ) -> None:
-    """Stroke sister/oncoming seams on remaining pavement. No-ops for One/cross/off."""
+    """Stroke sister/oncoming seams on remaining pavement. No-ops for cross, jogged, or when paint is off."""
     if not paint or Image is None or img is None:
         return
+    if intersection_key:
+        from render.intersection_topology import (
+            classify_intersection_sides,
+            is_jogged_layout,
+        )
+        from sim import world
+
+        node_cells = world.get_intersection_cells_by_key(intersection_key)
+        jog_active, _, _ = classify_intersection_sides(
+            intersection_key, node_cells, require_centre_two=False
+        )
+        if is_jogged_layout(intersection_key, node_cells, jog_active):
+            return
     fam = family if family in ("tee", "corner", "straight") else family
     if fam == "cross":
         return

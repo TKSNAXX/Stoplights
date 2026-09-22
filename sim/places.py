@@ -97,6 +97,11 @@ INTERSECTION_TYPE_ONE_CROSS = "one_cross"
 INTERSECTION_TYPE_ONE_TEE = "one_tee"
 INTERSECTION_TYPE_ONE_CORNER = "one_corner"
 INTERSECTION_TYPE_ONE_STRAIGHT = "one_straight"
+INTERSECTION_TYPE_JOGGED = "jogged"  # load alias of jogged_cross
+INTERSECTION_TYPE_JOGGED_CROSS = "jogged_cross"
+INTERSECTION_TYPE_JOGGED_TEE = "jogged_tee"
+INTERSECTION_TYPE_JOGGED_CORNER = "jogged_corner"
+INTERSECTION_TYPE_JOGGED_STRAIGHT = "jogged_straight"
 INTERSECTION_TYPE_NORMAL = "normal"  # load alias of normal_cross
 INTERSECTION_TYPE_NORMAL_CROSS = "normal_cross"
 INTERSECTION_TYPE_NORMAL_TEE = "normal_tee"
@@ -119,6 +124,10 @@ INTERSECTION_TYPES = (
     INTERSECTION_TYPE_ONE_TEE,
     INTERSECTION_TYPE_ONE_CORNER,
     INTERSECTION_TYPE_ONE_STRAIGHT,
+    INTERSECTION_TYPE_JOGGED_CROSS,
+    INTERSECTION_TYPE_JOGGED_TEE,
+    INTERSECTION_TYPE_JOGGED_CORNER,
+    INTERSECTION_TYPE_JOGGED_STRAIGHT,
     INTERSECTION_TYPE_NORMAL_CROSS,
     INTERSECTION_TYPE_NORMAL_TEE,
     INTERSECTION_TYPE_NORMAL_CORNER,
@@ -141,6 +150,8 @@ def clamp_intersection_type(raw) -> str:
         return INTERSECTION_TYPE_MIXED_CROSS
     if raw == INTERSECTION_TYPE_ONE:
         return INTERSECTION_TYPE_ONE_CROSS
+    if raw == INTERSECTION_TYPE_JOGGED:
+        return INTERSECTION_TYPE_JOGGED_CROSS
     if raw == INTERSECTION_TYPE_NORMAL:
         return INTERSECTION_TYPE_NORMAL_CROSS
     if raw in INTERSECTION_TYPES:
@@ -149,11 +160,12 @@ def clamp_intersection_type(raw) -> str:
 
 
 def overlay_stamp_family(itype: str) -> str:
-    """cross/tee/corner/straight from a stamp name, including double_/mixed_/one_/normal_."""
+    """cross/tee/corner/straight from a stamp name, including double_/mixed_/one_/jogged_/normal_."""
     if (
         itype.startswith("double_")
         or itype.startswith("mixed_")
         or itype.startswith("one_")
+        or itype.startswith("jogged_")
         or itype.startswith("normal_")
     ):
         return itype.split("_", 1)[1]
