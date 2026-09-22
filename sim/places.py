@@ -141,21 +141,28 @@ INTERSECTION_SIZE_VALUES = (2, 4, 6, 8, 10, 12)
 
 
 def clamp_intersection_type(raw) -> str:
-    """Canonical overlay type. Legacy 'x' is cross; 'big'/'double' are double_cross."""
+    """Shape name. Kind prefixes and legacy aliases collapse to cross, tee, corner, or straight."""
+    shapes = (
+        INTERSECTION_TYPE_NONE,
+        INTERSECTION_TYPE_CROSS,
+        INTERSECTION_TYPE_CORNER,
+        INTERSECTION_TYPE_STRAIGHT,
+        INTERSECTION_TYPE_TEE,
+    )
     if raw == INTERSECTION_TYPE_X:
         return INTERSECTION_TYPE_CROSS
-    if raw in (INTERSECTION_TYPE_BIG, INTERSECTION_TYPE_DOUBLE):
-        return INTERSECTION_TYPE_DOUBLE_CROSS
-    if raw == INTERSECTION_TYPE_MIXED:
-        return INTERSECTION_TYPE_MIXED_CROSS
-    if raw == INTERSECTION_TYPE_ONE:
-        return INTERSECTION_TYPE_ONE_CROSS
-    if raw == INTERSECTION_TYPE_JOGGED:
-        return INTERSECTION_TYPE_JOGGED_CROSS
-    if raw == INTERSECTION_TYPE_NORMAL:
-        return INTERSECTION_TYPE_NORMAL_CROSS
-    if raw in INTERSECTION_TYPES:
-        return str(raw)
+    if raw in (
+        INTERSECTION_TYPE_BIG,
+        INTERSECTION_TYPE_DOUBLE,
+        INTERSECTION_TYPE_MIXED,
+        INTERSECTION_TYPE_ONE,
+        INTERSECTION_TYPE_JOGGED,
+        INTERSECTION_TYPE_NORMAL,
+    ):
+        return INTERSECTION_TYPE_CROSS
+    family = overlay_stamp_family(str(raw)) if raw else ""
+    if family in shapes:
+        return family
     return INTERSECTION_TYPE_CROSS
 
 

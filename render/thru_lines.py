@@ -162,6 +162,73 @@ def _required_edges(
     return ()
 
 
+def _oncoming_indices(profile: Profile) -> tuple[int, ...]:
+    return tuple(k for k, role in profile if role == ROLE_ONCOMING)
+
+
+def pair_has_off_centre_oncoming(
+    profiles: dict[str, Profile],
+    edges: tuple[str, ...],
+    n: int,
+) -> bool:
+    """True when a painted face has an oppose seam that is not the centre index."""
+    centre = n // 2
+    for edge in edges:
+        for k in _oncoming_indices(profiles.get(edge, ())):
+            if k != centre:
+                return True
+    return False
+
+
+def pair_oncoming_is_centred(
+    profiles: dict[str, Profile],
+    edges: tuple[str, ...],
+    n: int,
+) -> bool:
+    """Every painted face has its oncoming seam on the centre index, and nowhere else."""
+    if not edges or pair_has_off_centre_oncoming(profiles, edges, n):
+        return False
+    centre = n // 2
+    return all(centre in _oncoming_indices(profiles.get(edge, ())) for edge in edges)
+
+
+def painted_pair_off_centre(intersection_key: str) -> bool:
+    """The card locks thru lines when the painted pair's yellow is off centre."""
+    from render.intersection_topology import (
+        _bounds_from_cells,
+        classify_intersection_sides,
+        mouth_spans_by_edge,
+        mouth_spans_local,
+        overlay_type_for_sides,
+        straight_axis_for_intersection,
+        tee_layout_for_sides,
+    )
+    from sim import world
+
+    cells = world.get_intersection_cells_by_key(intersection_key)
+    if not cells:
+        return False
+    active, _, _ = classify_intersection_sides(
+        intersection_key, cells, require_centre_two=False
+    )
+    family = overlay_type_for_sides(active)
+    if family not in ("tee", "corner", "straight"):
+        return False
+    x_lo, x_hi, _, _ = _bounds_from_cells(cells)
+    n = x_hi - x_lo
+    n = max(2, min(12, int(n)))
+    if n % 2:
+        n = (n // 2) * 2
+    spans = mouth_spans_local(cells, mouth_spans_by_edge(intersection_key, cells))
+    axis, stem = tee_layout_for_sides(
+        active,
+        through_fallback=straight_axis_for_intersection(intersection_key, cells, active),
+    )
+    profiles = resolve_face_profiles(n, spans=spans, intersection_key=intersection_key)
+    edges = _required_edges(family, axis, stem, 0, spans)
+    return pair_has_off_centre_oncoming(profiles, edges, n)
+
+
 def _seqs_compatible(a: Profile, b: Profile, n: int) -> bool:
     if not a or not b:
         return False
@@ -435,22 +502,13 @@ def stroke_thru_lines(
     intersection_key: str | None = None,
     paint: bool = True,
 ) -> None:
-    """Stroke sister/oncoming seams on remaining pavement. No-ops for cross, jogged, or when paint is off."""
+    """Stroke sister/oncoming seams on remaining pavement.
+
+    No-ops for a cross, when paint is off, or when the pair's oncoming seam
+    is not the centre index.
+    """
     if not paint or Image is None or img is None:
         return
-    if intersection_key:
-        from render.intersection_topology import (
-            classify_intersection_sides,
-            is_jogged_layout,
-        )
-        from sim import world
-
-        node_cells = world.get_intersection_cells_by_key(intersection_key)
-        jog_active, _, _ = classify_intersection_sides(
-            intersection_key, node_cells, require_centre_two=False
-        )
-        if is_jogged_layout(intersection_key, node_cells, jog_active):
-            return
     fam = family if family in ("tee", "corner", "straight") else family
     if fam == "cross":
         return
@@ -468,10 +526,15 @@ def stroke_thru_lines(
         q = quadrant
         if spans:
             q = corner_quadrant_for_sides(frozenset(spans))
+        edges = _required_edges(fam, axis, stem, q, spans)
+        if not pair_oncoming_is_centred(profiles, edges, n):
+            return
         _stroke_corner(img, n, profiles, q, spans)
         return
     if fam in ("tee", "straight"):
         ax = axis if axis in ("ns", "ew") else "ns"
         edges = ("E", "W") if ax == "ew" else ("N", "S")
+        if not pair_oncoming_is_centred(profiles, edges, n):
+            return
         horizontal = ax == "ns"
         _stroke_axis(img, n, profiles, edges, horizontal)

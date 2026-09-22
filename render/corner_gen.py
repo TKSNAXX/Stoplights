@@ -13,7 +13,7 @@ except ImportError:
     Image = None
     ImageDraw = None
 
-from render.lane_paint import CURB_INSET, CURB_WIDTH
+from render.lane_paint import CURB_INSET, CURB_WIDTH, DRIVER_LEFT
 from sim.constants import ORTHO_TILE_SIZE
 
 ROAD_GREY = (90, 90, 90)
@@ -152,6 +152,7 @@ def _stroke_fillet_lip(
     quadrant: int,
     inner_r: int | None = None,
     origin: tuple[int, int] | None = None,
+    color: tuple[int, int, int] = WHITE,
 ) -> None:
     """Inner curb white + optional grass-bite punch.
 
@@ -175,7 +176,7 @@ def _stroke_fillet_lip(
         arc_cx, arc_cy = int(origin[0]), int(origin[1])
     draw = ImageDraw.Draw(img)
     bbox_w = (arc_cx - w_out, arc_cy - w_out, arc_cx + w_out, arc_cy + w_out)
-    draw.pieslice(bbox_w, start_angle, end_angle, fill=(*WHITE, 255))
+    draw.pieslice(bbox_w, start_angle, end_angle, fill=(*color, 255))
     if w_in > 0:
         bbox_g = (arc_cx - w_in, arc_cy - w_in, arc_cx + w_in, arc_cy + w_in)
         draw.pieslice(bbox_g, start_angle, end_angle, fill=(*ROAD_GREY, 255))
@@ -620,8 +621,16 @@ def _fill_corner_L(draw, size: int, spans: dict[str, tuple[int, int]]) -> None:
     _fill_through_band(draw, size, spans)
 
 
-def _fill_outer_pie(draw, cx: int, cy: int, r: int, start_a: int, end_a: int) -> None:
-    """Pavement quarter-disk with ROLE_CURB on the outer ring (no inner bite)."""
+def _fill_outer_pie(
+    draw,
+    cx: int,
+    cy: int,
+    r: int,
+    start_a: int,
+    end_a: int,
+    color: tuple[int, int, int] = WHITE,
+) -> None:
+    """Pavement quarter-disk with a curb on the outer ring (no inner bite)."""
     if r <= 0:
         return
     bbox = (cx - r, cy - r, cx + r, cy + r)
@@ -630,17 +639,24 @@ def _fill_outer_pie(draw, cx: int, cy: int, r: int, start_a: int, end_a: int) ->
     grey_inner = r - CURB_INSET - CURB_WIDTH
     if white_outer > 0:
         bbox_w = (cx - white_outer, cy - white_outer, cx + white_outer, cy + white_outer)
-        draw.pieslice(bbox_w, start_a, end_a, fill=(*WHITE, 255))
+        draw.pieslice(bbox_w, start_a, end_a, fill=(*color, 255))
     if grey_inner > 0:
         bbox_g = (cx - grey_inner, cy - grey_inner, cx + grey_inner, cy + grey_inner)
         draw.pieslice(bbox_g, start_a, end_a, fill=(*ROAD_GREY, 255))
 
 
-def _stroke_v_curb(draw, x: int, y0: int, y1: int, toward_plus_x: bool) -> None:
+def _stroke_v_curb(
+    draw,
+    x: int,
+    y0: int,
+    y1: int,
+    toward_plus_x: bool,
+    color: tuple[int, int, int] = WHITE,
+) -> None:
     inset = CURB_INSET
     width = CURB_WIDTH
     grey = (*ROAD_GREY, 255)
-    white = (*WHITE, 255)
+    white = (*color, 255)
     if toward_plus_x:
         _fill_band(draw, x, y0, x + inset, y1, grey)
         _fill_band(draw, x + inset, y0, x + inset + width, y1, white)
@@ -649,11 +665,18 @@ def _stroke_v_curb(draw, x: int, y0: int, y1: int, toward_plus_x: bool) -> None:
         _fill_band(draw, x - inset - width, y0, x - inset, y1, white)
 
 
-def _stroke_h_curb(draw, y: int, x0: int, x1: int, toward_plus_y: bool) -> None:
+def _stroke_h_curb(
+    draw,
+    y: int,
+    x0: int,
+    x1: int,
+    toward_plus_y: bool,
+    color: tuple[int, int, int] = WHITE,
+) -> None:
     inset = CURB_INSET
     width = CURB_WIDTH
     grey = (*ROAD_GREY, 255)
-    white = (*WHITE, 255)
+    white = (*color, 255)
     if toward_plus_y:
         _fill_band(draw, x0, y, x1, y + inset, grey)
         _fill_band(draw, x0, y + inset, x1, y + inset + width, white)
@@ -662,7 +685,7 @@ def _stroke_h_curb(draw, y: int, x0: int, x1: int, toward_plus_y: bool) -> None:
         _fill_band(draw, x0, y - inset - width, x1, y - inset, white)
 
 
-def _exterior_L_fillet(img, size: int, spans: dict[str, tuple[int, int]]) -> None:
+def _exterior_L_fillet(img, size: int, spans: dict[str, tuple[int, int]], curb=None) -> None:
     """
     Convex outer of an L: straight from the narrower (or either, if equal)
     outer curb to a square of side min(widths), then a quarter-turn.
@@ -734,11 +757,15 @@ def _exterior_L_fillet(img, size: int, spans: dict[str, tuple[int, int]]) -> Non
     x0, y0, x1, y1 = spec["sq"]
     _fill_band(draw, x0, y0, x1, y1, (0, 0, 0, 0))
     _cx, _cy, start_a, end_a = _CORNER_ARC_PRESETS[spec["q"]]
-    _fill_outer_pie(draw, spec["cx"], spec["cy"], spec["r"], start_a, end_a)
+    v_arm, h_arm = _Q_OUTER[spec["q"]]
+    v_col = _curb_color(curb, v_arm)
+    h_col = _curb_color(curb, h_arm)
+    pie = YELLOW if curb is not None and v_arm in curb.halves and h_arm in curb.halves else WHITE
+    _fill_outer_pie(draw, spec["cx"], spec["cy"], spec["r"], start_a, end_a, color=pie)
     vx, vy0, vy1, vplus = spec["v"]
     hy, hx0, hx1, hplus = spec["h"]
-    _stroke_v_curb(draw, vx, vy0, vy1, vplus)
-    _stroke_h_curb(draw, hy, hx0, hx1, hplus)
+    _stroke_v_curb(draw, vx, vy0, vy1, vplus, color=v_col)
+    _stroke_h_curb(draw, hy, hx0, hx1, hplus, color=h_col)
 
 
 def _punch_open_edge(draw, size: int, edge: str, spans: dict[str, tuple[int, int]]) -> None:
@@ -768,11 +795,17 @@ def _punch_open_edge(draw, size: int, edge: str, spans: dict[str, tuple[int, int
         _fill_band(draw, 0, 0, size, y0, clear)
 
 
-def _stroke_open_face_curb(img, size: int, edge: str, spans: dict[str, tuple[int, int]]) -> None:
+def _stroke_open_face_curb(
+    img,
+    size: int,
+    edge: str,
+    spans: dict[str, tuple[int, int]],
+    color: tuple[int, int, int] = WHITE,
+) -> None:
     """
-    Through-road ROLE_CURB along the open cardinal, full length of that edge.
+    Through-road curb along the open cardinal, full length of that edge.
 
-    Grey inset then white, matching lane tiles. Stem-side curbs stay the fillets.
+    Grey inset then the curb colour, matching lane tiles. Stem-side curbs stay the fillets.
     """
     if ImageDraw is None:
         return
@@ -780,7 +813,7 @@ def _stroke_open_face_curb(img, size: int, edge: str, spans: dict[str, tuple[int
     inset = CURB_INSET
     width = CURB_WIDTH
     grey = (*ROAD_GREY, 255)
-    white = (*WHITE, 255)
+    white = (*color, 255)
     draw = ImageDraw.Draw(img)
     if edge in ("N", "S"):
         through = _union_span(spans.get("E"), spans.get("W"))
@@ -806,13 +839,23 @@ def _stroke_open_face_curb(img, size: int, edge: str, spans: dict[str, tuple[int
         _fill_band(draw, 0, y0 + inset, size, y0 + inset + width, white)
 
 
-def _stroke_virtual_curbs(img, size: int, quadrant: int, dx: int, dy: int, r: int) -> None:
-    """Grey outline then white inset along each virtual sharp, AABB to tangency."""
+def _stroke_virtual_curbs(
+    img,
+    size: int,
+    quadrant: int,
+    dx: int,
+    dy: int,
+    r: int,
+    v_color: tuple[int, int, int] = WHITE,
+    h_color: tuple[int, int, int] = WHITE,
+) -> None:
+    """Grey outline then curb colour along each virtual sharp, AABB to tangency."""
     if ImageDraw is None:
         return
     draw = ImageDraw.Draw(img)
     grey = (*ROAD_GREY, 255)
-    white = (*WHITE, 255)
+    v_rgba = (*v_color, 255)
+    h_rgba = (*h_color, 255)
     inset = CURB_INSET
     width = CURB_WIDTH
     q = quadrant % 4
@@ -820,34 +863,34 @@ def _stroke_virtual_curbs(img, size: int, quadrant: int, dx: int, dy: int, r: in
         y_s = size - dy
         x_end = max(0, dx - r)
         _fill_band(draw, 0, y_s - inset, x_end, y_s, grey)
-        _fill_band(draw, 0, y_s - inset - width, x_end, y_s - inset, white)
+        _fill_band(draw, 0, y_s - inset - width, x_end, y_s - inset, h_rgba)
         y_start = min(size, size - dy + r)
         _fill_band(draw, dx, y_start, dx + inset, size, grey)
-        _fill_band(draw, dx + inset, y_start, dx + inset + width, size, white)
+        _fill_band(draw, dx + inset, y_start, dx + inset + width, size, v_rgba)
     elif q == 1:
         y_s = size - dy
         x_start = min(size, size - dx + r)
         _fill_band(draw, x_start, y_s - inset, size, y_s, grey)
-        _fill_band(draw, x_start, y_s - inset - width, size, y_s - inset, white)
+        _fill_band(draw, x_start, y_s - inset - width, size, y_s - inset, h_rgba)
         y_start = min(size, size - dy + r)
         _fill_band(draw, size - dx - inset, y_start, size - dx, size, grey)
-        _fill_band(draw, size - dx - inset - width, y_start, size - dx - inset, size, white)
+        _fill_band(draw, size - dx - inset - width, y_start, size - dx - inset, size, v_rgba)
     elif q == 2:
         y_s = dy
         x_start = min(size, size - dx + r)
         _fill_band(draw, x_start, y_s, size, y_s + inset, grey)
-        _fill_band(draw, x_start, y_s + inset, size, y_s + inset + width, white)
+        _fill_band(draw, x_start, y_s + inset, size, y_s + inset + width, h_rgba)
         y_end = max(0, dy - r)
         _fill_band(draw, size - dx - inset, 0, size - dx, y_end, grey)
-        _fill_band(draw, size - dx - inset - width, 0, size - dx - inset, y_end, white)
+        _fill_band(draw, size - dx - inset - width, 0, size - dx - inset, y_end, v_rgba)
     else:
         y_s = dy
         x_end = max(0, dx - r)
         _fill_band(draw, 0, y_s, x_end, y_s + inset, grey)
-        _fill_band(draw, 0, y_s + inset, x_end, y_s + inset + width, white)
+        _fill_band(draw, 0, y_s + inset, x_end, y_s + inset + width, h_rgba)
         y_end = max(0, dy - r)
         _fill_band(draw, dx, 0, dx + inset, y_end, grey)
-        _fill_band(draw, dx + inset, 0, dx + inset + width, y_end, white)
+        _fill_band(draw, dx + inset, 0, dx + inset + width, y_end, v_rgba)
 
 
 def _punch_leftover_extra(draw, size: int, quadrant: int, dx: int, dy: int, r: int) -> None:
@@ -888,6 +931,7 @@ def _apply_mixed_corner(
     leftover_x: int,
     leftover_y: int,
     family: str = "cross",
+    curb=None,
 ) -> None:
     """Fill leftover plaza, extra-strip grass, inner fillet lip, virtual-sharp curbs.
 
@@ -911,15 +955,15 @@ def _apply_mixed_corner(
         _fill_band(draw, x0, y0, x1, y1, (*ROAD_GREY, 255))
         _punch_leftover_extra(draw, size, quadrant, dx, dy, inner_r)
         origin = _leftover_fillet_origin(size, quadrant, dx, dy, inner_r)
-        _stroke_fillet_lip(img, cells, quadrant, inner_r=inner_r, origin=origin)
-        _stroke_virtual_curbs(img, size, quadrant, dx, dy, inner_r)
+        _stroke_fillet_lip(img, cells, quadrant, inner_r=inner_r, origin=origin, color=_fillet_color(curb, quadrant))
+        _stroke_virtual_curbs(img, size, quadrant, dx, dy, inner_r, *_arm_colors(curb, quadrant))
         return
     # Leftover 0, or size-2 tee/cross: no cell fillet; micro-fillet at the join.
     if leftover_x > 0 and leftover_y > 0:
         _punch_leftover_extra(ImageDraw.Draw(img), size, quadrant, dx, dy, 0)
-    _stroke_virtual_curbs(img, size, quadrant, dx, dy, CURB_INSET)
+    _stroke_virtual_curbs(img, size, quadrant, dx, dy, CURB_INSET, *_arm_colors(curb, quadrant))
     origin = _leftover_fillet_origin(size, quadrant, dx, dy, 0)
-    _stroke_fillet_lip(img, cells, quadrant, inner_r=0, origin=origin)
+    _stroke_fillet_lip(img, cells, quadrant, inner_r=0, origin=origin, color=_fillet_color(curb, quadrant))
 
 
 def _draw_constant_width_annulus(
@@ -928,6 +972,8 @@ def _draw_constant_width_annulus(
     quadrant: int,
     inner_r: int,
     outer_r: int,
+    outer_color: tuple[int, int, int] = WHITE,
+    inner_color: tuple[int, int, int] = WHITE,
 ) -> None:
     """Quarter-annulus from an AABB corner: outer curb, optional inner bite."""
     if ImageDraw is None:
@@ -943,11 +989,11 @@ def _draw_constant_width_annulus(
     grey_inner = outer_r - CURB_INSET - CURB_WIDTH
     if white_outer > 0:
         bbox_w = (arc_cx - white_outer, arc_cy - white_outer, arc_cx + white_outer, arc_cy + white_outer)
-        draw.pieslice(bbox_w, start_angle, end_angle, fill=(*WHITE, 255))
+        draw.pieslice(bbox_w, start_angle, end_angle, fill=(*outer_color, 255))
     if grey_inner > 0:
         bbox_g = (arc_cx - grey_inner, arc_cy - grey_inner, arc_cx + grey_inner, arc_cy + grey_inner)
         draw.pieslice(bbox_g, start_angle, end_angle, fill=(*ROAD_GREY, 255))
-    _stroke_fillet_lip(img, cells, quadrant, inner_r=inner_r)
+    _stroke_fillet_lip(img, cells, quadrant, inner_r=inner_r, color=inner_color)
 
 
 def _annulus_radii(
@@ -988,8 +1034,9 @@ def _stroke_diag_curb(
     a: tuple[int, int],
     b: tuple[int, int],
     inward: tuple[int, int],
+    color: tuple[int, int, int] = WHITE,
 ) -> None:
-    """ROLE_CURB along a 45° hypotenuse: grey inset on the grass side, then white."""
+    """Curb along a 45° hypotenuse: grey inset on the grass side, then the curb colour."""
     og = _diag_offset(inward, CURB_INSET)
     ow = _diag_offset(inward, CURB_INSET + CURB_WIDTH)
     if ow == og:
@@ -1001,7 +1048,7 @@ def _stroke_diag_curb(
     draw.polygon([a, b, add(b, og), add(a, og)], fill=(*ROAD_GREY, 255))
     draw.polygon(
         [add(a, og), add(b, og), add(b, ow), add(a, ow)],
-        fill=(*WHITE, 255),
+        fill=(*color, 255),
     )
 
 
@@ -1072,6 +1119,8 @@ def _ns_through_chamfer(
         "hyp0": hyp0,
         "hyp1": hyp1,
         "inward": inward,
+        "side": "W" if west else "E",
+        "faces": ("N", "S"),
     }
 
 
@@ -1124,6 +1173,8 @@ def _ew_through_chamfer(
         "hyp0": hyp0,
         "hyp1": hyp1,
         "inward": inward,
+        "side": "S" if south else "N",
+        "faces": ("E", "W"),
     }
 
 
@@ -1156,7 +1207,7 @@ def _through_chamfer_specs(
     return out
 
 
-def _apply_through_chamfers(img, cells: int, spans: dict[str, tuple[int, int]]) -> None:
+def _apply_through_chamfers(img, cells: int, spans: dict[str, tuple[int, int]], curb=None) -> None:
     """Replace opposite-mouth width jogs with a 45° curb chamfer."""
     if ImageDraw is None or not spans:
         return
@@ -1166,7 +1217,262 @@ def _apply_through_chamfers(img, cells: int, spans: dict[str, tuple[int, int]]) 
     for spec in _through_chamfer_specs(cells, spans):
         draw.polygon(spec["inner"], fill=grey)
         draw.polygon(spec["outer"], fill=clear)
-        _stroke_diag_curb(draw, spec["hyp0"], spec["hyp1"], spec["inward"])
+        color = WHITE
+        if curb is not None and _road_side_yellow(spec["side"], spec["faces"], curb):
+            color = YELLOW
+        _stroke_diag_curb(draw, spec["hyp0"], spec["hyp1"], spec["inward"], color=color)
+
+
+# Inner arms of each quadrant: (vertical curb side, approach face), (horizontal ...).
+# Vertical arms are E/W-road curbs (constant world Y). Horizontal arms are N/S-road curbs.
+_Q_ARMS: dict[int, tuple[tuple[str, str], tuple[str, str]]] = {
+    0: (("N", "W"), ("W", "N")),
+    1: (("S", "W"), ("W", "S")),
+    2: (("S", "E"), ("E", "S")),
+    3: (("N", "E"), ("E", "N")),
+}
+_Q_OUTER: dict[int, tuple[tuple[str, str], tuple[str, str]]] = {
+    0: (("S", "W"), ("E", "N")),
+    1: (("N", "W"), ("E", "S")),
+    2: (("N", "E"), ("W", "S")),
+    3: (("S", "E"), ("W", "N")),
+}
+_Q_PAIR = {
+    frozenset({"W", "N"}): 0,
+    frozenset({"S", "W"}): 1,
+    frozenset({"E", "S"}): 2,
+    frozenset({"N", "E"}): 3,
+}
+_STEM_QUADS = {
+    "S": (1, 2),
+    "N": (0, 3),
+    "E": (3, 2),
+    "W": (0, 1),
+}
+_STEM_SIDE_Q = {
+    "S": {"W": 1, "E": 2},
+    "N": {"W": 0, "E": 3},
+    "E": {"N": 3, "S": 2},
+    "W": {"N": 0, "S": 1},
+}
+_OPPOSITE_EDGE = {"N": "S", "S": "N", "E": "W", "W": "E"}
+
+
+class _Curb:
+    """Yellow curb halves (side, approach face) and fillet quadrants."""
+
+    __slots__ = ("halves", "headings", "fillets")
+
+    def __init__(self) -> None:
+        self.halves: set[tuple[str, str]] = set()
+        self.headings: dict[str, str | None] = {}
+        self.fillets: set[int] = set()
+
+
+def _curb_color(curb: _Curb | None, arm: tuple[str, str]) -> tuple[int, int, int]:
+    if curb is not None and arm in curb.halves:
+        return YELLOW
+    return WHITE
+
+
+def _fillet_color(curb: _Curb | None, quadrant: int) -> tuple[int, int, int]:
+    if curb is not None and (quadrant % 4) in curb.fillets:
+        return YELLOW
+    return WHITE
+
+
+def _arm_colors(
+    curb: _Curb | None, quadrant: int
+) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+    v_arm, h_arm = _Q_ARMS[quadrant % 4]
+    return _curb_color(curb, v_arm), _curb_color(curb, h_arm)
+
+
+def _road_side_yellow(side: str, faces: tuple[str, ...], curb: _Curb) -> bool:
+    """True when every present face of this road has a yellow curb on `side`."""
+    present = [face for face in faces if face in curb.headings]
+    if not present:
+        return False
+    return all(curb.headings[face] and (side, face) in curb.halves for face in present)
+
+
+def _agreed_heading(faces: tuple[str, ...], headings: dict[str, str | None]) -> str | None:
+    found: list[str] = []
+    for face in faces:
+        if face not in headings:
+            continue
+        heading = headings[face]
+        if not heading:
+            return None
+        found.append(heading)
+    if not found or any(heading != found[0] for heading in found):
+        return None
+    return found[0]
+
+
+def _turn_inside(
+    through_h: str, stem_h: str, stem: str
+) -> tuple[bool, bool, int | None]:
+    """Left/right and the inside quadrant of the through↔stem turn."""
+    if stem_h == stem:
+        h_from, h_to = through_h, stem_h
+    elif stem_h == _OPPOSITE_EDGE[stem]:
+        h_from, h_to = stem_h, through_h
+    else:
+        return False, False, None
+    from sim.junction import LEFT_OF, RIGHT_OF
+
+    left = h_to == LEFT_OF.get(h_from)
+    right = h_to == RIGHT_OF.get(h_from)
+    if not (left or right):
+        return False, False, None
+    inside = _Q_PAIR.get(frozenset({_OPPOSITE_EDGE[h_from], h_to}))
+    return left, right, inside
+
+
+def _paint_stem_fillets(curb: _Curb, through_h: str | None, stem_h: str | None, stem: str) -> None:
+    """Tee stem fillets. A two-way face contributes none. Both one-way uses the turn."""
+    quads = _STEM_QUADS.get(stem, ())
+    if not quads:
+        return
+    for quad in quads:
+        curb.fillets.discard(quad)
+    side_q = _STEM_SIDE_Q.get(stem, {})
+
+    def through_left() -> None:
+        if not through_h:
+            return
+        left = DRIVER_LEFT.get(through_h)
+        for quad, (v_arm, h_arm) in _Q_ARMS.items():
+            if quad in quads and (v_arm[0] == left or h_arm[0] == left):
+                curb.fillets.add(quad)
+
+    def stem_left() -> None:
+        if not stem_h:
+            return
+        quad = side_q.get(DRIVER_LEFT.get(stem_h, ""))
+        if quad is not None:
+            curb.fillets.add(quad)
+
+    if through_h and stem_h:
+        left_turn, right_turn, inside = _turn_inside(through_h, stem_h, stem)
+        if inside is not None and (left_turn or right_turn):
+            outside = next((quad for quad in quads if quad != inside), None)
+            if left_turn:
+                curb.fillets.add(inside)
+            elif outside is not None:
+                curb.fillets.add(outside)
+            return
+        through_left()
+        stem_left()
+        return
+    if through_h:
+        through_left()
+        return
+    stem_left()
+
+
+def curb_scheme(
+    intersection_key: str | None,
+    family: str,
+    axis: str = "ns",
+    stem: str = "E",
+) -> _Curb:
+    """Yellow left curbs for single-direction mouths. No key, or a two-way face, stays white."""
+    curb = _Curb()
+    if not intersection_key:
+        return curb
+    from render.intersection_topology import (
+        _face_ins_outs,
+        _face_single_direction,
+        _raw_mouth_crossings,
+    )
+    from sim import world
+
+    cells = list(world.get_intersection_cells_by_key(intersection_key) or [])
+    crossings = _raw_mouth_crossings(intersection_key, cells)
+    edges = {edge for _i, edge, _kind, _x, _y in crossings}
+    for edge in edges:
+        if not _face_single_direction(edge, crossings):
+            curb.headings[edge] = None
+            continue
+        ins, outs = _face_ins_outs(edge, crossings)
+        headings = {world.lane_direction(lane) for lane in (ins or outs)}
+        headings.discard("")
+        if len(headings) != 1:
+            curb.headings[edge] = None
+            continue
+        heading = next(iter(headings))
+        curb.headings[edge] = heading
+        left = DRIVER_LEFT.get(heading)
+        if left:
+            curb.halves.add((left, edge))
+    for quad, (v_arm, h_arm) in _Q_ARMS.items():
+        # A left curb that dies into the plaza still colours that fillet. A tee
+        # then replaces its stem fillets with the turn rule.
+        if v_arm in curb.halves or h_arm in curb.halves:
+            curb.fillets.add(quad)
+    if family == "tee":
+        through = ("E", "W") if axis == "ew" else ("N", "S")
+        _paint_stem_fillets(
+            curb,
+            _agreed_heading(through, curb.headings),
+            curb.headings.get(stem) if stem in curb.headings else None,
+            stem,
+        )
+    return curb
+
+
+def _tee_paint_layout(
+    spans: dict[str, tuple[int, int]],
+    axis: str,
+    stem: str,
+) -> tuple[str, str]:
+    """Through axis and stem from the mouths, so a default axis cannot colour the wrong edge."""
+    edges = frozenset(spans)
+    if frozenset({"E", "W"}) <= edges and ("N" in edges) != ("S" in edges):
+        return "ew", ("N" if "N" in edges else "S")
+    if frozenset({"N", "S"}) <= edges and ("E" in edges) != ("W" in edges):
+        return "ns", ("E" if "E" in edges else "W")
+    return axis, stem
+
+
+def frozen_curb_key(
+    intersection_key: str | None,
+    family: str,
+    axis: str = "ns",
+    stem: str = "E",
+    spans: dict[str, tuple[int, int]] | None = None,
+) -> tuple:
+    """Cache fragment: which curb halves and fillets are yellow."""
+    paint_ax, paint_st = axis, stem
+    if family == "tee":
+        paint_ax, paint_st = _tee_paint_layout(spans or {}, axis, stem)
+    curb = curb_scheme(intersection_key, family, paint_ax, paint_st)
+    return (tuple(sorted(curb.halves)), tuple(sorted(curb.fillets)))
+
+
+def _stroke_straight_edges(img, size: int, spans: dict[str, tuple[int, int]], curb: _Curb) -> None:
+    """Left edge of a one-way through band is yellow; the right edge stays white.
+
+    A width jog keeps the chamfer as its curb, so unequal mouths are not also stroked.
+    """
+    edges = frozenset(spans)
+    if edges <= frozenset({"E", "W"}):
+        if "E" in spans and "W" in spans and spans["E"] != spans["W"]:
+            return
+        faces = ("E", "W")
+        sides = ("N", "S")
+    elif edges <= frozenset({"N", "S"}):
+        if "N" in spans and "S" in spans and spans["N"] != spans["S"]:
+            return
+        faces = ("N", "S")
+        sides = ("E", "W")
+    else:
+        return
+    for side in sides:
+        color = YELLOW if _road_side_yellow(side, faces, curb) else WHITE
+        _stroke_open_face_curb(img, size, side, spans, color=color)
 
 
 def make_mixed(
@@ -1199,13 +1505,18 @@ def make_mixed(
     size = cells * ORTHO_TILE_SIZE
     local = spans or {}
     fam = family if family in ("cross", "tee", "corner", "straight") else "cross"
+    ax = axis if axis in ("ns", "ew") else "ns"
+    st = stem if stem in ("N", "S", "E", "W") else "E"
+    paint_ax, paint_st = _tee_paint_layout(local, ax, st) if fam == "tee" else (ax, st)
+    curb = curb_scheme(intersection_key, fam, paint_ax, paint_st)
 
     if fam == "straight":
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         _fill_through_band(ImageDraw.Draw(img), size, local)
-        _apply_through_chamfers(img, cells, local)
+        _apply_through_chamfers(img, cells, local, curb)
+        _stroke_straight_edges(img, size, local, curb)
         _stroke_mixed_thru(
-            img, cells, fam, axis, stem, local, paint_thru_lines, intersection_key
+            img, cells, fam, ax, st, local, paint_thru_lines, intersection_key
         )
         return img
     if fam == "corner":
@@ -1213,32 +1524,48 @@ def make_mixed(
         radii = _annulus_radii(cells, local) if _mouth_widths_equal(local) else None
         if radii is not None:
             q, inner_r, outer_r = radii
-            _draw_constant_width_annulus(img, cells, q, inner_r, outer_r)
+            outer_arms = _Q_OUTER[q]
+            outer_color = (
+                YELLOW
+                if all(arm in curb.halves for arm in outer_arms)
+                else WHITE
+            )
+            _draw_constant_width_annulus(
+                img,
+                cells,
+                q,
+                inner_r,
+                outer_r,
+                outer_color=outer_color,
+                inner_color=_fillet_color(curb, q),
+            )
             _stroke_mixed_thru(
-                img, cells, fam, axis, stem, local, paint_thru_lines, intersection_key
+                img, cells, fam, ax, st, local, paint_thru_lines, intersection_key
             )
             return img
         _fill_corner_L(ImageDraw.Draw(img), size, local)
-        _exterior_L_fillet(img, size, local)
+        _exterior_L_fillet(img, size, local, curb)
         for quad, lx, ly in leftovers:
-            _apply_mixed_corner(img, cells, quad, lx, ly, family=fam)
+            _apply_mixed_corner(img, cells, quad, lx, ly, family=fam, curb=curb)
         _stroke_mixed_thru(
-            img, cells, fam, axis, stem, local, paint_thru_lines, intersection_key
+            img, cells, fam, ax, st, local, paint_thru_lines, intersection_key
         )
         return img
 
     img = Image.new("RGBA", (size, size), (*ROAD_GREY, 255))
     for quad, lx, ly in leftovers:
-        _apply_mixed_corner(img, cells, quad, lx, ly, family=fam)
+        _apply_mixed_corner(img, cells, quad, lx, ly, family=fam, curb=curb)
     if fam == "tee":
         open_edges = frozenset({"N", "S", "E", "W"}) - frozenset(local)
+        through = ("E", "W") if paint_ax == "ew" else ("N", "S")
         draw = ImageDraw.Draw(img)
         for edge in open_edges:
             _punch_open_edge(draw, size, edge, local)
-            _stroke_open_face_curb(img, size, edge, local)
-    _apply_through_chamfers(img, cells, local)
+            color = YELLOW if _road_side_yellow(edge, through, curb) else WHITE
+            _stroke_open_face_curb(img, size, edge, local, color=color)
+    _apply_through_chamfers(img, cells, local, curb)
     _stroke_mixed_thru(
-        img, cells, fam, axis, stem, local, paint_thru_lines, intersection_key
+        img, cells, fam, ax, st, local, paint_thru_lines, intersection_key
     )
     return img
 

@@ -693,53 +693,9 @@ def double_travel_xy(
 
 
 def overlay_type_for_intersection(intersection_key: str, active: frozenset[str]) -> str:
-    """
-    Stamp kind from the live mouths.
-
-    Normal: every face is a centred 1-in/1-out pair. Double: a centred closed
-    dual on every face. One: any face is a single direction. Jogged: opposed
-    lanes whose yellow is off the AABB centre. Mixed: opposed lanes, yellow
-    centred, counts may differ.
-    """
-    from sim import places
-
+    """Shape from the live mouths: cross, tee, corner, straight, or none."""
     cells = list(world.get_intersection_cells_by_key(intersection_key) or [])
     raw_active, _, _ = classify_intersection_sides(
         intersection_key, cells, require_centre_two=False
     )
-    family = overlay_type_for_sides(raw_active or active)
-    if family == places.INTERSECTION_TYPE_NONE:
-        return family
-    if is_normal_layout(intersection_key, cells, raw_active):
-        return {
-            places.INTERSECTION_TYPE_CROSS: places.INTERSECTION_TYPE_NORMAL_CROSS,
-            places.INTERSECTION_TYPE_TEE: places.INTERSECTION_TYPE_NORMAL_TEE,
-            places.INTERSECTION_TYPE_CORNER: places.INTERSECTION_TYPE_NORMAL_CORNER,
-            places.INTERSECTION_TYPE_STRAIGHT: places.INTERSECTION_TYPE_NORMAL_STRAIGHT,
-        }.get(family, places.INTERSECTION_TYPE_NORMAL_CROSS)
-    if is_double_layout(intersection_key, cells, raw_active):
-        return {
-            places.INTERSECTION_TYPE_CROSS: places.INTERSECTION_TYPE_DOUBLE_CROSS,
-            places.INTERSECTION_TYPE_TEE: places.INTERSECTION_TYPE_DOUBLE_TEE,
-            places.INTERSECTION_TYPE_CORNER: places.INTERSECTION_TYPE_DOUBLE_CORNER,
-        }.get(family, places.INTERSECTION_TYPE_DOUBLE_CROSS)
-    if is_one_layout(intersection_key, cells, raw_active):
-        return {
-            places.INTERSECTION_TYPE_CROSS: places.INTERSECTION_TYPE_ONE_CROSS,
-            places.INTERSECTION_TYPE_TEE: places.INTERSECTION_TYPE_ONE_TEE,
-            places.INTERSECTION_TYPE_CORNER: places.INTERSECTION_TYPE_ONE_CORNER,
-            places.INTERSECTION_TYPE_STRAIGHT: places.INTERSECTION_TYPE_ONE_STRAIGHT,
-        }.get(family, places.INTERSECTION_TYPE_ONE_CROSS)
-    if is_jogged_layout(intersection_key, cells, raw_active):
-        return {
-            places.INTERSECTION_TYPE_CROSS: places.INTERSECTION_TYPE_JOGGED_CROSS,
-            places.INTERSECTION_TYPE_TEE: places.INTERSECTION_TYPE_JOGGED_TEE,
-            places.INTERSECTION_TYPE_CORNER: places.INTERSECTION_TYPE_JOGGED_CORNER,
-            places.INTERSECTION_TYPE_STRAIGHT: places.INTERSECTION_TYPE_JOGGED_STRAIGHT,
-        }.get(family, places.INTERSECTION_TYPE_JOGGED_CROSS)
-    return {
-        places.INTERSECTION_TYPE_CROSS: places.INTERSECTION_TYPE_MIXED_CROSS,
-        places.INTERSECTION_TYPE_TEE: places.INTERSECTION_TYPE_MIXED_TEE,
-        places.INTERSECTION_TYPE_CORNER: places.INTERSECTION_TYPE_MIXED_CORNER,
-        places.INTERSECTION_TYPE_STRAIGHT: places.INTERSECTION_TYPE_MIXED_STRAIGHT,
-    }.get(family, places.INTERSECTION_TYPE_MIXED_CROSS)
+    return overlay_type_for_sides(raw_active or active)

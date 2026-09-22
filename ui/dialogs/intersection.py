@@ -107,7 +107,9 @@ class IntersectionVarsDialog(Dialog):
         return self._raw_overlay_type().replace("_", " ").title()
 
     def _thru_lines_allowed(self) -> bool:
-        return not self._raw_overlay_type().startswith("jogged")
+        from render.thru_lines import painted_pair_off_centre
+
+        return not painted_pair_off_centre(self.intersection_key)
 
     def _sync_thru_switch(self) -> None:
         allowed = self._thru_lines_allowed()

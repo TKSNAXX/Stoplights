@@ -1,8 +1,8 @@
 """
 Default lane-edge paint from occupancy.
 
-Roles (sister / curb / oncoming) are local: who sits in the perpendicular
-neighbour cell. Styles are a parameter table; a later paint tool can pass
+Roles (sister / curb / left curb / oncoming) are local: who sits in the perpendicular
+neighbour cell. An empty driver's-left side is the yellow curb. Styles are a parameter table; a later paint tool can pass
 a custom EdgeStyle or a new role without new tile art.
 """
 from __future__ import annotations
@@ -23,6 +23,7 @@ from sim import world
 
 ROLE_SISTER = "sister"
 ROLE_CURB = "curb"
+ROLE_LEFT_CURB = "left_curb"
 ROLE_ONCOMING = "oncoming"
 
 PAVEMENT = (90, 90, 90)
@@ -30,9 +31,11 @@ YELLOW = (220, 220, 80)
 WHITE = (220, 220, 220)
 
 _OPPOSITE_DIR = {"N": "S", "S": "N", "E": "W", "W": "E"}
+# Driver's left under right-hand traffic.
+DRIVER_LEFT = {"N": "W", "S": "E", "E": "N", "W": "S"}
 
 # Bump when default styles change so iso caches cannot serve stale tiles.
-STYLE_REV = 2
+STYLE_REV = 3
 
 
 @dataclass(frozen=True)
@@ -48,6 +51,7 @@ class EdgeStyle:
 STYLES: dict[str, EdgeStyle] = {
     ROLE_SISTER: EdgeStyle(WHITE, width=1, inset=0, dash_on=16, dash_off=16),
     ROLE_CURB: EdgeStyle(WHITE, width=2, inset=2, dash_on=0, dash_off=0),
+    ROLE_LEFT_CURB: EdgeStyle(YELLOW, width=2, inset=2, dash_on=0, dash_off=0),
     ROLE_ONCOMING: EdgeStyle(YELLOW, width=2, inset=2, dash_on=0, dash_off=0),
 }
 
@@ -84,8 +88,16 @@ def texture_phase(role_a: str, role_b: str, travel: int) -> int:
     return (int(travel) * ORTHO_TILE_SIZE) % period
 
 
-def role_for_neighbor(heading: str, neighbor_heading: str | None) -> str:
+def role_for_neighbor(
+    heading: str,
+    neighbor_heading: str | None,
+    *,
+    side: str | None = None,
+) -> str:
+    """Role of the lateral toward `side`. An empty driver's-left side is a yellow curb."""
     if not neighbor_heading:
+        if side is not None and side == DRIVER_LEFT.get(heading):
+            return ROLE_LEFT_CURB
         return ROLE_CURB
     if neighbor_heading == heading:
         return ROLE_SISTER
@@ -120,7 +132,7 @@ def lateral_roles(
                 other_dir = heading_for_lane(other_id) or None
             else:
                 other_dir = world.lane_direction(other_id) or None
-        roles[card] = role_for_neighbor(heading, other_dir)
+        roles[card] = role_for_neighbor(heading, other_dir, side=card)
     return roles
 
 

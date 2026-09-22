@@ -12,8 +12,6 @@ from render.camera import (
     grid_to_screen,
     iso_depth,
     road_tile_key,
-    rotate_sides,
-    rotate_straight_axis,
     screen_to_grid,
     view_south_cell,
 )
@@ -24,23 +22,17 @@ from render.sprites import CarSpritePool, load_car_textures
 from render.lane_paint import paint_spec
 from render.intersection_topology import (
     classify_intersection_sides,
-    corner_quadrant_for_sides,
     mixed_corner_leftovers,
     mouth_spans_by_edge,
     mouth_spans_local,
-    overlay_type_for_intersection,
     overlay_type_for_sides,
     straight_axis_for_intersection,
     tee_layout_for_sides,
 )
 from render.tiles import (
     TileSet,
-    generate_corner_texture,
-    generate_cross_texture,
     generate_lane_paint_texture,
     generate_mixed_texture,
-    generate_straight_texture,
-    generate_tee_texture,
 )
 from render.buildings import (
     buildings_dir,
@@ -693,44 +685,15 @@ class StoplightsWindow(arcade.Window):
         for key, cells in intersection_cells_map.items():
             cfg = self.game.intersections.get(key)
             size_cells = cfg.size_cells if cfg else 4
-            active, _, _ = classify_intersection_sides(key, cells)
+            world_active, _, _ = classify_intersection_sides(
+                key, cells, require_centre_two=False
+            )
             yaw = self._camera.view_yaw_q
-            display_active = rotate_sides(active, yaw)
-            itype = overlay_type_for_intersection(key, display_active)
+            family = overlay_type_for_sides(world_active)
             centered_tex: arcade.Texture | None = None
             paint_thru = bool(getattr(cfg, "paint_thru_lines", True)) if cfg else True
-            if itype == places.INTERSECTION_TYPE_NONE:
-                pass
-            elif (
-                itype
-                in (
-                    places.INTERSECTION_TYPE_DOUBLE,
-                    places.INTERSECTION_TYPE_DOUBLE_CROSS,
-                    places.INTERSECTION_TYPE_DOUBLE_TEE,
-                    places.INTERSECTION_TYPE_DOUBLE_CORNER,
-                    places.INTERSECTION_TYPE_MIXED,
-                    places.INTERSECTION_TYPE_MIXED_CROSS,
-                    places.INTERSECTION_TYPE_MIXED_TEE,
-                    places.INTERSECTION_TYPE_MIXED_CORNER,
-                    places.INTERSECTION_TYPE_MIXED_STRAIGHT,
-                    places.INTERSECTION_TYPE_ONE,
-                    places.INTERSECTION_TYPE_ONE_CROSS,
-                    places.INTERSECTION_TYPE_ONE_TEE,
-                    places.INTERSECTION_TYPE_ONE_CORNER,
-                    places.INTERSECTION_TYPE_ONE_STRAIGHT,
-                )
-                or str(itype).startswith("mixed_")
-                or str(itype).startswith("double_")
-                or str(itype).startswith("one_")
-                or str(itype).startswith("jogged_")
-            ):
+            if family != places.INTERSECTION_TYPE_NONE:
                 spans = mouth_spans_by_edge(key, cells)
-                world_active, _, _ = classify_intersection_sides(
-                    key, cells, require_centre_two=False
-                )
-                family = places.overlay_stamp_family(itype)
-                if family not in ("cross", "tee", "corner", "straight"):
-                    family = overlay_type_for_sides(world_active)
                 world_ax = straight_axis_for_intersection(key, cells, world_active)
                 axis, stem = tee_layout_for_sides(world_active, through_fallback=world_ax)
                 leftovers = mixed_corner_leftovers(cells, spans, world_active)
@@ -745,38 +708,6 @@ class StoplightsWindow(arcade.Window):
                     spans=local,
                     paint_thru_lines=paint_thru,
                     intersection_key=key,
-                )
-            elif itype in (
-                places.INTERSECTION_TYPE_CROSS,
-                places.INTERSECTION_TYPE_NORMAL_CROSS,
-            ):
-                centered_tex = generate_cross_texture(size_cells)
-            elif itype in (
-                places.INTERSECTION_TYPE_CORNER,
-                places.INTERSECTION_TYPE_NORMAL_CORNER,
-            ):
-                q = corner_quadrant_for_sides(display_active)
-                centered_tex = generate_corner_texture(
-                    size_cells, quadrant=q, paint_thru_lines=paint_thru
-                )
-            elif itype in (
-                places.INTERSECTION_TYPE_STRAIGHT,
-                places.INTERSECTION_TYPE_NORMAL_STRAIGHT,
-            ):
-                ax = rotate_straight_axis(straight_axis_for_intersection(key, cells, active), yaw)
-                centered_tex = generate_straight_texture(
-                    size_cells, axis=ax, paint_thru_lines=paint_thru
-                )
-            elif itype in (
-                places.INTERSECTION_TYPE_TEE,
-                places.INTERSECTION_TYPE_NORMAL_TEE,
-            ):
-                world_ax = straight_axis_for_intersection(key, cells, active)
-                axis, stem = tee_layout_for_sides(
-                    display_active, through_fallback=rotate_straight_axis(world_ax, yaw)
-                )
-                centered_tex = generate_tee_texture(
-                    size_cells, axis=axis, stem=stem, paint_thru_lines=paint_thru
                 )
             self._overlay_intersection(cells, centered_tex, road_cross_tex, center_x, center_y)
 

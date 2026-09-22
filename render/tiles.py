@@ -129,7 +129,7 @@ _CROSS_TEX_REV = 5
 _DOUBLE_TEX_REV = 5
 _DOUBLE_TEE_TEX_REV = 3
 _DOUBLE_CORNER_TEX_REV = 3
-_MIXED_TEX_REV = 23
+_MIXED_TEX_REV = 24
 _CORNER_TEX_REV = 3
 
 
@@ -343,6 +343,7 @@ def generate_mixed_texture(
     """Mouth-based twin stamp. Cached by leftovers, spans, family, yaw, thru paint."""
     if Image is None:
         return None
+    from render.corner_gen import frozen_curb_key
     from render.thru_lines import frozen_thru_profile
 
     cells = max(2, min(12, cells))
@@ -363,7 +364,20 @@ def generate_mixed_texture(
         intersection_key=intersection_key,
         paint=paint,
     )
-    key = (cells, leftovers, fam, ax, st, yq, frozen_spans, paint, thru_key, _MIXED_TEX_REV)
+    curb_key = frozen_curb_key(intersection_key, fam, ax, st, spans)
+    key = (
+        cells,
+        leftovers,
+        fam,
+        ax,
+        st,
+        yq,
+        frozen_spans,
+        paint,
+        thru_key,
+        curb_key,
+        _MIXED_TEX_REV,
+    )
     if key in _mixed_texture_cache:
         return _mixed_texture_cache[key]
     try:
