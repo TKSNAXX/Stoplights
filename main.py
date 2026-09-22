@@ -10,7 +10,9 @@ from render.camera import (
     cardinal_label_anchors,
     display_dir_index,
     grid_to_screen,
+    grid_to_world_px,
     iso_depth,
+    map_camera_position,
     road_tile_key,
     screen_to_grid,
     view_south_cell,
@@ -125,7 +127,8 @@ class StoplightsWindow(arcade.Window):
         self._sim_time = 0.0
         self._move_duration = MOVE_DURATION_BASE
 
-        self._cached_center: tuple[float, float, float, int] | None = None
+        self._tile_cache_yaw: int | None = None
+        self._overlay_pose: tuple[float, float, float] | None = None
         self._place_texts: dict[str, arcade.Text] = {}
         self._cardinal_texts: dict[str, arcade.Text] = {}
 
@@ -154,6 +157,7 @@ class StoplightsWindow(arcade.Window):
         self._select_hint = FlashHint()
         self._hint_action = "select"
         self._camera = CameraController()
+        self._map_camera = arcade.Camera2D()
         self._space_pan: str | None = None
         self._held_hotkeys: set[str] = set()
         self._mouse_x = 0.0
@@ -173,7 +177,6 @@ class StoplightsWindow(arcade.Window):
         self._toolbar.set_place_icon(self._tile_set.get("place_zone"))
         self._toolbar.set_intersection_icon(self._tile_set.get("road_cross"))
         self._tile_sprite_list: arcade.SpriteList | None = None
-        self._tile_cells: list[tuple[int, int]] = []
 
         self._car_textures_by_dir = load_car_textures(assets_dir)
         self._car_sprite_pool = CarSpritePool(self._car_textures_by_dir, scale=2.0) if self._car_textures_by_dir else None
@@ -197,7 +200,7 @@ class StoplightsWindow(arcade.Window):
 
     def _invalidate_draw_cache(self) -> None:
         """Force tile cache rebuild on next draw (e.g. when lane config changes)."""
-        self._cached_center = None
+        self._tile_cache_yaw = None
 
     def _on_config_change(self, rebuild_world: bool = False) -> None:
         """Handle config changes consistently: optional world rebuild, cache invalidate, save."""
@@ -619,56 +622,60 @@ class StoplightsWindow(arcade.Window):
             place_cells.update(places.place_bounds(place))
         return place_cells
 
-    def _append_sprite_at(self, tex: arcade.Texture | None, gx: float, gy: float, center_x: float, center_y: float) -> None:
+    def _append_sprite_at(
+        self,
+        tex: arcade.Texture | None,
+        gx: float,
+        gy: float,
+        bounds: tuple[int, int, int, int],
+    ) -> None:
         if tex is None or self._tile_sprite_list is None:
             return
-        sx, sy = self._to_screen(gx, gy, center_x, center_y)
-        spr = arcade.Sprite(tex, scale=self._zoom_scale)
+        sx, sy = grid_to_world_px(gx, gy, *bounds, self._camera.view_yaw_q)
+        spr = arcade.Sprite(tex, scale=1.0)
         spr.center_x, spr.center_y = sx, sy
         self._tile_sprite_list.append(spr)
-        self._tile_cells.append((gx, gy))
 
     def _append_centered_sprite_for_cells(
         self,
         tex: arcade.Texture | None,
         cells: list[tuple[int, int]],
-        center_x: float,
-        center_y: float,
+        bounds: tuple[int, int, int, int],
     ) -> None:
         if tex is None or not cells:
             return
         cx = sum(c[0] for c in cells) / len(cells)
         cy = sum(c[1] for c in cells) / len(cells)
-        self._append_sprite_at(tex, cx, cy, center_x, center_y)
+        self._append_sprite_at(tex, cx, cy, bounds)
 
     def _overlay_intersection(
         self,
         cells: list[tuple[int, int]],
         centered_overlay_tex: arcade.Texture | None,
         road_cross_tex: arcade.Texture | None,
-        center_x: float,
-        center_y: float,
+        bounds: tuple[int, int, int, int],
     ) -> None:
         if centered_overlay_tex is not None:
-            self._append_centered_sprite_for_cells(centered_overlay_tex, cells, center_x, center_y)
+            self._append_centered_sprite_for_cells(centered_overlay_tex, cells, bounds)
             return
         for gx, gy in cells:
-            self._append_sprite_at(road_cross_tex, gx, gy, center_x, center_y)
+            self._append_sprite_at(road_cross_tex, gx, gy, bounds)
 
     def _rebuild_static_draw_cache(self, center_x: float, center_y: float) -> None:
-        self._cached_center = (center_x, center_y, self._zoom_scale, self._camera.view_yaw_q)
-        self._tile_cells.clear()
-
+        """Rebuild ground sprites in zoom-1 world pixels. Pan and zoom do not call this."""
         lane_cell_to_tex = self._build_lane_cell_to_tex()
         place_cells = self._collect_place_cells()
 
-        self._tile_sprite_list = arcade.SpriteList()
         grass_tex = self._tile_set.get("grass")
         place_zone_tex = self._tile_set.get("place_zone")
         road_cross_tex = self._tile_set.get("road_cross")
         intersection_cells_map = world.get_intersection_cells_map()
         all_inter_cells = {c for cells in intersection_cells_map.values() for c in cells}
-        x_lo, y_lo, x_hi, y_hi = world.get_bounds()
+        bounds = world.get_bounds()
+        x_lo, y_lo, x_hi, y_hi = bounds
+        n_cells = max(0, x_hi - x_lo) * max(0, y_hi - y_lo)
+        n_overlay = sum(len(cells) for cells in intersection_cells_map.values())
+        self._tile_sprite_list = arcade.SpriteList(capacity=max(1, n_cells + n_overlay))
         for gy in range(y_lo, y_hi):
             for gx in range(x_lo, x_hi):
                 cell = (gx, gy)
@@ -680,7 +687,7 @@ class StoplightsWindow(arcade.Window):
                     tex = place_zone_tex
                 else:
                     tex = grass_tex
-                self._append_sprite_at(tex, gx, gy, center_x, center_y)
+                self._append_sprite_at(tex, gx, gy, bounds)
 
         for key, cells in intersection_cells_map.items():
             cfg = self.game.intersections.get(key)
@@ -709,10 +716,24 @@ class StoplightsWindow(arcade.Window):
                     paint_thru_lines=paint_thru,
                     intersection_key=key,
                 )
-            self._overlay_intersection(cells, centered_tex, road_cross_tex, center_x, center_y)
+            self._overlay_intersection(cells, centered_tex, road_cross_tex, bounds)
 
+        self._tile_cache_yaw = self._camera.view_yaw_q
         self._rebuild_building_sprites(center_x, center_y)
         self._update_text_positions(center_x, center_y)
+        self._overlay_pose = (center_x, center_y, self._zoom_scale)
+
+    def _sync_draw_caches(self, center_x: float, center_y: float) -> None:
+        """Rebuild ground art on yaw or edits. Buildings and labels follow the screen."""
+        yaw = self._camera.view_yaw_q
+        if self._tile_sprite_list is None or self._tile_cache_yaw != yaw:
+            self._rebuild_static_draw_cache(center_x, center_y)
+            return
+        pose = (center_x, center_y, self._zoom_scale)
+        if self._overlay_pose != pose:
+            self._update_building_positions(center_x, center_y)
+            self._update_text_positions(center_x, center_y)
+            self._overlay_pose = pose
 
     def _update_text_positions(self, center_x: float, center_y: float) -> None:
         """Update place and cardinal text screen positions."""
@@ -744,16 +765,6 @@ class StoplightsWindow(arcade.Window):
             ax, ay = cardinal_label_anchors(name, yaw)
             txt.anchor_x = ax
             txt.anchor_y = ay
-
-    def _update_tile_positions(self, center_x: float, center_y: float) -> None:
-        """Update sprite screen positions without rebuilding. Requires _tile_cells and _tile_sprite_list."""
-        if self._tile_sprite_list is not None and self._tile_cells:
-            to_screen = self._to_screen
-            for i, (gx, gy) in enumerate(self._tile_cells):
-                sx, sy = to_screen(gx, gy, center_x, center_y)
-                spr = self._tile_sprite_list[i]
-                spr.center_x, spr.center_y = sx, sy
-        self._update_building_positions(center_x, center_y)
 
     def _rebuild_building_sprites(self, center_x: float, center_y: float) -> None:
         """Pack lots and allocate sprites when the tile cache rebuilds."""
@@ -910,6 +921,7 @@ class StoplightsWindow(arcade.Window):
 
     def on_resize(self, width: int, height: int) -> None:
         super().on_resize(width, height)
+        self._map_camera.match_window(position=False)
         self._sync_toolbar_bottom()
         self._update_zoom_scale()
         if self._car_sprite_pool is not None:
@@ -952,20 +964,15 @@ class StoplightsWindow(arcade.Window):
         draw_start = time.perf_counter()
         self.clear()
         center_x, center_y = self._effective_center()
-        cached = self._cached_center
-        yaw = self._camera.view_yaw_q
-        needs_rebuild = cached is None or cached[2] != self._zoom_scale or cached[3] != yaw
-        if needs_rebuild:
-            self._rebuild_static_draw_cache(center_x, center_y)
-        elif (center_x, center_y) != (cached[0], cached[1]):
-            self._update_tile_positions(center_x, center_y)
-            self._update_text_positions(center_x, center_y)
-            self._cached_center = (center_x, center_y, self._zoom_scale, yaw)
+        self._sync_draw_caches(center_x, center_y)
 
         grade_world = not is_identity_grade(self._color_hue, self._color_sat)
         if grade_world:
             self._color_grade.begin(self.width, self.height)
-            self.default_camera.use()
+        self._use_map_camera()
+        if self._tile_sprite_list is not None:
+            self._tile_sprite_list.draw(pixelated=True)
+        self.default_camera.use()
         self._draw_world_pass(center_x, center_y)
         if grade_world:
             self._color_grade.end_and_blit(self._color_hue, self._color_sat)
@@ -1012,11 +1019,15 @@ class StoplightsWindow(arcade.Window):
         self._dialog_manager.isolate_active = bool(getattr(self._tool_manager.select, "isolate", False))
         self._dialog_manager.draw_all()
 
-    def _draw_world_pass(self, center_x: float, center_y: float) -> None:
-        """Tiles, draw ghosts, cars/buildings, then selection rims. Graded as a unit."""
-        if self._tile_sprite_list is not None:
-            self._tile_sprite_list.draw(pixelated=True)
+    def _use_map_camera(self) -> None:
+        """Pan and zoom the ground tiles. Sprites stay in zoom-1 world pixels."""
+        z = self._zoom_scale if self._zoom_scale else 1.0
+        self._map_camera.zoom = z
+        self._map_camera.position = map_camera_position(self._camera.cam_x, self._camera.cam_y, z)
+        self._map_camera.use()
 
+    def _draw_world_pass(self, center_x: float, center_y: float) -> None:
+        """Ghosts, cars/buildings, then selection rims, in screen pixels. Graded as a unit."""
         self._tool_manager.active.draw_preview(center_x, center_y)
         self._reset_world_blend()
         self._tool_manager.active.draw_floor(center_x, center_y)

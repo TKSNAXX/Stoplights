@@ -476,7 +476,7 @@
       "center_y": 90,
       "size_cells": 8,
       "protected": false,
-      "paint_thru_lines": true
+      "paint_thru_lines": false
     },
     "intersection_106": {
       "center_x": 90,

@@ -75,6 +75,48 @@ def grid_to_screen(
     return (sx, sy)
 
 
+def grid_to_world_px(
+    gx: float,
+    gy: float,
+    x_lo: int,
+    y_lo: int,
+    x_hi: int,
+    y_hi: int,
+    view_yaw_q: int = 0,
+) -> tuple[float, float]:
+    """Zoom-1 offset from the content center. The map camera applies pan and zoom."""
+    return grid_to_screen(gx, gy, 0.0, 0.0, x_lo, y_lo, x_hi, y_hi, 1.0, view_yaw_q)
+
+
+def map_camera_position(cam_x: float, cam_y: float, zoom_scale: float) -> tuple[float, float]:
+    """Camera2D position that keeps the grid point under the cursor while panning."""
+    z = zoom_scale if zoom_scale else 1.0
+    return (cam_x / z, cam_y / z)
+
+
+def map_camera_screen(
+    world_x: float,
+    world_y: float,
+    cam_x: float,
+    cam_y: float,
+    zoom_scale: float,
+    width: float,
+    height: float,
+) -> tuple[float, float]:
+    """Screen point for a world pixel viewed through the map Camera2D.
+
+    The camera uses ``zoom = zoom_scale`` and ``position = map_camera_position(...)``,
+    with the projection centered on the window. That is
+    ``screen = (world - position) * zoom + (width/2, height/2)``.
+    """
+    z = zoom_scale if zoom_scale else 1.0
+    cam_px, cam_py = map_camera_position(cam_x, cam_y, z)
+    return (
+        (world_x - cam_px) * z + width / 2.0,
+        (world_y - cam_py) * z + height / 2.0,
+    )
+
+
 def screen_to_grid(
     sx: float,
     sy: float,

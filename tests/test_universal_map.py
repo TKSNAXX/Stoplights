@@ -789,6 +789,28 @@ def test_camera_yaw_roundtrip() -> None:
         assert abs(back_y - gy) < 1e-6
 
 
+def test_map_camera_matches_grid_to_screen() -> None:
+    """World pixels through the map camera land on the same screen points as grid_to_screen."""
+    from render.camera import grid_to_screen, grid_to_world_px, map_camera_screen
+
+    bounds = (0, 0, 80, 90)
+    width, height = 800.0, 600.0
+    cells = ((10.0, 12.0), (36.0, 48.0), (79.0, 0.0))
+    pans = ((0.0, 0.0), (40.0, -15.0), (-100.0, 80.0))
+    zooms = (0.25, 1.0, 2.5)
+    for yaw in range(4):
+        for gx, gy in cells:
+            wx, wy = grid_to_world_px(gx, gy, *bounds, yaw)
+            for cam_x, cam_y in pans:
+                for zoom in zooms:
+                    got = map_camera_screen(wx, wy, cam_x, cam_y, zoom, width, height)
+                    expected = grid_to_screen(
+                        gx, gy, width / 2.0 - cam_x, height / 2.0 - cam_y, *bounds, zoom, yaw,
+                    )
+                    assert abs(got[0] - expected[0]) < 1e-6
+                    assert abs(got[1] - expected[1]) < 1e-6
+
+
 def test_camera_yaw_north_looks_like_east() -> None:
     from render.camera import grid_to_screen
 
@@ -4749,6 +4771,7 @@ def main() -> None:
         test_place_spawn_survives_rebuild,
         test_camera_roundtrip,
         test_camera_yaw_roundtrip,
+        test_map_camera_matches_grid_to_screen,
         test_camera_yaw_north_looks_like_east,
         test_iso_depth_reverses_at_180,
         test_yaw_cardinal_and_dir_remap,
