@@ -1,12 +1,14 @@
 """
 Police car for gridlock response.
 
-One cop owns a beat of junctions joined by a short lane. While he holds, every
-approach stops except the one he has opened. He spawns from a place lane.
+One cop owns a beat of junctions joined by a short lane, but he only works the
+junction he is standing at: its mouths, and the cars in its box. He spawns from
+a place lane.
 Home end of a lane is derived from traffic_in/traffic_out (place end), not map names.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from sim.constants import INBOUND_TAIL_CELLS, POLICE_SPEED
@@ -14,9 +16,11 @@ from sim.movement import pose_for_lane_position
 from sim.occupancy import occupancy_from
 from sim.paths import direction_index_8_from_tangent, path_length, path_position, path_tangent
 from sim.places import choose_next_lane_from_node
-from sim import world
+from sim import routes, world
 
 DISMISS_LINGER = 5.0
+# How long the one-side signal fades out to every approach flowing, before he leaves.
+FADE_SECONDS = 8.0
 # One cop owns a whole beat (a junction plus the neighbours a short lane joins it to).
 COPS_PER_INTERSECTION = 1
 # Cars one approach may send before he closes it, and the longest that green lasts.
@@ -25,6 +29,11 @@ RELEASE_SECONDS = 8.0
 # Gives up when the box cannot empty, then stays away so he does not respawn at once.
 MAX_HOLD_SECONDS = 30.0
 RESPAWN_COOLDOWN = 20.0
+# Share of normal speed for the creep. The old cyan exemption, kept slow on purpose.
+DRAIN_SPEED = 0.3
+# A feed-lane car is stopped only this close to the mouth, in fractional grid cells.
+HOLD_NEAR_CELLS = 0.5
+_NO_EXIT = float("inf")
 
 LIGHT_CYCLE = [(255, 255, 255), (60, 140, 220), (255, 255, 255), (220, 80, 80)]
 LIGHT_PHASE_DURATION = 0.25 / 3
@@ -339,8 +348,8 @@ def _approach_dir(car, node: str) -> str:
     return ""
 
 
-def approach_queue_count(occupancy, node: str, lanes: tuple[int, ...]) -> int:
-    """Cars waiting on these lanes: the tail, and the whole source box of a short hop."""
+def approach_queue_count(occupancy, _node: str, lanes: tuple[int, ...]) -> int:
+    """Cars waiting on these lanes, in the tail only. The junction upstream is not his."""
     occ = occupancy_from(occupancy)
     seen: set[int] = set()
     count = 0
@@ -351,17 +360,6 @@ def approach_queue_count(occupancy, node: str, lanes: tuple[int, ...]) -> int:
                 continue
             if car.position_in_lane < thresh:
                 continue
-            ident = id(car)
-            if ident in seen:
-                continue
-            seen.add(ident)
-            count += 1
-        if not _short_inbound(lane):
-            continue
-        src = world.lane_traffic_in(lane)
-        if not src or not world.is_intersection(src):
-            continue
-        for car in occ.cars_in_intersection(src):
             ident = id(car)
             if ident in seen:
                 continue
@@ -417,19 +415,17 @@ def junction_deadlocked(occupancy, node: str) -> bool:
 
 
 def iter_box_cars(occupancy, node: str):
-    """Path cars in this box and in one-hop attached boxes."""
+    """Path cars in this junction only. The neighbour box is another cop's problem."""
     occ = occupancy_from(occupancy)
     seen: set[int] = set()
-    keys = (node, *world.attached_intersections(node))
-    for key in keys:
-        for car in occ.cars_in_intersection(key):
-            if getattr(car, "motion_mode", "lane") != "path":
-                continue
-            ident = id(car)
-            if ident in seen:
-                continue
-            seen.add(ident)
-            yield car
+    for car in occ.cars_in_intersection(node):
+        if getattr(car, "motion_mode", "lane") != "path":
+            continue
+        ident = id(car)
+        if ident in seen:
+            continue
+        seen.add(ident)
+        yield car
 
 
 def waiting_approaches(occupancy, node: str) -> dict[str, int]:
@@ -495,12 +491,15 @@ def advance_signal(police: PoliceCar, dt: float, occupancy) -> str:
     when the box will not empty.
     """
     police.hold_time += dt
-    if police.hold_time >= MAX_HOLD_SECONDS:
-        return "giveup"
-
     node = police.target_intersection
     box = list(iter_box_cars(occupancy, node))
     waiting = waiting_approaches(occupancy, node)
+
+    if police.hold_time >= MAX_HOLD_SECONDS and police.phase != "fade":
+        _begin_fade(police, node, giveup=True)
+
+    if police.phase == "fade":
+        return _advance_fade(police, dt, node, occupancy, box)
 
     if police.phase == "green":
         police.phase_time += dt
@@ -527,14 +526,68 @@ def advance_signal(police: PoliceCar, dt: float, occupancy) -> str:
             police.initial_clear = False
         return ""
 
-    police.linger_timer += dt
-    if police.linger_timer < DISMISS_LINGER:
+    _begin_fade(police, node, giveup=False)
+    return _advance_fade(police, dt, node, occupancy, box)
+
+
+def _begin_fade(police: PoliceCar, node: str, giveup: bool) -> None:
+    """Start easing every approach up to full speed. One side stays explicit."""
+    police.phase = "fade"
+    police.fade_time = 0.0
+    police.fade_ready = False
+    police.fade_giveup = giveup
+    police.fade_dirs = tuple(sorted(approach_groups(node)))
+    police.green_dir = police.fade_dirs[0] if police.fade_dirs else ""
+    police.initial_clear = False
+    police.linger_timer = 0.0
+
+
+def _advance_fade(police: PoliceCar, dt: float, node: str, occupancy, box: list) -> str:
+    """
+    Walk the explicit green through the sides while the others speed up.
+
+    The tick that reaches the end leaves him holding at full speed. The next tick
+    sends him home, so dropping the flags changes nothing.
+    """
+    if not police.fade_giveup and box:
+        police.phase = "clear"
+        police.fade_time = 0.0
+        police.fade_ready = False
+        police.fade_giveup = False
+        police.fade_dirs = ()
+        police.green_dir = ""
+        police.linger_timer = 0.0
         return ""
-    other = next_beat_target(occupancy, node)
-    if other:
-        police.walk_target = other
-        return "walk"
-    return "home"
+    if police.fade_ready:
+        if police.fade_giveup:
+            return "giveup"
+        other = next_beat_target(occupancy, node)
+        if other:
+            police.walk_target = other
+            return "walk"
+        return "home"
+    police.fade_time += dt
+    if police.fade_time >= FADE_SECONDS:
+        police.fade_time = FADE_SECONDS
+        police.fade_ready = True
+    return ""
+
+
+def side_release(police: PoliceCar, direction: str) -> float:
+    """Speed for one approach during a fade: 1 once featured, otherwise the progress."""
+    dirs = police.fade_dirs
+    span = FADE_SECONDS if FADE_SECONDS > 0 else 1.0
+    progress = max(0.0, min(1.0, police.fade_time / span))
+    if not dirs or progress >= 1.0:
+        return 1.0
+    featured = min(len(dirs) - 1, int(progress * len(dirs)))
+    try:
+        index = dirs.index(direction)
+    except ValueError:
+        return progress
+    if index <= featured:
+        return 1.0
+    return progress
 
 
 def _note_entries(police: PoliceCar, occupancy) -> None:
@@ -551,16 +604,122 @@ def _note_entries(police: PoliceCar, occupancy) -> None:
         police.entered_ids.add(id(car))
 
 
+def _pose_xy(car) -> tuple[float, float] | None:
+    gx = getattr(car, "pose_gx", None)
+    gy = getattr(car, "pose_gy", None)
+    if gx is not None and gy is not None:
+        return (float(gx), float(gy))
+    cell = car.current_cell()
+    if cell is None:
+        return None
+    return (float(cell[0]), float(cell[1]))
+
+
+def _exit_cell(car, node: str) -> tuple[float, float] | None:
+    """Where this car is headed: the out-lane mouth in the box, or the lane's last cell."""
+    if getattr(car, "motion_mode", "lane") == "path":
+        out = getattr(car, "pending_out_lane_index", None)
+        if out is None and getattr(car, "route", ()):
+            planned = routes.out_lane_after(car.route, int(getattr(car, "route_index", 0)))
+            if planned is not None:
+                out = planned[0]
+        if out is None:
+            return None
+        cells = world.get_lane_cells(int(out))
+        if not cells:
+            return None
+        return (float(cells[0][0]), float(cells[0][1]))
+    if world.lane_traffic_out(getattr(car, "lane_index", -1)) == node:
+        lane = world.get_lane_cells(car.lane_index)
+        if lane:
+            return (float(lane[-1][0]), float(lane[-1][1]))
+    return None
+
+
+def drain_cap(node: str) -> int:
+    """Cars that may creep at once: the intersection's size, used directly."""
+    return max(1, world.intersection_size(node))
+
+
+def cells_to_exit(car, node: str) -> float:
+    """Fractional grid cells from the car's pose to the point it is driving toward."""
+    start = _pose_xy(car)
+    end = _exit_cell(car, node)
+    if start is None or end is None:
+        return _NO_EXIT
+    return math.hypot(end[0] - start[0], end[1] - start[1])
+
+
+def _fill_drain(police: PoliceCar, box_cars: list, node: str) -> None:
+    """Keep a few cars creeping until they leave, then hand the slot to the nearest exit."""
+    present = {id(car) for car in box_cars}
+    police.drain_ids = {ident for ident in police.drain_ids if ident in present}
+    cap = drain_cap(node)
+    if len(police.drain_ids) >= cap:
+        return
+    waiting = [car for car in box_cars if id(car) not in police.drain_ids]
+    waiting.sort(key=lambda car: (cells_to_exit(car, node), id(car)))
+    for car in waiting:
+        if len(police.drain_ids) >= cap:
+            break
+        police.drain_ids.add(id(car))
+
+
+def _set_release(car, speed: float) -> None:
+    """0 stops, a fraction trickles, 1 is the full-speed wave."""
+    car.police_release = max(0.0, min(1.0, speed))
+    if car.police_release >= 1.0:
+        car.police_held = False
+        car.police_clear = "wave"
+    elif car.police_release <= 0.0:
+        car.police_held = True
+        car.police_clear = ""
+    else:
+        car.police_held = False
+        car.police_clear = ""
+
+
+def _mark_fade(police: PoliceCar, occupancy, node: str) -> None:
+    """Featured sides flow. Sides not yet reached move at the fade's progress."""
+    occ = occupancy_from(occupancy)
+    for direction, lanes in approach_groups(node).items():
+        _apply_side_speed(occ, node, lanes, side_release(police, direction))
+    for car in iter_box_cars(occ, node):
+        _set_release(car, side_release(police, _approach_dir(car, node)))
+
+
+def _apply_side_speed(occ, node: str, lanes: tuple[int, ...], speed: float) -> None:
+    for lane in lanes:
+        thresh = _tail_threshold(lane)
+        for car in occ.cars_on_lane(lane):
+            if getattr(car, "motion_mode", "lane") == "path":
+                continue
+            if car.position_in_lane < thresh:
+                continue
+            if speed >= 1.0 or cells_to_exit(car, node) <= HOLD_NEAR_CELLS:
+                _set_release(car, speed)
+
+
 def mark_holding(police: PoliceCar, occupancy) -> None:
-    """Hold every approach but the open one. Drain the box the first time he arrives."""
+    """Hold every approach but the open one. On arrival, a few cars creep out at a time."""
     if police.state != "holding":
         return
     node = police.target_intersection
+    if police.phase == "fade":
+        _mark_fade(police, occupancy, node)
+        return
     green = police.green_dir if police.phase == "green" else ""
-    for car in iter_box_cars(occupancy, node):
+    box_cars = list(iter_box_cars(occupancy, node))
+    if police.initial_clear:
+        _fill_drain(police, box_cars, node)
+    for car in box_cars:
         if police.initial_clear:
-            car.police_held = False
-            car.police_clear = "drain"
+            if id(car) in police.drain_ids:
+                car.police_held = False
+                car.police_clear = "drain"
+            else:
+                car.police_clear = ""
+                car.police_held = True
             continue
         in_this = _path_car_in_box(car, node)
         if in_this or (green and _approach_dir(car, node) == green):
@@ -582,9 +741,12 @@ def mark_holding(police: PoliceCar, occupancy) -> None:
                     car.police_held = False
                     if car.police_clear != "drain":
                         car.police_clear = "wave"
-                else:
+                elif cells_to_exit(car, node) <= HOLD_NEAR_CELLS:
                     car.police_clear = ""
                     car.police_held = True
+                else:
+                    car.police_clear = ""
+                    car.police_held = False
 
 
 def spawn_police(intersection_id: str, deploy_lane: int) -> PoliceCar:
@@ -652,6 +814,11 @@ class PoliceCar:
     phase_time: float = 0.0
     hold_time: float = 0.0
     initial_clear: bool = True
+    drain_ids: set[int] = field(default_factory=set)
+    fade_dirs: tuple[str, ...] = ()
+    fade_time: float = 0.0
+    fade_ready: bool = False
+    fade_giveup: bool = False
     routing: bool = False
     walk_target: str = ""
 
@@ -713,6 +880,11 @@ class PoliceCar:
         self.phase_time = 0.0
         self.hold_time = 0.0
         self.initial_clear = True
+        self.drain_ids = set()
+        self.fade_dirs = ()
+        self.fade_time = 0.0
+        self.fade_ready = False
+        self.fade_giveup = False
         self.linger_timer = 0.0
         self.depart_pending = False
         self.walk_target = ""

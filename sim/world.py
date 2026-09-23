@@ -597,6 +597,16 @@ def get_intersection_keys() -> list[str]:
     return sorted(_state.intersections.keys())
 
 
+def intersection_size(key: str) -> int:
+    """Authored span of the box in cells, or 4 when the junction is unknown."""
+    inter = _state.intersections.get(key)
+    if inter is None:
+        return 4
+    x_lo, x_hi, _y_lo, _y_hi = inter.bounds
+    span = int(x_hi) - int(x_lo)
+    return span if span > 0 else 4
+
+
 def get_intersection_cells_by_key(key: str) -> list[tuple[int, int]]:
     inter = _state.intersections.get(key)
     return list(inter.cells) if inter else []

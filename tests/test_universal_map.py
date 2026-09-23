@@ -12,6 +12,7 @@ from sim.cars import Car
 from sim.cop import (
     COPS_PER_INTERSECTION,
     DISMISS_LINGER,
+    FADE_SECONDS,
     INBOUND_TAIL_CELLS,
     _home_at_lane_start,
     in_node_jam,
@@ -311,7 +312,9 @@ def test_police_on_demand() -> None:
     g.police_list = [holder]
     holder.linger_timer = 0.0
     holder.hold_time = 0.0
-    g._update_police(DISMISS_LINGER + 0.1)
+    from sim.cop import FADE_SECONDS
+    g._update_police(FADE_SECONDS)
+    g._update_police(0.1)
     assert holder.state == "returning"
 
 
@@ -336,7 +339,7 @@ def test_police_disabled_and_clear_cars() -> None:
 
 def test_police_holding_helps_jam() -> None:
     from sim.constants import VIS_ZONE_WIDTH_CELLS
-    from sim.cop import _intersection_center, advance_signal, approach_groups
+    from sim.cop import DRAIN_SPEED, _intersection_center, advance_signal, approach_groups, drain_cap
     from sim.impasse import apply_impasse
     from sim.paths import direction_index_8_from_tangent
     from sim.visibility import build_poses
@@ -362,7 +365,7 @@ def test_police_holding_helps_jam() -> None:
 
     path_cars = [
         _make_test_car(mode="path", cell=main_cells[i % len(main_cells)], vis="red")
-        for i in range(5)
+        for i in range(drain_cap("main") + 1)
     ]
     north_tail = _make_test_car(lane_index=north, position=len(north_cells) - 1, vis="red")
     south_tail = _make_test_car(lane_index=south, position=len(south_cells) - 1, vis="red")
@@ -374,8 +377,24 @@ def test_police_holding_helps_jam() -> None:
     poses = build_poses(g.cars)
     g._apply_police_influence(poses, lambda *_: [], half)
     g._apply_visibility(poses, lambda *_: [], half)
-    assert all(c.police_clear == "drain" for c in path_cars)
-    assert all(c.speed_scale == 1.0 and c.visibility_state == "cyan" for c in path_cars)
+
+    creeping = [c for c in path_cars if c.police_clear == "drain"]
+    waiting = [c for c in path_cars if c.police_held]
+    cap = drain_cap("main")
+    assert len(creeping) == cap
+    assert len(waiting) == len(path_cars) - cap
+    assert all(c.speed_scale == DRAIN_SPEED and c.visibility_state == "cyan" for c in creeping)
+    assert all(c.speed_scale == 0.0 for c in waiting)
+    # The same cars keep the slot; the rest do not start until those have left.
+    g._apply_police_influence(poses, lambda *_: [], half)
+    assert {id(c) for c in path_cars if c.police_clear == "drain"} == {id(c) for c in creeping}
+    # One creeper leaves the box; his slot passes to a car that was waiting.
+    g.cars = [c for c in g.cars if c is not creeping[0]]
+    g._apply_police_influence(build_poses(g.cars), lambda *_: [], half)
+    still = {id(c) for c in creeping[1:]}
+    now = {id(c) for c in path_cars if c is not creeping[0] and c.police_clear == "drain"}
+    assert len(now) == cap
+    assert still <= now
     assert north_tail.police_held and south_tail.police_held
     assert north_tail.speed_scale == 0.0 and south_tail.speed_scale == 0.0
 
@@ -453,8 +472,127 @@ def test_police_holding_helps_jam() -> None:
     assert in_node_jam(overlap_car, "main")
 
 
+def test_police_exit_proximity() -> None:
+    """Cyan goes to the car nearest its exit. A feed lane stops only at the mouth."""
+    from sim.cop import approach_groups, cells_to_exit, drain_cap
+
+    g = GameState()
+    main_cells = world.get_intersection_cells_by_key("main")
+    out_lane = world.outgoing_lanes("main")[0]
+    exit_cell = world.get_lane_cells(out_lane)[0]
+    ex, ey = float(exit_cell[0]), float(exit_cell[1])
+
+    def _in_box(along: float):
+        car = _make_test_car(mode="path", cell=main_cells[0], vis="red")
+        car.pending_out_lane_index = out_lane
+        car.pose_gx = ex + along
+        car.pose_gy = ey
+        return car
+
+    cap = drain_cap("main")
+    queued = [_in_box(0.2 + i) for i in range(cap + 1)]
+    near, far = queued[0], queued[-1]
+    assert cells_to_exit(near, "main") < cells_to_exit(far, "main")
+    assert cells_to_exit(near, "main") < 1.0
+
+    approach = pick_deploy_lane("main")
+    assert approach is not None
+    cop_car = spawn_police("main", approach)
+    cop_car.state = "holding"
+    cop_car.current_node = "main"
+    cop_car.target_intersection = "main"
+    cop_car.phase = "clear"
+    cop_car.initial_clear = True
+    g.police_list = [cop_car]
+    g.cars = list(reversed(queued))
+    g._apply_police_influence(None, lambda *_: [], 0.5)
+    cyan = [c for c in g.cars if c.police_clear == "drain"]
+    assert near in cyan and far not in cyan
+    assert len(cyan) == cap
+
+    g.cars = [c for c in queued if c is not near]
+    g._apply_police_influence(None, lambda *_: [], 0.5)
+    assert far.police_clear == "drain"
+    assert sum(c.police_clear == "drain" for c in g.cars) == cap
+
+    groups = approach_groups("main")
+    lane = groups["S"][0]
+    cells = world.get_lane_cells(lane)
+    mouth = _make_test_car(lane_index=lane, position=len(cells) - 1, vis="red")
+    back = _make_test_car(lane_index=lane, position=len(cells) - 4, vis="red")
+    assert cells_to_exit(mouth, "main") <= 0.5
+    assert cells_to_exit(back, "main") > 0.5
+    cop_car.initial_clear = False
+    cop_car.phase = "green"
+    cop_car.green_dir = "N"
+    g.cars = [mouth, back]
+    g._apply_police_influence(None, lambda *_: [], 0.5)
+    assert mouth.police_held
+    assert back.police_held is False and back.police_clear == ""
+
+
+def test_police_fades_the_sides_up_before_leaving() -> None:
+    """One side stays open, the others rise to full speed, and only then does he leave."""
+    from sim.constants import VIS_ZONE_WIDTH_CELLS
+    from sim.cop import approach_groups
+    from sim.visibility import build_poses
+
+    g = GameState()
+    groups = approach_groups("main")
+    cop_car = spawn_police("main", pick_deploy_lane("main"))
+    cop_car.state = "holding"
+    cop_car.current_node = "main"
+    cop_car.target_intersection = "main"
+    cop_car.phase = "fade"
+    cop_car.fade_giveup = False
+    cop_car.fade_dirs = tuple(sorted(groups))
+    cop_car.fade_time = 0.0
+    cop_car.fade_ready = False
+    assert len(cop_car.fade_dirs) >= 2
+    first, last = cop_car.fade_dirs[0], cop_car.fade_dirs[-1]
+
+    def _mouth(direction: str):
+        lane = groups[direction][0]
+        cells = world.get_lane_cells(lane)
+        return _make_test_car(lane_index=lane, position=len(cells) - 1)
+
+    opened = _mouth(first)
+    waiting = _mouth(last)
+    g.police_list = [cop_car]
+    half = VIS_ZONE_WIDTH_CELLS / 2.0
+
+    def _speeds() -> None:
+        g.cars = [opened, waiting]
+        poses = build_poses(g.cars)
+        g._apply_police_influence(poses, lambda *_: [], half)
+        g._apply_visibility(poses, lambda *_: [], half)
+
+    _speeds()
+    assert opened.police_clear == "wave" and opened.speed_scale == 1.0
+    assert waiting.police_held and waiting.speed_scale == 0.0
+
+    cop_car.fade_time = 0.5 * FADE_SECONDS
+    featured = min(len(cop_car.fade_dirs) - 1, int(0.5 * len(cop_car.fade_dirs)))
+    assert cop_car.fade_dirs.index(first) <= featured
+    assert cop_car.fade_dirs.index(last) > featured
+    _speeds()
+    assert opened.speed_scale == 1.0 and opened.police_clear == "wave"
+    assert waiting.police_release == 0.5 and waiting.speed_scale == 0.5
+    assert waiting.police_held is False
+
+    cop_car.fade_time = FADE_SECONDS
+    _speeds()
+    assert opened.speed_scale == 1.0 and waiting.speed_scale == 1.0
+    assert opened.police_clear == "wave" and waiting.police_clear == "wave"
+
+    g.cars = []
+    cop_car.fade_ready = True
+    g._update_police(0.1)
+    assert cop_car.state == "returning"
+
+
 def test_police_linger_and_divert() -> None:
-    from sim.cop import MAX_HOLD_SECONDS, RESPAWN_COOLDOWN
+    from sim.cop import FADE_SECONDS, MAX_HOLD_SECONDS, RESPAWN_COOLDOWN
 
     g = GameState()
     main_cells = world.get_intersection_cells_by_key("main")
@@ -477,7 +615,8 @@ def test_police_linger_and_divert() -> None:
     cop_car = _hold_at_main()
     g.cars = []
     g.police_list = [cop_car]
-    g._update_police(DISMISS_LINGER + 0.1)
+    g._update_police(FADE_SECONDS)
+    g._update_police(0.1)
     assert cop_car.state == "returning"
 
     cop_car = _hold_at_main()
@@ -489,7 +628,8 @@ def test_police_linger_and_divert() -> None:
     cop_car = _hold_at_main()
     g.cars = _deadlock_at("bypass")
     g.police_list = [cop_car]
-    g._update_police(DISMISS_LINGER + 0.1)
+    g._update_police(FADE_SECONDS)
+    g._update_police(0.1)
     assert cop_car.state == "diverting"
     assert cop_car.target_intersection == "bypass"
     assert cop_car.can_divert is False
@@ -503,7 +643,8 @@ def test_police_linger_and_divert() -> None:
     b1.target_intersection = "bypass"
     g.cars = _deadlock_at("bypass")
     g.police_list = [cop_car, b1]
-    g._update_police(DISMISS_LINGER + 0.1)
+    g._update_police(FADE_SECONDS)
+    g._update_police(0.1)
     assert cop_car.state == "returning"
     assert cop_car.target_intersection == "main"
 
@@ -523,6 +664,8 @@ def test_police_linger_and_divert() -> None:
     g.police_list = [cop_car]
     g._police_cooldown.clear()
     g._update_police(MAX_HOLD_SECONDS + 0.1)
+    assert cop_car.state == "holding" and cop_car.phase == "fade" and cop_car.fade_ready
+    g._update_police(0.0)
     assert cop_car.state == "returning"
     g._update_police(0.0)
     assert not any(p.state in ("deploying", "holding") for p in g.police_list)
@@ -576,6 +719,24 @@ def test_police_beats() -> None:
         g._update_police(0.0)
         assert len(g.police_list) == 1
 
+        # A car in the junction upstream is not his to stop. The mouth in front of him is.
+        holder = g.police_list[0]
+        holder.state = "holding"
+        holder.current_node = "A"
+        holder.target_intersection = "A"
+        holder.phase = "clear"
+        holder.initial_clear = True
+        b_cell = world.get_intersection_cells_by_key("B")[0]
+        a_cell = world.get_intersection_cells_by_key("A")[0]
+        upstream = _make_test_car(mode="path", cell=b_cell, vis="red")
+        in_box = _make_test_car(mode="path", cell=a_cell, vis="red")
+        mouth = _stop(_make_test_car(lane_index=1, position=len(world.get_lane_cells(1)) - 1))
+        g.cars = [upstream, in_box, mouth]
+        g._apply_police_influence(None, lambda *_: [], 0.5)
+        assert upstream.police_held is False and upstream.police_clear == ""
+        assert mouth.police_held
+        assert in_box.police_clear == "drain"
+
         # His own box is clear and the far end of the beat is stuck: he walks, tour unspent.
         walker = spawn_police("A", 4)
         walker.state = "holding"
@@ -598,7 +759,8 @@ def test_police_beats() -> None:
             _stop(_make_test_car(lane_index=6, position=len(east_cells) - 1)),
             stuck,
         ]
-        g._update_police(DISMISS_LINGER + 0.1)
+        g._update_police(FADE_SECONDS)
+        g._update_police(0.1)
         assert walker.state == "diverting"
         assert walker.target_intersection == "C"
         assert walker.can_divert is True
@@ -4074,6 +4236,40 @@ def test_pass_left_only_when_faster() -> None:
     GameState()
 
 
+def test_queue_slides_to_the_clearer_sister() -> None:
+    from sim import passing
+    from sim.occupancy import Occupancy
+
+    _sister_highway()
+    # Far enough along that keep-right has no runway, but the right sister is still there.
+    lane = world.get_lane_cells(9)
+    # Runway for keep-right is gone here; the right sister still has cells ahead.
+    pos = 38
+    assert pos < len(lane)
+    car = _make_test_car(lane_index=9, position=pos)
+    assert passing.merge_choice(car, Occupancy.from_cars([car])) is None
+
+    stopped = _make_test_car(lane_index=9, position=pos + 2)
+    stopped.speed_scale = 0.0
+    choice = passing.merge_choice(car, Occupancy.from_cars([car, stopped]))
+    assert choice is not None
+    target_lane, _target_pos, side, reason = choice
+    assert (target_lane, side, reason) == (82, world.MERGE_RIGHT, passing.REASON_QUEUE)
+
+    # Moving traffic keeps its lane, however empty the sister is.
+    moving = _make_test_car(lane_index=9, position=pos + 2)
+    moving.speed_scale = 1.0
+    assert passing.merge_choice(car, Occupancy.from_cars([car, moving])) is None
+
+    # A sister with just as many cars ahead is no improvement.
+    heading_y = lane[pos][1] + 6
+    sister = world.get_lane_cells(82)
+    sister_pos = next(i for i, cell in enumerate(sister) if cell[1] == heading_y)
+    full = _make_test_car(lane_index=82, position=sister_pos)
+    assert passing.merge_choice(car, Occupancy.from_cars([car, stopped, full])) is None
+    GameState()
+
+
 def test_forced_exit_and_who_takes_the_gap() -> None:
     from sim import passing
     from sim.occupancy import Occupancy
@@ -4943,6 +5139,8 @@ def main() -> None:
         test_police_on_demand,
         test_police_disabled_and_clear_cars,
         test_police_holding_helps_jam,
+        test_police_exit_proximity,
+        test_police_fades_the_sides_up_before_leaving,
         test_police_linger_and_divert,
         test_police_beats,
         test_spawn_skips_full_lane,
@@ -5063,6 +5261,7 @@ def main() -> None:
         test_merge_curve_is_a_smooth_s,
         test_keep_right_onto_little_sister,
         test_pass_left_only_when_faster,
+        test_queue_slides_to_the_clearer_sister,
         test_forced_exit_and_who_takes_the_gap,
         test_merge_drives_through_and_returns_to_lane_mode,
         test_dangling_lane_end_snaps_instead_of_despawning,

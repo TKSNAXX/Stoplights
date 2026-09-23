@@ -23,6 +23,8 @@ MIN_RIGHT_RUNWAY = 6
 MERGE_SPEED_MARGIN = 0.05
 # Cells ahead on the driven lane that count as catching up.
 BLOCKER_LOOKAHEAD = 3
+# How far a stopped queue is noticed, and how far the sister's cars ahead count.
+STOPPED_LOOKAHEAD = 8
 # Speed floor while astride the seam, so a change never stalls between lanes.
 MERGE_MIN_SCALE = 0.5
 # Share of normal travel speed held along the lane-change curve. 1.0 keeps every
@@ -33,6 +35,7 @@ REASON_KEEP = "keep"
 REASON_PASS = "pass"
 REASON_EXIT = "exit"
 REASON_STEP = "step"
+REASON_QUEUE = "queue"
 # Not a lane change at all: a mother running straight on into her daughter.
 REASON_FLOW = "flow"
 
@@ -43,7 +46,7 @@ def merge_choice(car, occupancy: Occupancy | None = None):
 
     Called when a lane segment completes, so changes always begin on a cell
     boundary. Priority: the itinerary's own step, then forced exit, then
-    passing, then keeping right.
+    a slide off a stopped queue, then passing, then keeping right.
     """
     if getattr(car, "motion_mode", "lane") != "lane":
         return None
@@ -67,6 +70,9 @@ def merge_choice(car, occupancy: Occupancy | None = None):
         return _step_choice(car, lane, pos, sides, occ, planned)
     if _must_exit(lane, pos, cells):
         return _exit_choice(car, lane, pos, sides, occ)
+    queued = _queue_choice(car, lane, pos, sides, cells, occ)
+    if queued is not None:
+        return queued
     left_ok = sides in (world.MERGE_LEFT, world.MERGE_BOTH)
     right_ok = sides in (world.MERGE_RIGHT, world.MERGE_BOTH)
     if left_ok and _blocked_by_slower(car, lane, pos, occ):
@@ -238,6 +244,55 @@ def _gap_usable(
         if forward > 0:
             return False
     return True
+
+
+def _ahead_distance(origin: tuple[int, int], other: tuple[int, int], heading: tuple[int, int]) -> float:
+    return (other[0] - origin[0]) * heading[0] + (other[1] - origin[1]) * heading[1]
+
+
+def _cars_ahead(lane: int, origin: tuple[int, int], heading: tuple[int, int], occ: Occupancy):
+    """Cars on this lane strictly ahead of origin, within STOPPED_LOOKAHEAD cells."""
+    cells = world.get_lane_cells(lane)
+    found = []
+    for other in occ.cars_on_lane(lane):
+        other_pos = int(getattr(other, "position_in_lane", -1))
+        if other_pos < 0 or other_pos >= len(cells):
+            continue
+        dist = _ahead_distance(origin, cells[other_pos], heading)
+        if 0 < dist <= STOPPED_LOOKAHEAD:
+            found.append(other)
+    return found
+
+
+def _queue_choice(car, lane: int, pos: int, sides: str, cells, occ: Occupancy):
+    """
+    Slide into a sister that has fewer cars ahead, once this lane is stopped.
+
+    Moving traffic stays put. One fewer car ahead is enough. Either side, including
+    a twin. The landing uses the same strict gap as a pass.
+    """
+    heading = map_data.offset_for_direction(world.lane_direction(lane))
+    origin = cells[pos]
+    ahead = _cars_ahead(lane, origin, heading, occ)
+    if not any(float(getattr(other, "speed_scale", 1.0)) <= 0.0 for other in ahead):
+        return None
+    mine = len(ahead)
+    best: tuple[int, str, tuple[int, int]] | None = None
+    for side in (world.MERGE_RIGHT, world.MERGE_LEFT):
+        if sides not in (side, world.MERGE_BOTH):
+            continue
+        found = _first_clear_target(car, lane, pos, side, occ, strict=True)
+        if found is None:
+            continue
+        sister_ahead = len(_cars_ahead(found[0], origin, heading, occ))
+        if sister_ahead >= mine:
+            continue
+        if best is None or sister_ahead < best[0]:
+            best = (sister_ahead, side, found)
+    if best is None:
+        return None
+    _count, side, found = best
+    return (found[0], found[1], side, REASON_QUEUE)
 
 
 def _blocked_by_slower(car, lane: int, pos: int, occ: Occupancy) -> bool:

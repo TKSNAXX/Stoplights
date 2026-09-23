@@ -280,6 +280,7 @@ class GameState:
         for car in self.cars:
             car.police_held = False
             car.police_clear = ""
+            car.police_release = None
         occ = occupancy if occupancy is not None else Occupancy.from_cars(self.cars)
         for police in self.police_list:
             if police.state == "holding":
@@ -296,15 +297,24 @@ class GameState:
         for i, car in enumerate(self.cars):
             car.visibility_state = "green"
             car.speed_scale = 1.0
+            release = getattr(car, "police_release", None)
+            if release is not None and release <= 0.0:
+                car.visibility_state = "red"
+                car.speed_scale = 0.0
+                continue
             if getattr(car, "police_held", False):
                 car.visibility_state = "red"
                 car.speed_scale = 0.0
                 continue
             if getattr(car, "police_clear", "") == "drain":
                 car.visibility_state = "cyan"
-                car.speed_scale = 1.0
+                car.speed_scale = cop.DRAIN_SPEED
                 continue
-            wave = getattr(car, "police_clear", "") == "wave"
+            if release is not None and release < 1.0:
+                car.speed_scale = release
+            wave = getattr(car, "police_clear", "") == "wave" or (
+                release is not None and release >= 1.0
+            )
             pose = poses[i]
             if pose is None:
                 continue
@@ -318,7 +328,11 @@ class GameState:
                 other_pose = poses[j]
                 if other_pose is None:
                     continue
-                if wave and getattr(other, "police_held", False):
+                other_release = getattr(other, "police_release", None)
+                held_back = getattr(other, "police_held", False) or (
+                    other_release is not None and other_release < 1.0
+                )
+                if wave and held_back:
                     continue
                 ox, oy, _ = other_pose
                 band = visibility_zone_band(gx, gy, di, ox, oy, VIS_ZONE_LENGTH_CELLS, half_width)
@@ -421,7 +435,13 @@ class GameState:
                 police.begin_return_home()
             police.tick(dt, 0)
         self.police_list = [p for p in self.police_list if p.state != "despawned"]
-        self._spawn_police(occ)
+        # A cop easing off a clear junction is the one who will take the next jam.
+        fading_off = any(
+            p.state == "holding" and p.phase == "fade" and not p.fade_giveup and p.can_divert
+            for p in self.police_list
+        )
+        if not fading_off:
+            self._spawn_police(occ)
 
     def _prune_police(self) -> None:
         """Drop cops whose node or travel lane no longer exists."""
