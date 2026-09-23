@@ -601,10 +601,10 @@ class StoplightsWindow(arcade.Window):
 
     def _lane_cell_texture(self, lane_index: int, gx: int, gy: int) -> arcade.Texture | None:
         heading = world.lane_direction(lane_index) or "N"
-        display_dir, role_a, role_b, phase = paint_spec(
+        display_dir, role_a, role_b, phase, chamfer = paint_spec(
             heading, gx, gy, self._camera.view_yaw_q,
         )
-        tex = generate_lane_paint_texture(display_dir, role_a, role_b, phase)
+        tex = generate_lane_paint_texture(display_dir, role_a, role_b, phase, chamfer)
         if tex is not None:
             return tex
         return self._tile_set.get(road_tile_key(heading, self._camera.view_yaw_q))

@@ -476,7 +476,7 @@
       "center_y": 90,
       "size_cells": 8,
       "protected": false,
-      "paint_thru_lines": true
+      "paint_thru_lines": false
     },
     "intersection_106": {
       "center_x": 90,
@@ -1197,7 +1197,7 @@
       "center_y": 131,
       "size_cells": 4,
       "protected": false,
-      "paint_thru_lines": true
+      "paint_thru_lines": false
     },
     "intersection_128": {
       "center_x": 38,
@@ -6387,19 +6387,6 @@
       "lane_type": "normal",
       "protected": false
     },
-    "721": {
-      "start_tile": [
-        49,
-        145
-      ],
-      "end_tile": [
-        49,
-        148
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
     "722": {
       "start_tile": [
         48,
@@ -6452,27 +6439,14 @@
       "lane_type": "normal",
       "protected": false
     },
-    "726": {
-      "start_tile": [
-        59,
-        145
-      ],
-      "end_tile": [
-        59,
-        148
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
     "727": {
       "start_tile": [
-        58,
-        148
+        57,
+        145
       ],
       "end_tile": [
-        58,
-        145
+        57,
+        148
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -6480,25 +6454,12 @@
     },
     "728": {
       "start_tile": [
-        62,
-        141
-      ],
-      "end_tile": [
         65,
-        141
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "729": {
-      "start_tile": [
-        65,
-        142
+        140
       ],
       "end_tile": [
         62,
-        142
+        140
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -6559,36 +6520,10 @@
     "734": {
       "start_tile": [
         59,
-        155
+        158
       ],
       "end_tile": [
         59,
-        158
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "735": {
-      "start_tile": [
-        58,
-        158
-      ],
-      "end_tile": [
-        58,
-        155
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "736": {
-      "start_tile": [
-        68,
-        158
-      ],
-      "end_tile": [
-        68,
         155
       ],
       "speed_limit": 1.0,
@@ -6597,12 +6532,12 @@
     },
     "737": {
       "start_tile": [
-        69,
-        155
+        70,
+        158
       ],
       "end_tile": [
-        69,
-        158
+        70,
+        155
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -6701,25 +6636,12 @@
     },
     "745": {
       "start_tile": [
-        57,
+        56,
         148
       ],
       "end_tile": [
-        57,
+        56,
         145
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "746": {
-      "start_tile": [
-        60,
-        145
-      ],
-      "end_tile": [
-        60,
-        148
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -6733,19 +6655,6 @@
       "end_tile": [
         52,
         153
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "748": {
-      "start_tile": [
-        57,
-        158
-      ],
-      "end_tile": [
-        57,
-        155
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -6792,38 +6701,12 @@
     },
     "752": {
       "start_tile": [
-        70,
+        71,
         155
       ],
       "end_tile": [
-        70,
+        71,
         158
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "753": {
-      "start_tile": [
-        67,
-        158
-      ],
-      "end_tile": [
-        67,
-        155
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "754": {
-      "start_tile": [
-        62,
-        160
-      ],
-      "end_tile": [
-        65,
-        160
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -6868,32 +6751,6 @@
       "lane_type": "normal",
       "protected": false
     },
-    "758": {
-      "start_tile": [
-        50,
-        155
-      ],
-      "end_tile": [
-        50,
-        158
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "759": {
-      "start_tile": [
-        47,
-        158
-      ],
-      "end_tile": [
-        47,
-        155
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
     "760": {
       "start_tile": [
         47,
@@ -6907,66 +6764,14 @@
       "lane_type": "normal",
       "protected": false
     },
-    "761": {
-      "start_tile": [
-        50,
-        145
-      ],
-      "end_tile": [
-        50,
-        148
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "762": {
-      "start_tile": [
-        52,
-        140
-      ],
-      "end_tile": [
-        55,
-        140
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "763": {
-      "start_tile": [
-        55,
-        143
-      ],
-      "end_tile": [
-        52,
-        143
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
     "764": {
       "start_tile": [
         62,
-        140
+        139
       ],
       "end_tile": [
         65,
-        140
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "765": {
-      "start_tile": [
-        65,
-        143
-      ],
-      "end_tile": [
-        62,
-        143
+        139
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -6985,19 +6790,6 @@
       "lane_type": "normal",
       "protected": false
     },
-    "767": {
-      "start_tile": [
-        67,
-        148
-      ],
-      "end_tile": [
-        67,
-        145
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
     "768": {
       "start_tile": [
         84,
@@ -7006,19 +6798,6 @@
       "end_tile": [
         85,
         141
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "769": {
-      "start_tile": [
-        80,
-        146
-      ],
-      "end_tile": [
-        80,
-        147
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -7076,27 +6855,14 @@
       "lane_type": "normal",
       "protected": false
     },
-    "774": {
-      "start_tile": [
-        90,
-        146
-      ],
-      "end_tile": [
-        90,
-        147
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
     "775": {
       "start_tile": [
-        89,
-        147
+        87,
+        146
       ],
       "end_tile": [
-        89,
-        146
+        87,
+        147
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -7104,25 +6870,12 @@
     },
     "776": {
       "start_tile": [
-        94,
-        141
-      ],
-      "end_tile": [
         95,
-        141
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "777": {
-      "start_tile": [
-        95,
-        142
+        139
       ],
       "end_tile": [
         94,
-        142
+        139
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -7183,36 +6936,10 @@
     "782": {
       "start_tile": [
         90,
-        156
+        157
       ],
       "end_tile": [
         90,
-        157
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "783": {
-      "start_tile": [
-        89,
-        157
-      ],
-      "end_tile": [
-        89,
-        156
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "784": {
-      "start_tile": [
-        99,
-        157
-      ],
-      "end_tile": [
-        99,
         156
       ],
       "speed_limit": 1.0,
@@ -7221,12 +6948,12 @@
     },
     "785": {
       "start_tile": [
-        100,
-        156
+        102,
+        157
       ],
       "end_tile": [
-        100,
-        157
+        102,
+        156
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -7325,25 +7052,12 @@
     },
     "793": {
       "start_tile": [
-        88,
+        86,
         147
       ],
       "end_tile": [
-        88,
+        86,
         146
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "794": {
-      "start_tile": [
-        91,
-        146
-      ],
-      "end_tile": [
-        91,
-        147
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -7357,19 +7071,6 @@
       "end_tile": [
         84,
         153
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "796": {
-      "start_tile": [
-        88,
-        157
-      ],
-      "end_tile": [
-        88,
-        156
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -7416,38 +7117,12 @@
     },
     "800": {
       "start_tile": [
-        101,
+        103,
         156
       ],
       "end_tile": [
-        101,
+        103,
         157
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "801": {
-      "start_tile": [
-        98,
-        157
-      ],
-      "end_tile": [
-        98,
-        156
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "802": {
-      "start_tile": [
-        94,
-        160
-      ],
-      "end_tile": [
-        95,
-        160
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -7492,32 +7167,6 @@
       "lane_type": "normal",
       "protected": false
     },
-    "806": {
-      "start_tile": [
-        81,
-        156
-      ],
-      "end_tile": [
-        81,
-        157
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "807": {
-      "start_tile": [
-        78,
-        157
-      ],
-      "end_tile": [
-        78,
-        156
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
     "808": {
       "start_tile": [
         78,
@@ -7531,66 +7180,14 @@
       "lane_type": "normal",
       "protected": false
     },
-    "809": {
-      "start_tile": [
-        81,
-        146
-      ],
-      "end_tile": [
-        81,
-        147
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "810": {
-      "start_tile": [
-        84,
-        140
-      ],
-      "end_tile": [
-        85,
-        140
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "811": {
-      "start_tile": [
-        85,
-        143
-      ],
-      "end_tile": [
-        84,
-        143
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
     "812": {
       "start_tile": [
         94,
-        140
+        138
       ],
       "end_tile": [
         95,
-        140
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "813": {
-      "start_tile": [
-        95,
-        143
-      ],
-      "end_tile": [
-        94,
-        143
+        138
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -7604,19 +7201,6 @@
       "end_tile": [
         101,
         147
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "815": {
-      "start_tile": [
-        98,
-        147
-      ],
-      "end_tile": [
-        98,
-        146
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -9195,19 +8779,6 @@
       "lane_type": "normal",
       "protected": false
     },
-    "817": {
-      "start_tile": [
-        18,
-        144
-      ],
-      "end_tile": [
-        18,
-        149
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
     "818": {
       "start_tile": [
         17,
@@ -9262,11 +8833,11 @@
     },
     "822": {
       "start_tile": [
-        28,
+        27,
         144
       ],
       "end_tile": [
-        28,
+        27,
         149
       ],
       "speed_limit": 1.0,
@@ -9275,11 +8846,11 @@
     },
     "823": {
       "start_tile": [
-        27,
+        26,
         149
       ],
       "end_tile": [
-        27,
+        26,
         144
       ],
       "speed_limit": 1.0,
@@ -9289,11 +8860,11 @@
     "824": {
       "start_tile": [
         30,
-        141
+        140
       ],
       "end_tile": [
         35,
-        141
+        140
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -9302,11 +8873,11 @@
     "825": {
       "start_tile": [
         35,
-        142
+        141
       ],
       "end_tile": [
         30,
-        142
+        141
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -9366,11 +8937,11 @@
     },
     "830": {
       "start_tile": [
-        28,
+        29,
         154
       ],
       "end_tile": [
-        28,
+        29,
         159
       ],
       "speed_limit": 1.0,
@@ -9379,11 +8950,11 @@
     },
     "831": {
       "start_tile": [
-        27,
+        28,
         159
       ],
       "end_tile": [
-        27,
+        28,
         154
       ],
       "speed_limit": 1.0,
@@ -9392,11 +8963,11 @@
     },
     "832": {
       "start_tile": [
-        37,
+        38,
         159
       ],
       "end_tile": [
-        37,
+        38,
         154
       ],
       "speed_limit": 1.0,
@@ -9405,11 +8976,11 @@
     },
     "833": {
       "start_tile": [
-        38,
+        39,
         154
       ],
       "end_tile": [
-        38,
+        39,
         159
       ],
       "speed_limit": 1.0,
@@ -9494,45 +9065,6 @@
       "lane_type": "normal",
       "protected": false
     },
-    "840": {
-      "start_tile": [
-        20,
-        150
-      ],
-      "end_tile": [
-        25,
-        150
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "841": {
-      "start_tile": [
-        26,
-        149
-      ],
-      "end_tile": [
-        26,
-        144
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "842": {
-      "start_tile": [
-        29,
-        144
-      ],
-      "end_tile": [
-        29,
-        149
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
     "843": {
       "start_tile": [
         25,
@@ -9541,32 +9073,6 @@
       "end_tile": [
         20,
         153
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "844": {
-      "start_tile": [
-        26,
-        159
-      ],
-      "end_tile": [
-        26,
-        154
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "845": {
-      "start_tile": [
-        29,
-        154
-      ],
-      "end_tile": [
-        29,
-        159
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -9593,45 +9099,6 @@
       "end_tile": [
         30,
         153
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "848": {
-      "start_tile": [
-        39,
-        154
-      ],
-      "end_tile": [
-        39,
-        159
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "849": {
-      "start_tile": [
-        36,
-        159
-      ],
-      "end_tile": [
-        36,
-        154
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "850": {
-      "start_tile": [
-        30,
-        160
-      ],
-      "end_tile": [
-        35,
-        160
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -9676,32 +9143,6 @@
       "lane_type": "normal",
       "protected": false
     },
-    "854": {
-      "start_tile": [
-        19,
-        154
-      ],
-      "end_tile": [
-        19,
-        159
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "855": {
-      "start_tile": [
-        16,
-        159
-      ],
-      "end_tile": [
-        16,
-        154
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
     "856": {
       "start_tile": [
         16,
@@ -9710,71 +9151,6 @@
       "end_tile": [
         16,
         144
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "857": {
-      "start_tile": [
-        19,
-        144
-      ],
-      "end_tile": [
-        19,
-        149
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "858": {
-      "start_tile": [
-        20,
-        140
-      ],
-      "end_tile": [
-        25,
-        140
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "859": {
-      "start_tile": [
-        25,
-        143
-      ],
-      "end_tile": [
-        20,
-        143
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "860": {
-      "start_tile": [
-        30,
-        140
-      ],
-      "end_tile": [
-        35,
-        140
-      ],
-      "speed_limit": 1.0,
-      "lane_type": "normal",
-      "protected": false
-    },
-    "861": {
-      "start_tile": [
-        35,
-        143
-      ],
-      "end_tile": [
-        30,
-        143
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",
@@ -9793,14 +9169,14 @@
       "lane_type": "normal",
       "protected": false
     },
-    "863": {
+    "864": {
       "start_tile": [
-        36,
-        149
+        20,
+        150
       ],
       "end_tile": [
-        36,
-        144
+        25,
+        150
       ],
       "speed_limit": 1.0,
       "lane_type": "normal",

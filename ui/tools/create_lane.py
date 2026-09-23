@@ -151,10 +151,10 @@ class CreateLaneTool(Tool):
 
         stamped = []
         for gx, gy in cells:
-            display_dir, role_a, role_b, phase = paint_spec(
+            display_dir, role_a, role_b, phase, chamfer = paint_spec(
                 direction, gx, gy, self.host.view_yaw_q, occupancy, heading_for,
             )
-            tex = generate_lane_paint_texture(display_dir, role_a, role_b, phase)
+            tex = generate_lane_paint_texture(display_dir, role_a, role_b, phase, chamfer)
             if tex is None:
                 tex = self.host.tile_set.get(road_tile_key(direction, self.host.view_yaw_q))
             stamped.append((gx, gy, tex))

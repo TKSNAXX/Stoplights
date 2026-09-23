@@ -406,21 +406,26 @@ def generate_lane_paint_texture(
     role_a: str,
     role_b: str,
     phase: int = 0,
+    chamfer: tuple[str, str] | None = None,
 ) -> arcade.Texture | None:
-    """Iso lane tile for two lateral roles. Cached by display dir, roles, phase, style rev."""
+    """Iso lane tile for two lateral roles. Cached by display dir, roles, phase, chamfer."""
     if Image is None:
         return None
     d = display_dir if display_dir in ("N", "S", "E", "W") else "N"
-    key = (d, role_a, role_b, int(phase), STYLE_REV)
+    cut = chamfer if chamfer is None else (chamfer[0], chamfer[1])
+    key = (d, role_a, role_b, int(phase), cut, STYLE_REV)
     cached = _lane_paint_cache.get(key)
     if cached is not None:
         return cached
     try:
-        ortho_img = raster_lane_ortho(d, role_a, role_b, int(phase))
+        ortho_img = raster_lane_ortho(d, role_a, role_b, int(phase), cut)
         if ortho_img is None:
             return None
         iso_img = ortho_to_iso(ortho_img)
-        tex = arcade.Texture(iso_img, name=f"lane_{d}_{role_a}_{role_b}_{phase}_r{STYLE_REV}")
+        tex = arcade.Texture(
+            iso_img,
+            name=f"lane_{d}_{role_a}_{role_b}_{phase}_c{cut}_r{STYLE_REV}",
+        )
         _lane_paint_cache[key] = tex
         return tex
     except Exception:

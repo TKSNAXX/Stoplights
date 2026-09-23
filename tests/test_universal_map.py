@@ -3201,6 +3201,100 @@ def test_lane_paint_roles_and_raster() -> None:
     GameState()
 
 
+def test_lane_end_chamfer() -> None:
+    """A sister mouth on open road tapers; a shared, lone, or hosted mouth stays square."""
+    from render.lane_paint import (
+        PAVEMENT,
+        ROLE_CURB,
+        ROLE_LEFT_CURB,
+        ROLE_SISTER,
+        WHITE,
+        YELLOW,
+        grass_at,
+        paint_spec,
+        raster_lane_ortho,
+    )
+    from render.tiles import _lane_paint_cache, generate_lane_paint_texture
+
+    end = raster_lane_ortho("N", ROLE_SISTER, ROLE_CURB, 0, ("end", "E"))
+    assert end is not None
+    assert end.getpixel((0, 0)) == grass_at(0, 0)
+    assert end.getpixel((28, 28))[:3] == PAVEMENT
+    assert end.getpixel((8, 31))[:3] == WHITE
+    assert _has_color_near(end, 19, 19, WHITE, r=4)
+
+    start = raster_lane_ortho("N", ROLE_SISTER, ROLE_CURB, 0, ("start", "E"))
+    assert start is not None
+    assert start.getpixel((31, 0)) == grass_at(31, 0)
+    assert start.getpixel((0, 31))[:3] == WHITE
+    assert start.getpixel((4, 28))[:3] == PAVEMENT
+
+    west = raster_lane_ortho("N", ROLE_LEFT_CURB, ROLE_SISTER, 0, ("end", "W"))
+    assert west is not None
+    assert west.getpixel((0, 31)) == grass_at(0, 31)
+    assert _has_color_near(west, 18, 14, YELLOW, r=4)
+
+    places.set_route_hints([])
+    world.rebuild_world(
+        {},
+        {},
+        {
+            1: places.LaneConfig(start_tile=(10, 0), end_tile=(10, 20)),
+            2: places.LaneConfig(start_tile=(11, 4), end_tile=(11, 16)),
+            3: places.LaneConfig(start_tile=(9, 4), end_tile=(9, 16)),
+            4: places.LaneConfig(start_tile=(20, 0), end_tile=(20, 10)),
+            5: places.LaneConfig(start_tile=(21, 0), end_tile=(21, 10)),
+            6: places.LaneConfig(start_tile=(30, 0), end_tile=(30, 10)),
+            7: places.LaneConfig(start_tile=(40, 10), end_tile=(40, 0)),
+            8: places.LaneConfig(start_tile=(41, 0), end_tile=(41, 10)),
+            9: places.LaneConfig(start_tile=(60, 0), end_tile=(60, 20)),
+            10: places.LaneConfig(start_tile=(61, 2), end_tile=(61, 8)),
+            11: places.LaneConfig(start_tile=(61, 9), end_tile=(61, 14)),
+        },
+    )
+    assert paint_spec("N", 11, 16)[4] == ("end", "E")
+    assert paint_spec("N", 11, 4)[4] == ("start", "E")
+    assert paint_spec("N", 11, 10)[4] is None
+    assert paint_spec("N", 10, 20)[4] is None
+    assert paint_spec("N", 9, 16)[4] == ("end", "W")
+    assert paint_spec("N", 21, 10)[4] is None
+    assert paint_spec("N", 30, 10)[4] is None
+    assert paint_spec("N", 41, 10)[4] is None
+    assert world.lane_daughter(10) == 11 and world.lane_mother(11) == 10
+    assert paint_spec("N", 61, 8)[4] is None
+    assert paint_spec("N", 61, 9)[4] is None
+    assert paint_spec("N", 61, 2)[4] == ("start", "E")
+    assert paint_spec("N", 61, 14)[4] == ("end", "E")
+
+    world.rebuild_world(
+        {},
+        {"hub": places.IntersectionConfig(size_cells=4, center_x=11, center_y=16)},
+        {
+            1: places.LaneConfig(start_tile=(10, 0), end_tile=(10, 20)),
+            2: places.LaneConfig(start_tile=(11, 4), end_tile=(11, 16)),
+        },
+    )
+    assert world.get_intersection_at_cell((11, 16)) == "hub"
+    assert paint_spec("N", 11, 16)[4] is None
+
+    world.rebuild_world(
+        {"Shed": {"x": 50, "y": 11, "w": 1, "h": 1}},
+        {},
+        {
+            1: places.LaneConfig(start_tile=(49, 0), end_tile=(49, 20)),
+            2: places.LaneConfig(start_tile=(50, 2), end_tile=(50, 10)),
+        },
+    )
+    assert paint_spec("N", 50, 10)[4] is None
+
+    tex = generate_lane_paint_texture("N", ROLE_SISTER, ROLE_CURB, 0, ("end", "E"))
+    assert tex is not None
+    assert ("N", ROLE_SISTER, ROLE_CURB, 0, ("end", "E")) in {
+        k[:5] for k in _lane_paint_cache
+    }
+    GameState()
+
+
 def test_path_cache_matches_live() -> None:
     from sim.paths import compute_path_position, path_length, path_position
 
@@ -4849,6 +4943,7 @@ def main() -> None:
         test_width6_centered_span_uses_one_cell_fillet,
         test_sister_overlay_rects,
         test_lane_paint_roles_and_raster,
+        test_lane_end_chamfer,
         test_yellow_left_curb_lane_corner_and_tee,
         test_path_cache_matches_live,
         test_occupancy_jam_and_lane_full,
