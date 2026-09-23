@@ -49,7 +49,7 @@ def apply_observe_skills(
             continue
         if getattr(car, "impasse_active", False):
             continue
-        if getattr(car, "police_priority_active", False) or getattr(car, "police_hold_until_exit", False):
+        if getattr(car, "police_held", False) or getattr(car, "police_clear", ""):
             continue
         if getattr(car, "visibility_state", "green") == "red" or car.speed_scale <= 0.0:
             continue
@@ -116,7 +116,7 @@ def observed_cars(
 def _observe_skills_would_run(car) -> bool:
     if getattr(car, "impasse_active", False):
         return False
-    if getattr(car, "police_priority_active", False) or getattr(car, "police_hold_until_exit", False):
+    if getattr(car, "police_held", False) or getattr(car, "police_clear", ""):
         return False
     if getattr(car, "visibility_state", "green") == "red" or car.speed_scale <= 0.0:
         return False

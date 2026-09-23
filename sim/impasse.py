@@ -101,7 +101,7 @@ def apply_impasse(
     for car in cars_list:
         if not getattr(car, "impasse_active", False):
             continue
-        if getattr(car, "police_priority_active", False) or getattr(car, "police_hold_until_exit", False):
+        if getattr(car, "police_held", False) or getattr(car, "police_clear", ""):
             continue
         car.visibility_state = "white"
         car.speed_scale = IMPASSE_SPEED_SCALE

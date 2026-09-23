@@ -9,7 +9,7 @@ import time
 
 from sim import cars, cop, places, routes, scenario, world
 from sim.awareness import apply_observe_skills
-from sim.constants import POLICE_PRIORITY_SCALE, VIS_ZONE_LENGTH_CELLS, VIS_ZONE_WIDTH_CELLS
+from sim.constants import VIS_ZONE_LENGTH_CELLS, VIS_ZONE_WIDTH_CELLS
 from sim.map_data import next_lane_index, place_rects_from_places
 from sim.impasse import apply_impasse
 from sim.movement import advance_car
@@ -45,6 +45,7 @@ class GameState:
         self._impasse_timers: dict[tuple[int, int], float] = {}
         self.police_list: list[cop.PoliceCar] = []
         self.police_enabled: bool = True
+        self._police_cooldown: dict[tuple[str, ...], float] = {}
         self._spatial_buckets: dict[tuple[int, int], list[int]] = {}
         self._perf_stats: dict[str, float | int] = {
             "cars": 0,
@@ -274,35 +275,16 @@ class GameState:
         half_width: float,
         occupancy: Occupancy | None = None,
     ) -> int:
-        visibility_checks = 0
+        """Mark held and waved cars. A cop grants nothing until he is holding."""
+        del poses, nearby_for, half_width
         for car in self.cars:
-            car.police_priority_active = False
-            if car.motion_mode != "path":
-                car.police_hold_until_exit = False
-
+            car.police_held = False
+            car.police_clear = ""
         occ = occupancy if occupancy is not None else Occupancy.from_cars(self.cars)
         for police in self.police_list:
-            if police.state not in ("deploying", "holding", "diverting", "returning"):
-                continue
-            px, py, pdi = police.get_pose()
-            if police.at_mouth():
-                for car in cop.iter_node_jam_cars(occ, police.target_intersection):
-                    if car.motion_mode == "path":
-                        car.police_hold_until_exit = True
-                    else:
-                        car.police_priority_active = True
-            elif police.state in ("deploying", "diverting", "returning"):
-                for i in nearby_for(px, py):
-                    car = self.cars[i]
-                    pose = poses[i]
-                    if pose is None:
-                        continue
-                    gx, gy, _ = pose
-                    band = visibility_zone_band(px, py, pdi, gx, gy, VIS_ZONE_LENGTH_CELLS, half_width)
-                    visibility_checks += 1
-                    if band in ("near", "far"):
-                        car.police_priority_active = True
-        return visibility_checks
+            if police.state == "holding":
+                cop.mark_holding(police, occ)
+        return 0
 
     def _apply_visibility(
         self,
@@ -314,10 +296,15 @@ class GameState:
         for i, car in enumerate(self.cars):
             car.visibility_state = "green"
             car.speed_scale = 1.0
-            if getattr(car, "police_priority_active", False) or getattr(car, "police_hold_until_exit", False):
-                car.visibility_state = "cyan"
-                car.speed_scale = POLICE_PRIORITY_SCALE
+            if getattr(car, "police_held", False):
+                car.visibility_state = "red"
+                car.speed_scale = 0.0
                 continue
+            if getattr(car, "police_clear", "") == "drain":
+                car.visibility_state = "cyan"
+                car.speed_scale = 1.0
+                continue
+            wave = getattr(car, "police_clear", "") == "wave"
             pose = poses[i]
             if pose is None:
                 continue
@@ -330,6 +317,8 @@ class GameState:
                     continue
                 other_pose = poses[j]
                 if other_pose is None:
+                    continue
+                if wave and getattr(other, "police_held", False):
                     continue
                 ox, oy, _ = other_pose
                 band = visibility_zone_band(gx, gy, di, ox, oy, VIS_ZONE_LENGTH_CELLS, half_width)
@@ -355,70 +344,84 @@ class GameState:
                 candidates.add(i)
         return candidates
 
-    def _cops_on_node(self, node: str) -> int:
-        n = 0
-        for p in self.police_list:
-            if p.state in ("despawned", "returning"):
+    def _beat_covered(self, beat: frozenset[str]) -> bool:
+        for police in self.police_list:
+            if police.state in ("despawned", "returning"):
                 continue
-            if p.target_intersection == node:
-                n += 1
-        return n
+            if police.target_intersection in beat:
+                return True
+        return False
 
-    def _pick_divert_dest(self, police: cop.PoliceCar, remaining: dict[str, int]) -> str | None:
+    def _cool_police_beat(self, node: str) -> None:
+        self._police_cooldown[cop.beat_key(node)] = cop.RESPAWN_COOLDOWN
+
+    def _decay_police_cooldown(self, dt: float) -> None:
+        for key in list(self._police_cooldown):
+            self._police_cooldown[key] -= dt
+            if self._police_cooldown[key] <= 0.0:
+                del self._police_cooldown[key]
+
+    def _pick_divert_dest(self, police: cop.PoliceCar, occupancy: Occupancy) -> str | None:
+        """A deadlocked junction in another beat that has no cop and is not cooling down."""
         if not police.can_divert:
             return None
-        current = police.target_intersection
+        here = cop.beat_of(police.target_intersection)
         best: str | None = None
-        best_score = 1
-        for node, score in remaining.items():
-            if node == current or score <= 1:
+        best_key: tuple[int, str] | None = None
+        for beat in cop.beats():
+            if beat == here or self._beat_covered(beat):
                 continue
-            if self._cops_on_node(node) >= cop.COPS_PER_INTERSECTION:
+            if self._police_cooldown.get(cop.beat_key(next(iter(beat))), 0.0) > 0.0:
                 continue
-            if score > best_score:
-                best_score = score
-                best = node
+            dead = [node for node in beat if cop.junction_deadlocked(occupancy, node)]
+            if not dead:
+                continue
+            target = max(dead, key=lambda node: (cop.stopped_approach_count(occupancy, node), node))
+            key = (cop.stopped_approach_count(occupancy, target), target)
+            if best_key is None or key > best_key:
+                best_key = key
+                best = target
         return best
 
+    def _spawn_police(self, occupancy: Occupancy) -> None:
+        for beat in cop.beats():
+            if self._police_cooldown.get(cop.beat_key(next(iter(beat))), 0.0) > 0.0:
+                continue
+            if self._beat_covered(beat):
+                continue
+            dead = [node for node in beat if cop.junction_deadlocked(occupancy, node)]
+            if not dead:
+                continue
+            target = max(dead, key=lambda node: (cop.stopped_approach_count(occupancy, node), node))
+            lane = cop.pick_beat_deploy_lane(beat, target)
+            if lane is None:
+                continue
+            self.police_list.append(cop.spawn_police(target, lane))
+
     def _update_police(self, dt: float, occupancy: Occupancy | None = None) -> None:
-        """Spawn on occupancy 10/20; linger then divert or home; drop despawned."""
+        """Spawn one cop per deadlocked beat; hold, then walk, divert, or go home."""
         if not self.police_enabled:
             self.police_list.clear()
             return
+        self._decay_police_cooldown(dt)
         occ = occupancy if occupancy is not None else Occupancy.from_cars(self.cars)
-        keys = world.get_intersection_keys()
-        jam = {key: cop.intersection_jam_score(occ, key) for key in keys}
-        remaining = {key: cop.intersection_dismiss_score(occ, key) for key in keys}
-        for node, score in jam.items():
-            active = [
-                p
-                for p in self.police_list
-                if p.target_intersection == node and p.state != "despawned"
-            ]
-            n = len(active)
-            want = False
-            if n < 1 and score >= cop.JAM_TRIGGER:
-                want = True
-            elif n < cop.COPS_PER_INTERSECTION and score >= cop.JAM_TRIGGER_SECOND:
-                want = True
-            if not want:
-                continue
-            used = {p.deploy_lane for p in active}
-            lane = cop.pick_deploy_lane(node, used)
-            if lane is None:
-                continue
-            self.police_list.append(cop.spawn_police(node, lane))
         for police in self.police_list:
-            if police.state == "diverting" and remaining.get(police.target_intersection, 0) <= 1:
+            if police.state == "holding":
+                action = cop.advance_signal(police, dt, occ)
+                if action == "walk" and police.walk_target:
+                    police.begin_walk(police.walk_target)
+                elif action in ("home", "giveup"):
+                    dest = None if action == "giveup" else self._pick_divert_dest(police, occ)
+                    self._cool_police_beat(police.target_intersection)
+                    if dest:
+                        police.begin_divert(dest)
+                    else:
+                        police.begin_return_home()
+            elif police.state == "diverting" and not cop.junction_deadlocked(occ, police.target_intersection):
                 police.begin_return_home()
-            police.tick(dt, remaining.get(police.target_intersection, 0))
-            if police.depart_pending:
-                dest = self._pick_divert_dest(police, remaining)
-                if dest:
-                    police.begin_divert(dest)
-                else:
-                    police.begin_return_home()
+            police.tick(dt, 0)
         self.police_list = [p for p in self.police_list if p.state != "despawned"]
+        self._spawn_police(occ)
 
     def _prune_police(self) -> None:
         """Drop cops whose node or travel lane no longer exists."""

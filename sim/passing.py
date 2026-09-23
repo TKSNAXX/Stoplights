@@ -49,7 +49,7 @@ def merge_choice(car, occupancy: Occupancy | None = None):
         return None
     if getattr(car, "impasse_active", False):
         return None
-    if getattr(car, "police_priority_active", False) or getattr(car, "police_hold_until_exit", False):
+    if getattr(car, "police_held", False) or getattr(car, "police_clear", ""):
         return None
 
     lane = car.lane_index

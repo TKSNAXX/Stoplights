@@ -57,8 +57,8 @@ class Car:
     speed_scale: float = 1.0  # 1.0 / 0.5 / 0.0 applied to segment progression
     impasse_partner_id: int | None = None  # id(partner) when in pair impasse remedy
     impasse_active: bool = False  # true while in white override with partner
-    police_priority_active: bool = False  # cyan mode: ignore all cars, move at 0.3x
-    police_hold_until_exit: bool = False  # stay cyan until exiting intersection
+    police_held: bool = False  # cop is holding this approach: full stop
+    police_clear: str = ""  # "drain" ignores everyone; "wave" ignores held cars
 
     # Itinerary (spawn-time); route_index is the current lane step
     route: tuple[routes.RouteStep, ...] = ()

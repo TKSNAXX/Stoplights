@@ -13,9 +13,6 @@ from sim.cop import (
     COPS_PER_INTERSECTION,
     DISMISS_LINGER,
     INBOUND_TAIL_CELLS,
-    JAM_TRIGGER,
-    JAM_TRIGGER_SECOND,
-    RED_ZERO_DURATION,
     _home_at_lane_start,
     in_node_jam,
     intersection_dismiss_score,
@@ -217,6 +214,36 @@ def _make_test_car(
     return car
 
 
+def _stop(car: Car) -> Car:
+    car.visibility_state = "red"
+    car.speed_scale = 0.0
+    return car
+
+
+def _deadlock_at(node: str) -> list[Car]:
+    """Two stopped approaches plus a stuck car in the box. Enough to call a cop."""
+    from sim.cop import approach_groups
+
+    groups = approach_groups(node)
+    directions = sorted(groups)
+    assert len(directions) >= 2, node
+    cars: list[Car] = []
+    for direction in directions[:2]:
+        lane = groups[direction][0]
+        cells = world.get_lane_cells(lane)
+        src = world.lane_traffic_in(lane)
+        if len(cells) < INBOUND_TAIL_CELLS and world.is_intersection(src):
+            box = world.get_intersection_cells_by_key(src)
+            cars.append(_stop(_make_test_car(mode="path", cell=box[0], lane_index=lane)))
+        else:
+            cars.append(_stop(_make_test_car(lane_index=lane, position=len(cells) - 1)))
+    box = world.get_intersection_cells_by_key(node)
+    stuck = _stop(_make_test_car(mode="path", cell=box[0], lane_index=groups[directions[0]][0]))
+    stuck.impasse_active = True
+    cars.append(stuck)
+    return cars
+
+
 def test_police_on_demand() -> None:
     g = GameState()
     assert g.police_list == []
@@ -241,85 +268,10 @@ def test_police_on_demand() -> None:
     g.cars = [_make_test_car(lane_index=inbound, position=edge - 1, vis="red")]
     assert intersection_jam_score(g.cars, "main") == 0
 
-    g.police_list = []
-    g.cars = [
-        _make_test_car(
-            lane_index=inbound,
-            position=len(lane_cells) - 1 - (i % INBOUND_TAIL_CELLS),
-            vis="red",
-        )
-        for i in range(JAM_TRIGGER)
-    ]
-    g._update_police(0.0)
-    assert len(g.police_list) == 1
-    g.police_list = []
-
     approach = pick_deploy_lane("main")
     assert approach is not None
     place = place_on_lane_for_intersection(approach, "main")
     assert place and not world.is_intersection(place)
-
-    g.cars = [
-        _make_test_car(mode="path", cell=main_cells[i % len(main_cells)])
-        for i in range(JAM_TRIGGER)
-    ]
-    g._update_police(0.0)
-    assert len(g.police_list) == 1
-    assert g.police_list[0].target_intersection == "main"
-    first_lane = g.police_list[0].deploy_lane
-
-    g.cars = [
-        _make_test_car(mode="path", cell=main_cells[i % len(main_cells)])
-        for i in range(JAM_TRIGGER_SECOND)
-    ]
-    g._update_police(0.0)
-    assert len(g.police_list) == 2
-    assert len({p.deploy_lane for p in g.police_list}) == 2
-    g._update_police(0.0)
-    assert len(g.police_list) == COPS_PER_INTERSECTION
-
-    g.police_list = []
-    g.cars = [
-        _make_test_car(mode="path", cell=main_cells[i % len(main_cells)])
-        for i in range(JAM_TRIGGER)
-    ] + [
-        _make_test_car(mode="path", cell=bypass_cells[i % len(bypass_cells)])
-        for i in range(JAM_TRIGGER)
-    ]
-    g._update_police(0.0)
-    targets = {p.target_intersection for p in g.police_list}
-    assert "main" in targets and "bypass" in targets
-    assert len(g.police_list) == 2
-
-    holding = spawn_police("main", first_lane)
-    holding.state = "holding"
-    holding.tick(RED_ZERO_DURATION + 0.1, 0)
-    assert holding.state == "holding"
-    assert holding.depart_pending is False
-    holding.tick(DISMISS_LINGER + 0.1, 0)
-    assert holding.state == "holding"
-    assert holding.depart_pending is True
-    still = spawn_police("main", first_lane)
-    still.state = "holding"
-    still.tick(RED_ZERO_DURATION + 0.1, 50)
-    assert still.state == "holding"
-    jam_during = spawn_police("main", first_lane)
-    jam_during.state = "holding"
-    jam_during.tick(RED_ZERO_DURATION + 1.0, 0)
-    assert jam_during.depart_pending is False
-    linger_mid = jam_during.linger_timer
-    assert linger_mid > 0.0
-    jam_during.tick(0.1, 50)
-    assert jam_during.state == "holding"
-    assert jam_during.depart_pending is False
-    assert jam_during.linger_timer == linger_mid + 0.1
-    jam_end = spawn_police("main", first_lane)
-    jam_end.state = "holding"
-    jam_end.tick(RED_ZERO_DURATION + 0.1, 0)
-    jam_end.tick(DISMISS_LINGER + 0.1, 50)
-    assert jam_end.state == "holding"
-    assert jam_end.depart_pending is False
-    assert jam_end.linger_timer == 0.0
 
     flowing = [
         _make_test_car(mode="path", cell=main_cells[i % len(main_cells)], vis="green")
@@ -330,26 +282,37 @@ def test_police_on_demand() -> None:
     ]
     assert intersection_jam_score(flowing, "main") == 9
     assert intersection_dismiss_score(flowing, "main") == 0
-    g.police_list = [spawn_police("main", first_lane)]
-    g.police_list[0].state = "holding"
+    g.police_list = []
     g.cars = flowing
-    g._update_police(RED_ZERO_DURATION + 0.1)
-    assert g.police_list[0].state == "holding"
-    g._update_police(DISMISS_LINGER + 0.1)
-    assert g.police_list[0].state == "returning"
+    g._update_police(0.0)
+    assert g.police_list == []
 
-    inbound = next(i for i in world.lane_ids() if world.lane_traffic_out(i) == "main")
-    lane_cells = world.get_lane_cells(inbound)
-    jammed = flowing + [
-        _make_test_car(lane_index=inbound, position=len(lane_cells) - 1, vis="red"),
-        _make_test_car(lane_index=inbound, position=max(0, len(lane_cells) - 2), vis="red"),
-    ]
-    assert intersection_dismiss_score(jammed, "main") >= 1
-    g.police_list = [spawn_police("main", first_lane)]
-    g.police_list[0].state = "holding"
-    g.cars = jammed
-    g._update_police(RED_ZERO_DURATION + 0.1)
-    assert g.police_list[0].state == "holding"
+    g.cars = _deadlock_at("main")
+    g._update_police(0.0)
+    assert len(g.police_list) == COPS_PER_INTERSECTION
+    assert g.police_list[0].target_intersection == "main"
+    g._update_police(0.0)
+    assert len(g.police_list) == 1
+
+    g.police_list = []
+    g.cars = _deadlock_at("main") + _deadlock_at("bypass")
+    g._update_police(0.0)
+    assert {p.target_intersection for p in g.police_list} == {"main", "bypass"}
+
+    holder = spawn_police("main", approach)
+    holder.state = "holding"
+    holder.current_node = "main"
+    g.police_list = [holder]
+    g.cars = [_make_test_car(mode="path", cell=main_cells[0], vis="green")]
+    g._update_police(DISMISS_LINGER + 0.1)
+    assert holder.state == "holding"
+
+    g.cars = []
+    g.police_list = [holder]
+    holder.linger_timer = 0.0
+    holder.hold_time = 0.0
+    g._update_police(DISMISS_LINGER + 0.1)
+    assert holder.state == "returning"
 
 
 def test_police_disabled_and_clear_cars() -> None:
@@ -358,17 +321,7 @@ def test_police_disabled_and_clear_cars() -> None:
     g.clear_cars()
     assert g.cars == []
 
-    inbound = next(i for i in world.lane_ids() if world.lane_traffic_out(i) == "main")
-    lane_cells = world.get_lane_cells(inbound)
-    jam = [
-        _make_test_car(
-            lane_index=inbound,
-            position=len(lane_cells) - 1 - (i % INBOUND_TAIL_CELLS),
-            vis="red",
-        )
-        for i in range(JAM_TRIGGER)
-    ]
-    g.cars = jam
+    g.cars = _deadlock_at("main")
     g.set_police_enabled(False)
     g._update_police(0.0)
     assert g.police_list == []
@@ -382,20 +335,24 @@ def test_police_disabled_and_clear_cars() -> None:
 
 
 def test_police_holding_helps_jam() -> None:
-    from sim.constants import POLICE_PRIORITY_SCALE, VIS_ZONE_WIDTH_CELLS
-    from sim.cop import _home_at_lane_start, _intersection_center
+    from sim.constants import VIS_ZONE_WIDTH_CELLS
+    from sim.cop import _intersection_center, advance_signal, approach_groups
     from sim.impasse import apply_impasse
     from sim.paths import direction_index_8_from_tangent
     from sim.visibility import build_poses
 
     g = GameState()
     main_cells = world.get_intersection_cells_by_key("main")
-    inbound = next(i for i in world.lane_ids() if world.lane_traffic_out(i) == "main")
-    lane_cells = world.get_lane_cells(inbound)
+    groups = approach_groups("main")
+    north = groups["N"][0]
+    south = groups["S"][0]
+    north_cells = world.get_lane_cells(north)
+    south_cells = world.get_lane_cells(south)
     approach = pick_deploy_lane("main")
     assert approach is not None
     cop_car = spawn_police("main", approach)
     cop_car.state = "holding"
+    cop_car.current_node = "main"
     home_at_0 = _home_at_lane_start(approach)
     cop_car.lane_pos = 0.0 if not home_at_0 else float(cop_car._lane_len(approach) - 1)
 
@@ -407,31 +364,74 @@ def test_police_holding_helps_jam() -> None:
         _make_test_car(mode="path", cell=main_cells[i % len(main_cells)], vis="red")
         for i in range(5)
     ]
-    tail = _make_test_car(lane_index=inbound, position=len(lane_cells) - 1, vis="red")
-    g.cars = path_cars + [tail]
+    north_tail = _make_test_car(lane_index=north, position=len(north_cells) - 1, vis="red")
+    south_tail = _make_test_car(lane_index=south, position=len(south_cells) - 1, vis="red")
+    # A second northbound car, one cell back, so the fan can see the one ahead.
+    north_follow = _make_test_car(lane_index=north, position=len(north_cells) - 2, vis="green")
+    g.cars = path_cars + [north_tail, south_tail, north_follow]
     g.police_list = [cop_car]
+    half = VIS_ZONE_WIDTH_CELLS / 2.0
     poses = build_poses(g.cars)
-    g._apply_police_influence(poses, lambda *_: [], VIS_ZONE_WIDTH_CELLS / 2.0)
-    assert all(c.police_hold_until_exit for c in path_cars)
-    assert tail.police_priority_active
-    assert not tail.police_hold_until_exit
+    g._apply_police_influence(poses, lambda *_: [], half)
+    g._apply_visibility(poses, lambda *_: [], half)
+    assert all(c.police_clear == "drain" for c in path_cars)
+    assert all(c.speed_scale == 1.0 and c.visibility_state == "cyan" for c in path_cars)
+    assert north_tail.police_held and south_tail.police_held
+    assert north_tail.speed_scale == 0.0 and south_tail.speed_scale == 0.0
 
-    tail.impasse_active = True
-    tail.visibility_state = "cyan"
-    tail.speed_scale = POLICE_PRIORITY_SCALE
-    pose = (float(lane_cells[-1][0]), float(lane_cells[-1][1]), 0)
-    apply_impasse(
-        0.1,
-        [tail],
-        [pose],
-        {id(tail): 0},
-        lambda *_: [],
-        VIS_ZONE_WIDTH_CELLS / 2.0,
-        {},
-        set(),
-    )
-    assert tail.visibility_state == "cyan"
-    assert tail.speed_scale == POLICE_PRIORITY_SCALE
+    # Box empty and the north queue is the longer one: that direction opens.
+    g.cars = [north_tail, north_follow, south_tail]
+    assert advance_signal(cop_car, 0.1, g.cars) == ""
+    assert cop_car.phase == "green"
+    assert cop_car.green_dir == "N"
+    assert cop_car.initial_clear is False
+    poses = build_poses(g.cars)
+    g._apply_police_influence(poses, lambda *_: [], half)
+    g._apply_visibility(poses, lambda gx, gy: list(range(len(g.cars))), half)
+    assert north_tail.police_clear == "wave" and not north_tail.police_held
+    assert north_follow.police_clear == "wave"
+    assert south_tail.police_held and south_tail.speed_scale == 0.0
+    # The waved car still stops for the car ahead of it.
+    assert north_follow.speed_scale == 0.0
+    assert north_tail.speed_scale == 1.0
+
+    from sim.cop import RELEASE_CARS
+
+    cop_car.phase = "green"
+    cop_car.green_dir = "N"
+    cop_car.entered_ids = set()
+    cop_car.phase_time = 0.0
+    sent = [
+        _make_test_car(mode="path", cell=main_cells[i % len(main_cells)], lane_index=north)
+        for i in range(RELEASE_CARS)
+    ]
+    assert advance_signal(cop_car, 0.1, sent) == ""
+    assert cop_car.phase == "clear"
+
+    # A held car inside the fan does not stop a waved car. Another car does.
+    waved = _make_test_car()
+    waved.police_clear = "wave"
+    waved.pose_gx, waved.pose_gy, waved.pose_dir_index_8 = 10.0, 10.0, 0
+    blocker = _make_test_car()
+    blocker.police_held = True
+    blocker.pose_gx, blocker.pose_gy, blocker.pose_dir_index_8 = 10.0, 11.0, 0
+    g.cars = [waved, blocker]
+    g._apply_visibility(build_poses(g.cars), lambda *_: [0, 1], half)
+    assert waved.speed_scale == 1.0
+    ahead = _make_test_car()
+    ahead.pose_gx, ahead.pose_gy, ahead.pose_dir_index_8 = 10.0, 11.0, 0
+    g.cars = [waved, ahead]
+    g._apply_visibility(build_poses(g.cars), lambda *_: [0, 1], half)
+    assert waved.speed_scale == 0.0
+
+    south_tail.police_held = True
+    south_tail.impasse_active = True
+    south_tail.visibility_state = "red"
+    south_tail.speed_scale = 0.0
+    pose = (float(south_cells[-1][0]), float(south_cells[-1][1]), 0)
+    apply_impasse(0.1, [south_tail], [pose], {id(south_tail): 0}, lambda *_: [], half, {}, set())
+    assert south_tail.visibility_state == "red"
+    assert south_tail.speed_scale == 0.0
 
     deploying = spawn_police("main", approach)
     deploying.lane_pos = cop_car.lane_pos
@@ -439,9 +439,9 @@ def test_police_holding_helps_jam() -> None:
     assert deploying.at_mouth()
     g.police_list = [deploying]
     g.cars = path_cars[:1]
-    poses = build_poses(g.cars)
-    g._apply_police_influence(poses, lambda *_: [], VIS_ZONE_WIDTH_CELLS / 2.0)
-    assert g.cars[0].police_hold_until_exit
+    g._apply_police_influence(build_poses(g.cars), lambda *_: [], half)
+    assert g.cars[0].police_clear == ""
+    assert g.cars[0].police_held is False
 
     g.police_list = [cop_car]
     g.rebuild_world_from_config()
@@ -454,35 +454,42 @@ def test_police_holding_helps_jam() -> None:
 
 
 def test_police_linger_and_divert() -> None:
+    from sim.cop import MAX_HOLD_SECONDS, RESPAWN_COOLDOWN
+
     g = GameState()
     main_cells = world.get_intersection_cells_by_key("main")
-    bypass_cells = world.get_intersection_cells_by_key("bypass")
     approach = pick_deploy_lane("main")
     assert approach is not None
     home_at_0 = _home_at_lane_start(approach)
-    linger_dt = RED_ZERO_DURATION + DISMISS_LINGER + 0.1
 
-    def _hold_at_main() -> object:
+    def _hold_at_main():
         cop_car = spawn_police("main", approach)
         cop_car.state = "holding"
         cop_car.current_node = "main"
+        cop_car.target_intersection = "main"
         cop_car.lane_pos = 0.0 if not home_at_0 else float(cop_car._lane_len(approach) - 1)
+        cop_car.hold_time = 0.0
+        cop_car.linger_timer = 0.0
+        cop_car.phase = "clear"
+        cop_car.initial_clear = True
         return cop_car
+
+    cop_car = _hold_at_main()
+    g.cars = []
+    g.police_list = [cop_car]
+    g._update_police(DISMISS_LINGER + 0.1)
+    assert cop_car.state == "returning"
 
     cop_car = _hold_at_main()
     g.cars = [_make_test_car(mode="path", cell=main_cells[0], vis="green")]
     g.police_list = [cop_car]
-    g._update_police(linger_dt)
-    assert cop_car.state == "returning"
+    g._update_police(DISMISS_LINGER + 0.1)
+    assert cop_car.state == "holding"
 
     cop_car = _hold_at_main()
-    bypass_jam = [
-        _make_test_car(mode="path", cell=bypass_cells[i % len(bypass_cells)], vis="red")
-        for i in range(3)
-    ]
-    g.cars = bypass_jam
+    g.cars = _deadlock_at("bypass")
     g.police_list = [cop_car]
-    g._update_police(linger_dt)
+    g._update_police(DISMISS_LINGER + 0.1)
     assert cop_car.state == "diverting"
     assert cop_car.target_intersection == "bypass"
     assert cop_car.can_divert is False
@@ -493,14 +500,10 @@ def test_police_linger_and_divert() -> None:
     b1 = spawn_police("bypass", b1_lane)
     b1.state = "holding"
     b1.current_node = "bypass"
-    b2_lane = pick_deploy_lane("bypass", {b1.deploy_lane})
-    assert b2_lane is not None
-    b2 = spawn_police("bypass", b2_lane)
-    b2.state = "holding"
-    b2.current_node = "bypass"
-    g.cars = bypass_jam
-    g.police_list = [cop_car, b1, b2]
-    g._update_police(linger_dt)
+    b1.target_intersection = "bypass"
+    g.cars = _deadlock_at("bypass")
+    g.police_list = [cop_car, b1]
+    g._update_police(DISMISS_LINGER + 0.1)
     assert cop_car.state == "returning"
     assert cop_car.target_intersection == "main"
 
@@ -513,6 +516,94 @@ def test_police_linger_and_divert() -> None:
     g.police_list = [cop_car]
     g._update_police(0.1)
     assert cop_car.state == "returning"
+
+    # A box that never empties sends him home, and the beat stays quiet afterwards.
+    cop_car = _hold_at_main()
+    g.cars = _deadlock_at("main")
+    g.police_list = [cop_car]
+    g._police_cooldown.clear()
+    g._update_police(MAX_HOLD_SECONDS + 0.1)
+    assert cop_car.state == "returning"
+    g._update_police(0.0)
+    assert not any(p.state in ("deploying", "holding") for p in g.police_list)
+    g._update_police(RESPAWN_COOLDOWN)
+    assert any(p.state == "deploying" and p.target_intersection == "main" for p in g.police_list)
+
+
+def test_police_beats() -> None:
+    """A short chain is one cop, deployed from a place lane, and he walks the beat."""
+    from sim.cop import _lane_place, _lane_touches, beat_of
+
+    g = GameState()
+    intersections = {
+        "A": places.IntersectionConfig(size_cells=2, center_x=20, center_y=20),
+        "B": places.IntersectionConfig(size_cells=2, center_x=20, center_y=26),
+        "C": places.IntersectionConfig(size_cells=2, center_x=20, center_y=34),
+        "D": places.IntersectionConfig(size_cells=2, center_x=20, center_y=2),
+    }
+    places_by_id = {
+        "Yard": places.Place(center_x=8, center_y=26, width=3, length=3),
+        "North": places.Place(center_x=20, center_y=44, width=3, length=3),
+        "East": places.Place(center_x=34, center_y=34, width=3, length=3),
+    }
+    lanes = {
+        1: places.LaneConfig(start_tile=(20, 25), end_tile=(20, 21)),  # B → A
+        2: places.LaneConfig(start_tile=(20, 33), end_tile=(20, 27)),  # C → B
+        3: places.LaneConfig(start_tile=(20, 3), end_tile=(20, 19)),  # D → A, long
+        4: places.LaneConfig(start_tile=(10, 26), end_tile=(19, 26)),  # Yard → B
+        5: places.LaneConfig(start_tile=(20, 42), end_tile=(20, 35)),  # North → C
+        6: places.LaneConfig(start_tile=(32, 34), end_tile=(21, 34)),  # East → C
+        7: places.LaneConfig(start_tile=(20, 21), end_tile=(20, 25)),  # A → B
+        8: places.LaneConfig(start_tile=(20, 27), end_tile=(20, 33)),  # B → C
+    }
+    try:
+        world.rebuild_world(place_rects_from_places(places_by_id), intersections, lanes)
+        assert beat_of("A") == frozenset({"A", "B", "C"})
+        assert "D" not in beat_of("A")
+        assert len(world.get_lane_cells(1)) < INBOUND_TAIL_CELLS
+        assert len(world.get_lane_cells(3)) >= INBOUND_TAIL_CELLS
+
+        g.police_list = []
+        g._police_cooldown.clear()
+        g.cars = _deadlock_at("A")
+        g._update_police(0.0)
+        assert len(g.police_list) == 1
+        cop_car = g.police_list[0]
+        assert cop_car.target_intersection == "A"
+        assert cop_car.routing
+        assert not _lane_touches(cop_car.deploy_lane, "A")
+        assert _lane_place(cop_car.deploy_lane)
+        g._update_police(0.0)
+        assert len(g.police_list) == 1
+
+        # His own box is clear and the far end of the beat is stuck: he walks, tour unspent.
+        walker = spawn_police("A", 4)
+        walker.state = "holding"
+        walker.current_node = "A"
+        walker.target_intersection = "A"
+        walker.travel_lane = 1
+        walker.hold_time = 0.0
+        walker.linger_timer = 0.0
+        walker.phase = "clear"
+        walker.can_divert = True
+        g.police_list = [walker]
+        # Long approaches only, so the queue does not sit in B and keep A busy.
+        north_cells = world.get_lane_cells(5)
+        east_cells = world.get_lane_cells(6)
+        c_cell = world.get_intersection_cells_by_key("C")[0]
+        stuck = _stop(_make_test_car(mode="path", cell=c_cell, lane_index=5))
+        stuck.impasse_active = True
+        g.cars = [
+            _stop(_make_test_car(lane_index=5, position=len(north_cells) - 1)),
+            _stop(_make_test_car(lane_index=6, position=len(east_cells) - 1)),
+            stuck,
+        ]
+        g._update_police(DISMISS_LINGER + 0.1)
+        assert walker.state == "diverting"
+        assert walker.target_intersection == "C"
+        assert walker.can_divert is True
+    finally:
+        GameState()
 
 
 def test_spawn_skips_full_lane() -> None:
@@ -4853,6 +4944,7 @@ def main() -> None:
         test_police_disabled_and_clear_cars,
         test_police_holding_helps_jam,
         test_police_linger_and_divert,
+        test_police_beats,
         test_spawn_skips_full_lane,
         test_jam_chains_short_inbound,
         test_reset_loads_default,
