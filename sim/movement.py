@@ -369,6 +369,10 @@ def advance_car(
                 ):
                     if reason == passing.REASON_STEP:
                         _advance_route_step(car, target_lane)
+                    elif reason in (passing.REASON_QUEUE, passing.REASON_KEEP) and car.route:
+                        car.route = routes.retarget_onto_sister(
+                            car.route, car.route_index, target_lane, side
+                        )
                     continue
             if car.position_in_lane + 1 < len(lane):
                 if not start_lane_segment(car, segment_end_time, speed, car.position_in_lane):

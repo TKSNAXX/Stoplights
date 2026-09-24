@@ -89,6 +89,42 @@ def format_route_nodes(route: tuple[RouteStep, ...]) -> str:
     return " > ".join(parts)
 
 
+def sister_on_side(lane: int, side: str) -> int | None:
+    """The lane one cell to this driver-side of lane, or None."""
+    cells = world.get_lane_cells(lane)
+    for pos in range(len(cells)):
+        found = world.merge_target(lane, pos, side, 1)
+        if found is not None and found[0] != lane:
+            return found[0]
+    return None
+
+
+def retarget_onto_sister(
+    route: tuple[RouteStep, ...],
+    route_index: int,
+    new_lane: int,
+    side: str,
+) -> tuple[RouteStep, ...]:
+    """
+    Stay on the side just taken. The current step becomes new_lane, and every
+    later lane step moves onto its sister on that same side when it has one.
+    """
+    if not route or route_index < 0 or route_index >= len(route):
+        return route
+    if route[route_index].kind != KIND_LANE:
+        return route
+    steps = list(route)
+    steps[route_index] = RouteStep(KIND_LANE, int(new_lane))
+    for index in range(route_index + 1, len(steps)):
+        if steps[index].kind != KIND_LANE:
+            continue
+        sister = sister_on_side(int(steps[index].ref), side)
+        if sister is None or sister == int(steps[index].ref):
+            continue
+        steps[index] = RouteStep(KIND_LANE, sister)
+    return tuple(steps)
+
+
 def retarget_place_steps(route: tuple[RouteStep, ...], old: str, new: str) -> tuple[RouteStep, ...]:
     if not route or old == new:
         return route

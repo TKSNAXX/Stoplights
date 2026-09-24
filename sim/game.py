@@ -46,6 +46,7 @@ class GameState:
         self.police_list: list[cop.PoliceCar] = []
         self.police_enabled: bool = True
         self._police_cooldown: dict[tuple[str, ...], float] = {}
+        self._police_marked: list = []
         self._spatial_buckets: dict[tuple[int, int], list[int]] = {}
         self._perf_stats: dict[str, float | int] = {
             "cars": 0,
@@ -277,14 +278,14 @@ class GameState:
     ) -> int:
         """Mark held and waved cars. A cop grants nothing until he is holding."""
         del poses, nearby_for, half_width
-        for car in self.cars:
+        for car in self._police_marked:
             car.police_held = False
             car.police_clear = ""
-            car.police_release = None
+        self._police_marked.clear()
         occ = occupancy if occupancy is not None else Occupancy.from_cars(self.cars)
         for police in self.police_list:
             if police.state == "holding":
-                cop.mark_holding(police, occ)
+                cop.mark_holding(police, occ, self._police_marked)
         return 0
 
     def _apply_visibility(
@@ -297,11 +298,6 @@ class GameState:
         for i, car in enumerate(self.cars):
             car.visibility_state = "green"
             car.speed_scale = 1.0
-            release = getattr(car, "police_release", None)
-            if release is not None and release <= 0.0:
-                car.visibility_state = "red"
-                car.speed_scale = 0.0
-                continue
             if getattr(car, "police_held", False):
                 car.visibility_state = "red"
                 car.speed_scale = 0.0
@@ -310,11 +306,7 @@ class GameState:
                 car.visibility_state = "cyan"
                 car.speed_scale = cop.DRAIN_SPEED
                 continue
-            if release is not None and release < 1.0:
-                car.speed_scale = release
-            wave = getattr(car, "police_clear", "") == "wave" or (
-                release is not None and release >= 1.0
-            )
+            wave = getattr(car, "police_clear", "") == "wave"
             pose = poses[i]
             if pose is None:
                 continue
@@ -328,11 +320,7 @@ class GameState:
                 other_pose = poses[j]
                 if other_pose is None:
                     continue
-                other_release = getattr(other, "police_release", None)
-                held_back = getattr(other, "police_held", False) or (
-                    other_release is not None and other_release < 1.0
-                )
-                if wave and held_back:
+                if wave and getattr(other, "police_held", False):
                     continue
                 ox, oy, _ = other_pose
                 band = visibility_zone_band(gx, gy, di, ox, oy, VIS_ZONE_LENGTH_CELLS, half_width)
@@ -437,7 +425,7 @@ class GameState:
         self.police_list = [p for p in self.police_list if p.state != "despawned"]
         # A cop easing off a clear junction is the one who will take the next jam.
         fading_off = any(
-            p.state == "holding" and p.phase == "fade" and not p.fade_giveup and p.can_divert
+            p.state == "holding" and p.phase == "direct" and p.can_divert
             for p in self.police_list
         )
         if not fading_off:

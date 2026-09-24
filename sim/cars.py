@@ -59,7 +59,6 @@ class Car:
     impasse_active: bool = False  # true while in white override with partner
     police_held: bool = False  # cop is holding this approach: full stop
     police_clear: str = ""  # "drain" ignores everyone; "wave" ignores held cars
-    police_release: float | None = None  # fade speed 0..1; None when he is not fading off
 
     # Itinerary (spawn-time); route_index is the current lane step
     route: tuple[routes.RouteStep, ...] = ()

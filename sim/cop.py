@@ -19,7 +19,11 @@ from sim.places import choose_next_lane_from_node
 from sim import routes, world
 
 DISMISS_LINGER = 5.0
-# How long the one-side signal fades out to every approach flowing, before he leaves.
+# Each open approach keeps its full-speed window this long. Fade only overlaps those windows.
+FLOW_SECONDS = 5.0
+# A lane with no car in its last this many cells is empty, and gives its time to the next.
+MOUTH_CELLS = 2
+# Time from one approach at a time to every approach flowing together.
 FADE_SECONDS = 8.0
 # One cop owns a whole beat (a junction plus the neighbours a short lane joins it to).
 COPS_PER_INTERSECTION = 1
@@ -491,19 +495,24 @@ def advance_signal(police: PoliceCar, dt: float, occupancy) -> str:
     when the box will not empty.
     """
     police.hold_time += dt
+    if police.hold_time >= MAX_HOLD_SECONDS:
+        return "giveup"
+
     node = police.target_intersection
     box = list(iter_box_cars(occupancy, node))
-    waiting = waiting_approaches(occupancy, node)
+    cap = drain_cap(node)
 
-    if police.hold_time >= MAX_HOLD_SECONDS and police.phase != "fade":
-        _begin_fade(police, node, giveup=True)
-
-    if police.phase == "fade":
-        return _advance_fade(police, dt, node, occupancy, box)
+    if police.phase == "direct":
+        if len(box) > cap:
+            police.phase = "clear"
+            police.initial_clear = True
+            return ""
+        return _advance_direct(police, dt, node, occupancy)
 
     if police.phase == "green":
         police.phase_time += dt
         _note_entries(police, occupancy)
+        waiting = waiting_approaches(occupancy, node)
         sent_enough = len(police.entered_ids) >= RELEASE_CARS
         held_long_enough = police.phase_time >= RELEASE_SECONDS
         approach_empty = waiting.get(police.green_dir, 0) == 0
@@ -515,52 +524,21 @@ def advance_signal(police: PoliceCar, dt: float, occupancy) -> str:
             police.linger_timer = 0.0
         return ""
 
-    if box or waiting:
-        police.linger_timer = 0.0
-        if not box and waiting:
-            direction = max(waiting, key=lambda name: (waiting[name], name))
-            police.phase = "green"
-            police.green_dir = direction
-            police.entered_ids = set()
-            police.phase_time = 0.0
-            police.initial_clear = False
+    if len(box) > cap:
+        police.initial_clear = True
         return ""
 
-    _begin_fade(police, node, giveup=False)
-    return _advance_fade(police, dt, node, occupancy, box)
-
-
-def _begin_fade(police: PoliceCar, node: str, giveup: bool) -> None:
-    """Start easing every approach up to full speed. One side stays explicit."""
-    police.phase = "fade"
-    police.fade_time = 0.0
-    police.fade_ready = False
-    police.fade_giveup = giveup
-    police.fade_dirs = tuple(sorted(approach_groups(node)))
-    police.green_dir = police.fade_dirs[0] if police.fade_dirs else ""
+    # Down to the intersection's own size: one fade, from one lane to all of them.
+    if not police.fade_dirs:
+        police.fade_dirs = tuple(sorted(approach_groups(node)))
+    police.phase = "direct"
     police.initial_clear = False
-    police.linger_timer = 0.0
+    return _advance_direct(police, dt, node, occupancy)
 
 
-def _advance_fade(police: PoliceCar, dt: float, node: str, occupancy, box: list) -> str:
-    """
-    Walk the explicit green through the sides while the others speed up.
-
-    The tick that reaches the end leaves him holding at full speed. The next tick
-    sends him home, so dropping the flags changes nothing.
-    """
-    if not police.fade_giveup and box:
-        police.phase = "clear"
-        police.fade_time = 0.0
-        police.fade_ready = False
-        police.fade_giveup = False
-        police.fade_dirs = ()
-        police.green_dir = ""
-        police.linger_timer = 0.0
-        return ""
+def _advance_direct(police: PoliceCar, dt: float, node: str, occupancy) -> str:
+    """Overlap the approach windows. When they all run together, leave on the next tick."""
     if police.fade_ready:
-        if police.fade_giveup:
-            return "giveup"
         other = next_beat_target(occupancy, node)
         if other:
             police.walk_target = other
@@ -573,21 +551,31 @@ def _advance_fade(police: PoliceCar, dt: float, node: str, occupancy, box: list)
     return ""
 
 
-def side_release(police: PoliceCar, direction: str) -> float:
-    """Speed for one approach during a fade: 1 once featured, otherwise the progress."""
-    dirs = police.fade_dirs
-    span = FADE_SECONDS if FADE_SECONDS > 0 else 1.0
-    progress = max(0.0, min(1.0, police.fade_time / span))
-    if not dirs or progress >= 1.0:
-        return 1.0
-    featured = min(len(dirs) - 1, int(progress * len(dirs)))
-    try:
-        index = dirs.index(direction)
-    except ValueError:
-        return progress
-    if index <= featured:
-        return 1.0
-    return progress
+def approach_is_flowing(
+    dirs: tuple[str, ...],
+    direction: str,
+    pattern_time: float,
+    fade: float,
+) -> bool:
+    """
+    True when this approach's full-speed window covers pattern_time.
+
+    Each approach is open for FLOW_SECONDS. fade 0 spaces those windows so only
+    one runs at a time. fade 1 starts them all together. In between, the next
+    window begins FLOW_SECONDS * (1 - fade) after the previous one.
+    """
+    if not dirs or direction not in dirs:
+        return False
+    fade = max(0.0, min(1.0, fade))
+    offset = FLOW_SECONDS * (1.0 - fade)
+    if offset <= 1e-9:
+        return True
+    cycle = len(dirs) * offset
+    if FLOW_SECONDS >= cycle - 1e-9:
+        return True
+    index = dirs.index(direction)
+    delta = (pattern_time - index * offset) % cycle
+    return delta < FLOW_SECONDS - 1e-12
 
 
 def _note_entries(police: PoliceCar, occupancy) -> None:
@@ -665,48 +653,204 @@ def _fill_drain(police: PoliceCar, box_cars: list, node: str) -> None:
         police.drain_ids.add(id(car))
 
 
-def _set_release(car, speed: float) -> None:
-    """0 stops, a fraction trickles, 1 is the full-speed wave."""
-    car.police_release = max(0.0, min(1.0, speed))
-    if car.police_release >= 1.0:
-        car.police_held = False
-        car.police_clear = "wave"
-    elif car.police_release <= 0.0:
-        car.police_held = True
-        car.police_clear = ""
+def _grant(car, held: bool, clear: str, touched: list) -> None:
+    """Set a cop flag. Remember the car when the flag is not the default."""
+    car.police_held = held
+    car.police_clear = clear
+    if held or clear:
+        touched.append(car)
+
+
+def _within_hold_reach(lane_idx: int, car) -> bool:
+    """False when the lane index is too far back for the pose to enter HOLD_NEAR_CELLS.
+
+    A step moves the pose at most one cell ahead of position_in_lane, so a larger gap
+    cannot satisfy the half-cell hold.
+    """
+    lane = world.get_lane_cells(lane_idx)
+    if not lane:
+        return False
+    gap = (len(lane) - 1) - float(getattr(car, "position_in_lane", 0))
+    return gap <= HOLD_NEAR_CELLS + 1
+
+
+def _mark_feed_car(car, lane: int, node: str, released: bool, touched: list) -> None:
+    if released:
+        clear = car.police_clear if car.police_clear == "drain" else "wave"
+        _grant(car, False, clear, touched)
+    elif _within_hold_reach(lane, car) and cells_to_exit(car, node) <= HOLD_NEAR_CELLS:
+        _grant(car, True, "", touched)
     else:
-        car.police_held = False
-        car.police_clear = ""
+        _grant(car, False, "", touched)
 
 
-def _mark_fade(police: PoliceCar, occupancy, node: str) -> None:
-    """Featured sides flow. Sides not yet reached move at the fade's progress."""
+def _mark_approaches(
+    occupancy,
+    node: str,
+    open_dirs: set[str],
+    wave_box: bool,
+    groups: dict[str, tuple[int, ...]] | None = None,
+    touched: list | None = None,
+) -> None:
+    """Open approaches flow at full speed. A closed mouth waits. The rest of a feed lane does not."""
     occ = occupancy_from(occupancy)
-    for direction, lanes in approach_groups(node).items():
-        _apply_side_speed(occ, node, lanes, side_release(police, direction))
+    marked = touched if touched is not None else []
+    if groups is None:
+        groups = approach_groups(node)
+    for direction, lanes in groups.items():
+        released = direction in open_dirs
+        for lane in lanes:
+            thresh = _tail_threshold(lane)
+            for car in occ.cars_on_lane(lane):
+                if getattr(car, "motion_mode", "lane") == "path":
+                    continue
+                if car.position_in_lane < thresh:
+                    continue
+                _mark_feed_car(car, lane, node, released, marked)
+    if not wave_box:
+        return
     for car in iter_box_cars(occ, node):
-        _set_release(car, side_release(police, _approach_dir(car, node)))
+        clear = car.police_clear if car.police_clear == "drain" else "wave"
+        _grant(car, False, clear, marked)
 
 
-def _apply_side_speed(occ, node: str, lanes: tuple[int, ...], speed: float) -> None:
+def approach_mouth_empty(
+    occupancy,
+    node: str,
+    direction: str,
+    groups: dict[str, tuple[int, ...]] | None = None,
+) -> bool:
+    """True when no car is in the last MOUTH_CELLS of this approach."""
+    occ = occupancy_from(occupancy)
+    lanes = (groups if groups is not None else approach_groups(node)).get(direction, ())
     for lane in lanes:
-        thresh = _tail_threshold(lane)
+        cells = world.get_lane_cells(lane)
+        if not cells:
+            continue
+        thresh = max(0, len(cells) - MOUTH_CELLS)
         for car in occ.cars_on_lane(lane):
             if getattr(car, "motion_mode", "lane") == "path":
                 continue
-            if car.position_in_lane < thresh:
+            if int(getattr(car, "position_in_lane", -1)) >= thresh:
+                return False
+    return True
+
+
+def _window_end(dirs: tuple[str, ...], index: int, pattern_time: float, fade: float) -> float | None:
+    """End of the window covering pattern_time, or None when this lane is not in one."""
+    offset = FLOW_SECONDS * (1.0 - max(0.0, min(1.0, fade)))
+    if offset <= 1e-9:
+        return None
+    cycle = len(dirs) * offset
+    if FLOW_SECONDS >= cycle - 1e-9:
+        return None
+    delta = (pattern_time - index * offset) % cycle
+    if delta >= FLOW_SECONDS - 1e-12:
+        return None
+    return pattern_time - delta + FLOW_SECONDS
+
+
+def _donate_empty_lanes(
+    police: PoliceCar,
+    node: str,
+    occupancy,
+    groups: dict[str, tuple[int, ...]],
+) -> None:
+    """
+    An open lane with an empty mouth hands the rest of its window to the next lane
+    that still has a car there, and that lane starts flowing now.
+
+    Mouths are snapshotted once. The pass does not move cars, so the answers hold.
+    """
+    dirs = police.fade_dirs
+    n = len(dirs)
+    if n == 0:
+        return
+    now = police.fade_time
+    span = FADE_SECONDS if FADE_SECONDS > 0 else 1.0
+    fade = max(0.0, min(1.0, now / span))
+    closed = list(police.closed_until) + [0.0] * n
+    grant = list(police.grant_until) + [0.0] * n
+    closed, grant = closed[:n], grant[:n]
+    empty = [approach_mouth_empty(occupancy, node, direction, groups) for direction in dirs]
+
+    def is_open(index: int) -> bool:
+        if now < closed[index]:
+            return False
+        if grant[index] > now:
+            return True
+        return approach_is_flowing(dirs, dirs[index], now, fade)
+
+    for _ in range(n):
+        donors: list[tuple[int, float, float]] = []
+        for index, _direction in enumerate(dirs):
+            if not is_open(index) or not empty[index]:
                 continue
-            if speed >= 1.0 or cells_to_exit(car, node) <= HOLD_NEAR_CELLS:
-                _set_release(car, speed)
+            end = _window_end(dirs, index, now, fade)
+            if end is None:
+                continue
+            leftover = end - now
+            if leftover <= 1e-3:
+                continue
+            donors.append((index, leftover, end))
+        if not donors:
+            break
+        gave = False
+        for index, leftover, end in donors:
+            dest = None
+            for step in range(1, n):
+                nxt = (index + step) % n
+                if not empty[nxt]:
+                    dest = nxt
+                    break
+            closed[index] = max(closed[index], end)
+            if dest is None:
+                continue
+            grant[dest] = max(grant[dest], now + FLOW_SECONDS + leftover)
+            gave = True
+        if not gave:
+            break
+    police.closed_until = tuple(closed)
+    police.grant_until = tuple(grant)
 
 
-def mark_holding(police: PoliceCar, occupancy) -> None:
+def _open_dirs(
+    police: PoliceCar,
+    node: str,
+    occupancy,
+    groups: dict[str, tuple[int, ...]],
+) -> set[str]:
+    dirs = police.fade_dirs or tuple(sorted(groups))
+    span = FADE_SECONDS if FADE_SECONDS > 0 else 1.0
+    fade = max(0.0, min(1.0, police.fade_time / span))
+    _donate_empty_lanes(police, node, occupancy, groups)
+    open_dirs: set[str] = set()
+    for index, direction in enumerate(dirs):
+        closed_until = police.closed_until[index] if index < len(police.closed_until) else 0.0
+        grant_until = police.grant_until[index] if index < len(police.grant_until) else 0.0
+        if police.fade_time < closed_until:
+            continue
+        if grant_until > police.fade_time or approach_is_flowing(dirs, direction, police.fade_time, fade):
+            open_dirs.add(direction)
+    return open_dirs
+
+
+def mark_holding(police: PoliceCar, occupancy, touched: list | None = None) -> None:
     """Hold every approach but the open one. On arrival, a few cars creep out at a time."""
     if police.state != "holding":
         return
+    marked = touched if touched is not None else []
     node = police.target_intersection
-    if police.phase == "fade":
-        _mark_fade(police, occupancy, node)
+    groups = approach_groups(node)
+    if police.phase == "direct":
+        _mark_approaches(
+            occupancy,
+            node,
+            _open_dirs(police, node, occupancy, groups),
+            wave_box=True,
+            groups=groups,
+            touched=marked,
+        )
         return
     green = police.green_dir if police.phase == "green" else ""
     box_cars = list(iter_box_cars(occupancy, node))
@@ -715,38 +859,26 @@ def mark_holding(police: PoliceCar, occupancy) -> None:
     for car in box_cars:
         if police.initial_clear:
             if id(car) in police.drain_ids:
-                car.police_held = False
-                car.police_clear = "drain"
+                _grant(car, False, "drain", marked)
             else:
-                car.police_clear = ""
-                car.police_held = True
+                _grant(car, True, "", marked)
             continue
         in_this = _path_car_in_box(car, node)
         if in_this or (green and _approach_dir(car, node) == green):
-            car.police_held = False
-            car.police_clear = "wave"
+            _grant(car, False, "wave", marked)
         else:
-            car.police_clear = ""
-            car.police_held = True
-    for direction, lanes in approach_groups(node).items():
+            _grant(car, True, "", marked)
+    occ = occupancy_from(occupancy)
+    for direction, lanes in groups.items():
         released = bool(green) and direction == green
         for lane in lanes:
             thresh = _tail_threshold(lane)
-            for car in occupancy_from(occupancy).cars_on_lane(lane):
+            for car in occ.cars_on_lane(lane):
                 if getattr(car, "motion_mode", "lane") == "path":
                     continue
                 if car.position_in_lane < thresh:
                     continue
-                if released:
-                    car.police_held = False
-                    if car.police_clear != "drain":
-                        car.police_clear = "wave"
-                elif cells_to_exit(car, node) <= HOLD_NEAR_CELLS:
-                    car.police_clear = ""
-                    car.police_held = True
-                else:
-                    car.police_clear = ""
-                    car.police_held = False
+                _mark_feed_car(car, lane, node, released, marked)
 
 
 def spawn_police(intersection_id: str, deploy_lane: int) -> PoliceCar:
@@ -818,7 +950,9 @@ class PoliceCar:
     fade_dirs: tuple[str, ...] = ()
     fade_time: float = 0.0
     fade_ready: bool = False
-    fade_giveup: bool = False
+    # Pattern time until an approach stays shut, or is held open, after a donation.
+    closed_until: tuple[float, ...] = ()
+    grant_until: tuple[float, ...] = ()
     routing: bool = False
     walk_target: str = ""
 
@@ -884,7 +1018,8 @@ class PoliceCar:
         self.fade_dirs = ()
         self.fade_time = 0.0
         self.fade_ready = False
-        self.fade_giveup = False
+        self.closed_until = ()
+        self.grant_until = ()
         self.linger_timer = 0.0
         self.depart_pending = False
         self.walk_target = ""
