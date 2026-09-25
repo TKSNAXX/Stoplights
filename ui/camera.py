@@ -26,7 +26,7 @@ class CameraController:
         self.zoom_level = ZOOM_LEVEL_FIT
         self.zoom_scale = 1.0
         self.view_yaw_q = 0
-        self.pan_fly = False
+        self.pan_fly = True
         self.pan_speed = CAM_PAN_SPEED
         self._key_left = False
         self._key_right = False
